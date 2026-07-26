@@ -38,11 +38,11 @@ type t =
           disk.  See {!page-"feature-document-sync"}. *)
   ; mutable config : Lsp_config.t
     (** Client-supplied settings, seen once at {!initialize}. *)
-  ; mutable daily_notes_error : string option
-    (** Why the configured daily-note format was rejected, if it was.  Kept so
-          that {!initialize} can hand it to the adapter: a rejection the user
-          never sees is indistinguishable from the feature being absent.  See
-          {!page-"feature-daily-notes".format}. *)
+  ; mutable config_warnings : string list
+    (** Everything the configuration sources asked for and could not have,
+          gathered at {!initialize} for the adapter to report.  A setting
+          ignored in silence is indistinguishable from one that does not
+          exist.  See {!page-"feature-configuration".tolerance}. *)
   ; mutable daily_table : (Date.t * Daily_notes.Table.t) option
     (** Memoized recognition table with the date it was built for; a server
           left running overnight rebuilds it.  See
@@ -62,18 +62,33 @@ let create ?(now : unit -> Date.t = system_today) () : t =
   { vault = None
   ; open_docs = String.Table.create ()
   ; config = Lsp_config.default
-  ; daily_notes_error = None
+  ; config_warnings = []
   ; daily_table = None
   ; now
   }
 ;;
 
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
-  t.config <- Lsp_config.of_initialization_options init_options;
-  t.daily_notes_error <- Result.error (Lsp_config.daily_notes_settings t.config);
+  let config, warnings = Lsp_config.load ~root ~init_options in
+  t.config <- config;
+  (* The daily-note format is validated here rather than at parse time — it is
+     the one setting whose usability is a property of its {e value} — but it
+     joins the same list, so the user hears about it the same way. *)
+  let daily_notes_warning =
+    match Lsp_config.daily_notes_settings config with
+    | Ok _ -> []
+    | Error e -> [ sprintf "daily notes disabled: %s" e ]
+  in
+  t.config_warnings <- warnings @ daily_notes_warning;
   t.daily_table <- None;
   t.vault <- Some (build_vault root)
 ;;
+
+(** What the configuration sources asked for and could not have.  Empty when
+    the configuration is clean; meaningful only after {!initialize}, which is
+    also the only time it is computed.  See
+    {!page-"feature-configuration".tolerance}. *)
+let config_warnings (t : t) : string list = t.config_warnings
 
 let rebuild_vault (t : t) : unit =
   match t.vault with
@@ -399,12 +414,6 @@ let document_symbol (t : t) ~(rel_path : string) : DocumentSymbol.t list option 
     an editor by itself, so the action defers to this command, which the client
     sends back as [workspace/executeCommand]. *)
 let daily_note_command = "oystermark.dailyNote.open"
-
-(** Why the daily-note actions are unavailable, when a rejected format is the
-    reason.  The adapter shows this once at [initialize]; without it, a typo'd
-    format and an unconfigured feature look identical from the editor.  See
-    {!page-"feature-daily-notes".format}. *)
-let daily_notes_error (t : t) : string option = t.daily_notes_error
 
 (** What {!execute_command} decided should happen.  Returning an intent rather
     than performing it keeps the protocol effects — [workspace/applyEdit] and

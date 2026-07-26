@@ -26,10 +26,11 @@ always Sunday.
 
 {1 Settings}
 
-Settings are Oystermark's own, delivered through the LSP
-[initializationOptions] under the [dailyNotes] key, and stored in
-{!Lsp_lib.Config}. Obsidian's [.obsidian/daily-notes.json] is {b not} read:
-a vault's Obsidian configuration is not ours to depend on.
+Settings are Oystermark's own, read under the [dailyNotes] key from
+[oysterlsp.json] or the LSP [initializationOptions] — see
+{!page-"feature-configuration"} for the sources and how they combine — and
+stored in {!Lsp_lib.Config}. Obsidian's [.obsidian/daily-notes.json] is
+{b not} read: a vault's Obsidian configuration is not ours to depend on.
 
 {t
   | Key        | Type   | Default | Meaning |
@@ -81,11 +82,16 @@ A rejection is {b reported}, once, as a [window/showMessage] of severity
 action is also what a correctly configured server does when it has nothing to
 offer, so without the message a mistyped format would be indistinguishable from
 a feature that is simply absent. {!Lsp_lib.Config.daily_notes_settings}
-computes the error, {!Lsp_lib.Server.daily_notes_error} holds it from
-initialize onward, and the adapter sends it.
+computes the error and {!Lsp_lib.Server.config_warnings} carries it from
+initialize onward, alongside every other configuration complaint; see
+{!page-"feature-configuration".tolerance}.
 
-Nothing is reported later: the settings arrive once, so a repeat on every code
-action would say the same thing indefinitely.
+The format is the one setting validated on {e use} rather than at parse time —
+whether it is usable is a property of its value, not its type — but it is
+reported through the same channel, at the same moment.
+
+Nothing is reported later: the settings are read once, so a repeat on every
+code action would say the same thing indefinitely.
 
 A format is also rejected when it starts with [/], or when the text it produces
 contains a path-illegal character. This matches the validation Obsidian's

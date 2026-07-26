@@ -109,13 +109,14 @@ let%expect_test "unsupported format offers nothing" =
 
 (* ...and says why.  Offering nothing is also what a correctly configured
    server does when it has nothing to offer, so the rejection has to be
-   reported for the two to be distinguishable.  The adapter turns this into a
-   [window/showMessage] at initialize. *)
+   reported for the two to be distinguishable.  It joins the configuration
+   warnings, which the adapter turns into [window/showMessage] at initialize —
+   see {!page-"feature-configuration".tolerance}. *)
 let%expect_test "a rejected format is reported" =
   let show ?init_options () =
     with_tmp_vault ~files (fun vault_root ->
       let s = start_server ?init_options ~today ~vault_root () in
-      print_s [%sexp (Server.daily_notes_error s : string option)])
+      print_s [%sexp (Server.config_warnings s : string list)])
   in
   show ~init_options:(options "YYYY-ww") ();
   show ~init_options:(options "/YYYY-MM-DD") ();
@@ -124,8 +125,8 @@ let%expect_test "a rejected format is reported" =
   show ();
   [%expect
     {|
-    ("unsupported format token 'w'")
-    ("format must not start with /")
+    ("daily notes disabled: unsupported format token 'w'")
+    ("daily notes disabled: format must not start with /")
     ()
     ()
     |}]

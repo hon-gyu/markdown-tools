@@ -68,16 +68,29 @@ logic of its own. Spec: [feature-attribute-anchors.mld](docs/feature-attribute-a
 | Code action | Creates the note behind an unresolved link. | [codeaction](docs/feature-codeaction-create-unresolved-link.mld) |
 | Daily notes | Open or create today's / yesterday's / tomorrow's note, and jump to the previous or next existing one. | [daily-notes](docs/feature-daily-notes.mld) |
 
-Daily notes are configured through the client's `initializationOptions`:
+## Configuration
+
+Settings come from `oysterlsp.json` at the vault root, falling back to the
+client's `initializationOptions` key by key — full schema in
+[configuration](docs/feature-configuration.mld).
 
 ```json
-{ "dailyNotes": { "format": "YYYY/MM/YYYY-MM-DD", "folder": "journal" } }
+{
+  "dailyNotes": { "format": "YYYY/MM/YYYY-MM-DD", "folder": "journal" },
+  "hover": { "maxChars": 400 },
+  "goToDefinition": { "unresolvedFragment": "strict" },
+  "diagnostics": { "unresolvedFragment": "strict" }
+}
 ```
 
-`format` is a subset of the [moment.js](https://momentjs.com/docs/#/displaying/format/)
-tokens and may contain `/` to nest notes in folders; `folder` defaults to the
-vault root. A format the server cannot support disables the feature and is
-reported as a warning message at startup. Obsidian's own `.obsidian/daily-notes.json` is not read — see
+The daily-note `format` is a subset of the
+[moment.js](https://momentjs.com/docs/#/displaying/format/) tokens and may
+contain `/` to nest notes in folders; `folder` defaults to the vault root.
+
+Nothing here can stop the server from starting: a missing file, bad JSON, an
+unknown key or an unusable value falls back to the default. Every such fallback
+is reported as a warning message at startup, so an ignored setting is never
+silent. Obsidian's own `.obsidian/daily-notes.json` is not read — see
 [the reference spec](../../../specification/obsidian/daily-notes.md) for how
 Obsidian behaves.
 

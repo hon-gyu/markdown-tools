@@ -1,0 +1,110 @@
+{0 Configuration}
+
+Every knob the server exposes, where its value comes from, and what happens
+when that value is wrong.
+
+Two sources feed {!Lsp_lib.Config.t}: the client's [initializationOptions], and
+a file in the vault. The file exists because the settings below describe the
+{e vault} — how its daily notes are named, how strict its links are — not the
+editor looking at it. Those belong with the notes, shareable across the people
+and machines that share the vault, rather than duplicated in each contributor's
+editor settings.
+
+{1:file The file}
+
+[oysterlsp.json], at the vault root. Optional: its absence is not an error and
+not worth a message. This is {b not} {!Oystermark.Config}, which configures a
+vault {e build} and is passed by path on the command line; the two have no keys
+in common and are read by different programs.
+
+{1:schema Schema}
+
+The same shape in both sources — one schema, one parser.
+
+{t
+  | Key | Type | Default | Meaning |
+  |-----|------|---------|---------|
+  | [dailyNotes.format] | string | [YYYY-MM-DD] | Date format naming the note. See {!page-"feature-daily-notes".format}. |
+  | [dailyNotes.folder] | string | vault root | Vault-relative folder the daily notes live under. |
+  | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |
+  | [hover.maxChars] | positive int | [2000] | Bytes of note content a hover may include. See {!page-"feature-hover".truncation}. |
+  | [goToDefinition.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Where a link with an unfindable fragment goes. See {!page-"feature-go-to-definition"}. |
+  | [diagnostics.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Whether an unfindable fragment is reported. See {!page-"feature-diagnostics"}. |
+}
+
+A complete example:
+
+{[
+  {
+    "dailyNotes": { "format": "YYYY/MM/YYYY-MM-DD", "folder": "journal" },
+    "hover": { "maxChars": 400 },
+    "goToDefinition": { "unresolvedFragment": "strict" }
+  }
+]}
+
+{1:precedence Precedence}
+
+The file wins, {b field by field}. A key set in [oysterlsp.json] overrides the
+same key from [initializationOptions]; a key the file omits keeps whatever the
+client sent, or the default. Objects are merged, not replaced: a file setting
+only [dailyNotes.folder] leaves a client-supplied [dailyNotes.format] standing.
+
+The file wins because it is the vault's own description of itself and travels
+with the notes, whereas [initializationOptions] is per-machine. A contributor
+whose editor sends a stale [dailyNotes.format] should still get the vault's
+naming, not their own.
+
+{1:tolerance Tolerance}
+
+Neither source can fail initialization. An unreadable file, malformed JSON, an
+unknown key, a value of the wrong type or outside its range: each falls back to
+what it would have been, and the server starts.
+
+Silence, though, is the failure mode worth avoiding — a setting that is ignored
+without comment is indistinguishable from a setting that does not exist. So
+every fallback is {b reported}: parsing yields warnings alongside the config,
+{!Lsp_lib.Server.config_warnings} holds them, and the adapter sends each as a
+[window/showMessage] of severity [Warning] at initialize. A correct
+configuration produces none.
+
+Each warning names its source and its key, so [oysterlsp.json] and the client
+are distinguishable:
+
+{[
+  oysterlsp.json: hover.maxChars: expected a positive integer, got "400px"
+  oysterlsp.json: unknown key "dailynotes"
+  initializationOptions: goToDefinition.unresolvedFragment: expected "fallback" or "strict", got "lenient"
+]}
+
+An unknown key is reported rather than ignored: a misspelled key is otherwise
+the quietest way to have a setting do nothing. A rejected
+[dailyNotes.format] is reported through the same channel, though it is
+validated later — see {!page-"feature-daily-notes".format}.
+
+{1:reload Reload}
+
+The file is read {b once}, at [initialize], like [initializationOptions]. A
+later edit takes effect when the server restarts.
+
+{b Not yet implemented}: watching the file. Live reload wants a
+[workspace/didChangeWatchedFiles] registration and invalidation of everything
+derived from the config — the memoized daily-note table in particular. Note
+that it could never be complete: what a server advertises in its [initialize]
+result cannot be withdrawn afterwards, so any future setting reflected in
+server capabilities would remain restart-only.
+
+{1:limitations Limitations}
+
+{ul
+  {- The file is looked for at the vault root only: no search upward from the
+     edited file, no per-directory overrides.}
+  {- JSON, so no comments. Consistent with {!Oystermark.Config}.}
+  {- No environment-variable or command-line source. The server takes no
+     arguments.}
+}
+
+{1:test Test}
+
+Parsing, merging, and the warnings: {!Lsp_lib.Config}'s inline tests.
+End to end, from a file on disk through {!Lsp_lib.Server}:
+[tests/lsp/test_configuration.ml].
