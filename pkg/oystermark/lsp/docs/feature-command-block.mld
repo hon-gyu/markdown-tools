@@ -1,0 +1,117 @@
+{0 Command block}
+
+A fenced code block that turns server commands into visible, clickable text in
+the note you are editing.
+
+{1 Why}
+
+Code actions are the protocol's standard surface for "do a thing here", and
+every feature that offers one keeps offering it. But as a surface they are
+{e transient}: they appear only while the cursor sits somewhere the server
+finds interesting, they are reached through a menu, and a client cannot
+generally bind a key to one particular action among the several offered — some
+have no convenient path to them at all, Zed among them.
+
+A code lens is the same command with the opposite properties: rendered in the
+buffer, always visible, clickable, and anchored to a line rather than to a
+cursor position. This feature {b lifts} commands from the one surface to the
+other. Nothing is taken away — the code actions remain exactly as they were —
+and the lens is an alternative route to the same {!Lsp_lib.Server.execute_command}.
+
+Anchoring to a line rather than a cursor buys the second half of the idea: a
+block of them reads as a small {b control panel}, kept wherever it is useful,
+listing the operations that matter for the note it sits in.
+
+{1:syntax Syntax}
+
+A fenced code block whose info string is [oysterlsp]. One command per line:
+
+{@markdown[
+```oysterlsp
+# jump around the journal
+daily/today
+daily/prev
+daily/next
+```
+]}
+
+Inside a fenced block the content is literal text, not markdown, so a line is
+exactly its command name. Blank lines are ignored, and so is any line whose
+first non-blank character is [#], which makes comments and headings possible in
+a panel of any size.
+
+A note may hold any number of these blocks, and the block may sit anywhere in
+the note.
+
+{1:commands Commands}
+
+{t
+  | Line | Does | Enabled when |
+  |------|------|--------------|
+  | [daily/today] | Opens today's daily note, creating it if missing | always |
+  | [daily/yesterday] | As above, for yesterday | always |
+  | [daily/tomorrow] | As above, for tomorrow | always |
+  | [daily/prev] | Opens the previous {e existing} daily note, relative to the host note | the host note is a daily note, and an earlier one exists |
+  | [daily/next] | As above, forwards | the host note is a daily note, and a later one exists |
+}
+
+See {!page-"feature-daily-notes"} for what these mean and how the dates are
+computed; the block adds no behavior of its own, only a way to reach them.
+
+[daily/prev] and [daily/next] are the reason the block lives in a note rather
+than in one file at the vault root: they are answered {e relative to the note
+containing them}. The same block means different things in two different daily
+notes, which is the point.
+
+{1:surfaces Surfaces}
+
+Each recognized line gets all of:
+
+{ul
+  {- a {b code lens}, carrying the same command a code action would.  Its title
+     is the action's — [Create yesterday's daily note] — so the line says what
+     it is and the lens says what will happen;}
+  {- a {b code action}, when the cursor is on that line, so the panel is usable
+     from the keyboard and in clients that do not render lenses.  On such a
+     line it is the {e only} action offered: the ordinary daily-note menu would
+     bury the one the line asked for under four others.  Everywhere else in the
+     note that menu is unchanged;}
+  {- {b completion} of the command names, inside the block only, so the
+     available set is discoverable without leaving the editor;}
+  {- a {b diagnostic} on a line that names no known command.  A misspelling
+     would otherwise be inert, and inert looks exactly like unimplemented.}
+}
+
+A command that is understood but not currently applicable — [daily/prev] in a
+note that is not a daily note, or one with nothing before it — keeps its lens,
+without a command attached, showing why: [no previous daily note]. A lens that
+vanishes would be indistinguishable from one the server failed to produce.
+
+{1:publishing Publishing}
+
+This is a {b dev-time} feature. The block is an ordinary code block to every
+other part of Oystermark: the parser reads it as one, the renderer prints it as
+one, and nothing here changes what a build produces. A block is expected to be
+deleted from a note before that note is published — no [Silent] handling, no
+pipeline hook, no interaction with {!Oystermark.Config}.
+
+{1:limitations Limitations}
+
+{ul
+  {- Commands take no arguments. Every line is a fixed name, so anything
+     needing a date, a path or a prompt has no expression here.}
+  {- The set of commands is closed and small: it is exactly the daily-note
+     family. Note-scoped operations that would justify the block further —
+     creating every unresolved link in a note, inserting a link to the note
+     into today's daily note — are not implemented.}
+  {- Lens rendering is a client capability. A client without it still gets the
+     code actions, which is the whole set of behavior minus the clicking.}
+  {- No lens is offered outside a command block, and no note is treated
+     specially by name.}
+}
+
+{1:test Test}
+
+Recognition and the command catalogue: {!Lsp_lib.Command_block}'s inline tests.
+The lenses, actions, completions and diagnostics a server answers with:
+[tests/lsp/test_command_block.ml].

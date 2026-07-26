@@ -32,6 +32,11 @@ class oystermark_server ~sw =
            ~codeActionKinds:[ CodeActionKind.QuickFix; CodeActionKind.Refactor ]
            ())
 
+    method! config_code_lens_options : CodeLensOptions.t option =
+      (* Lenses come fully formed, so no [resolveProvider].  See
+         {!page-"feature-command-block"}. *)
+      Some (CodeLensOptions.create ~resolveProvider:false ())
+
     method! config_completion : CompletionOptions.t option =
       (* [[[] opens a wikilink; [#] starts a fragment. See {!page-"feature-completion"}. *)
       Some (CompletionOptions.create ~triggerCharacters:[ "["; "#" ] ())
@@ -93,6 +98,16 @@ class oystermark_server ~sw =
                 ~type_:MessageType.Warning
                 ~message:(sprintf "oystermark: %s" message))));
       super#on_req_initialize ~notify_back params
+
+    method! on_req_code_lens
+      ~notify_back:_
+      ~id:_
+      ~uri
+      ~workDoneToken:_
+      ~partialResultToken:_
+      (_ : Linol_eio.Jsonrpc2.doc_state)
+      : CodeLens.t list =
+      Option.value (Server.code_lens server ~rel_path:(self#rel_path uri)) ~default:[]
 
     (* Document synchronization
        ========================= *)

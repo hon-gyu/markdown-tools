@@ -6,6 +6,7 @@
   lsp_util
   lsp_config
   daily_notes
+  command_block
   link_collect
   go_to_definition
   completion

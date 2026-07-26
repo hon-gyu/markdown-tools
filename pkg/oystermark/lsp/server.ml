@@ -158,18 +158,52 @@ let byte_of_position (content : string) ~(line : int) ~(character : int) : int =
 (* Document synchronization
    ========================= *)
 
+(** Every line of a command block that names nothing.  A misspelling would
+    otherwise be inert, and inert looks exactly like unimplemented. *)
+let command_block_diagnostics (content : string) : Diagnostic.t list =
+  Command_block.entries content
+  |> List.filter_map ~f:(fun (e : Command_block.entry) ->
+    match e.command with
+    | Some _ -> None
+    | None ->
+      let line_start = Lsp_util.line_start_byte content ~line:e.line in
+      Some
+        (Diagnostic.create
+           ~range:
+             (range_of_bytes
+                content
+                ~first_byte:line_start
+                ~last_byte:(line_start + String.length e.text))
+           ~severity:DiagnosticSeverity.Warning
+           ~source:"oystermark"
+           ~message:
+             (`String
+                 (sprintf
+                    "unknown oysterlsp command %S; expected one of %s"
+                    e.text
+                    (String.concat
+                       ~sep:", "
+                       (List.map
+                          Command_block.all_of_command
+                          ~f:Command_block.name_of_command))))
+           ()))
+;;
+
 let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   match t.vault with
   | None -> []
   | Some v ->
-    Feature.Diagnostics.compute ~index:v.index ~rel_path ~content ()
-    |> List.map ~f:(fun (d : Feature.Diagnostics.diagnostic) ->
-      Diagnostic.create
-        ~range:(range_of_bytes content ~first_byte:d.first_byte ~last_byte:d.last_byte)
-        ~severity:DiagnosticSeverity.Warning
-        ~source:"oystermark"
-        ~message:(`String d.message)
-        ())
+    let links =
+      Feature.Diagnostics.compute ~index:v.index ~rel_path ~content ()
+      |> List.map ~f:(fun (d : Feature.Diagnostics.diagnostic) ->
+        Diagnostic.create
+          ~range:(range_of_bytes content ~first_byte:d.first_byte ~last_byte:d.last_byte)
+          ~severity:DiagnosticSeverity.Warning
+          ~source:"oystermark"
+          ~message:(`String d.message)
+          ())
+    in
+    links @ command_block_diagnostics content
 ;;
 
 let did_open (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
@@ -510,6 +544,152 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
     calendar @ existing
 ;;
 
+(* Command blocks
+   ===============
+
+   See {!page-"feature-command-block"}.  Nothing new happens here: a block line
+   is another way to reach the daily-note command, lifted from the code-action
+   menu onto a line where a lens can render it. *)
+
+(** What a command-block line amounts to right now, in this note.  [target] is
+    [None] when the command is understood but cannot run — then [label] says
+    why, and the surfaces show it without anything to click. *)
+type resolved_command =
+  { label : string
+  ; target : (string * bool) option (** [(path, create_it)]. *)
+  }
+
+let resolve_command (t : t) ~(rel_path : string) (c : Command_block.command)
+  : resolved_command
+  =
+  match daily_table t with
+  | Error _ -> { label = "daily notes disabled"; target = None }
+  | Ok table ->
+    let settings = table.Daily_notes.Table.settings in
+    let today = t.now () in
+    (* Calendar commands always have a target: a missing note is created. *)
+    let calendar (what : string) (date : Date.t) =
+      let path = Daily_notes.path_of_date settings date in
+      let exists = file_exists t path in
+      { label = sprintf "%s %s daily note" (if exists then "Open" else "Create") what
+      ; target = Some (path, not exists)
+      }
+    in
+    (* Previous/next answer relative to the {e host} note, which is why the
+       block lives in a note.  Neither ever creates. *)
+    let step (what : string) f =
+      match Daily_notes.Table.date_of_path table rel_path with
+      | None ->
+        { label = sprintf "no %s daily note: this note is not one" what; target = None }
+      | Some date ->
+        (match f table ~exists:(fun p -> file_exists t p) date with
+         | None -> { label = sprintf "no %s daily note" what; target = None }
+         | Some (_, path) ->
+           { label = sprintf "Open %s daily note (%s)" what path
+           ; target = Some (path, false)
+           })
+    in
+    (match c with
+     | Daily_today -> calendar "today's" today
+     | Daily_yesterday -> calendar "yesterday's" (Date.add_days today (-1))
+     | Daily_tomorrow -> calendar "tomorrow's" (Date.add_days today 1)
+     | Daily_prev -> step "previous" Daily_notes.Table.previous_existing
+     | Daily_next -> step "next" Daily_notes.Table.next_existing)
+;;
+
+(** The lens for one line: a whole-line range, the resolved label, and the
+    command when there is one to run. *)
+let lens_of_entry
+      (t : t)
+      ~(rel_path : string)
+      ~(content : string)
+      (e : Command_block.entry)
+  : CodeLens.t option
+  =
+  match e.command with
+  (* An unknown name gets a diagnostic instead; a lens saying nothing useful
+     would only compete with it. *)
+  | None -> None
+  | Some c ->
+    let { label; target } = resolve_command t ~rel_path c in
+    let line_start = Lsp_util.line_start_byte content ~line:e.line in
+    let range =
+      range_of_bytes
+        content
+        ~first_byte:line_start
+        ~last_byte:(line_start + String.length e.text)
+    in
+    Some
+      (CodeLens.create
+         ~range
+         ?command:
+           (Option.map target ~f:(fun (path, create) ->
+              Command.create
+                ~title:label
+                ~command:daily_note_command
+                ~arguments:[ `String path; `Bool create ]
+                ()))
+         ~data:(`String label)
+         ())
+;;
+
+(** Spec: {!page-"feature-command-block".surfaces}.  [None] outside a vault, so
+    a client learns nothing is coming rather than seeing an empty list. *)
+let code_lens (t : t) ~(rel_path : string) : CodeLens.t list option =
+  match t.vault with
+  | None -> None
+  | Some _ ->
+    let content = buffer_content t rel_path in
+    Command_block.entries content
+    |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content)
+    |> Option.return
+;;
+
+(** The single action for the command-block line under the cursor, if that is
+    where the cursor is.  The keyboard route to what the lens offers. *)
+let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeAction.t list =
+  let content = buffer_content t rel_path in
+  match Command_block.entry_at content ~line with
+  | None -> []
+  | Some { command = None; _ } -> []
+  | Some { command = Some c; _ } ->
+    (match resolve_command t ~rel_path c with
+     | { target = None; _ } -> []
+     | { label; target = Some (path, create) } ->
+       [ CodeAction.create
+           ~title:label
+           ~kind:CodeActionKind.Refactor
+           ~isPreferred:true
+           ~command:
+             (Command.create
+                ~title:label
+                ~command:daily_note_command
+                ~arguments:[ `String path; `Bool create ]
+                ())
+           ()
+       ])
+;;
+
+(** The catalogue, offered inside a command block and nowhere else. *)
+let command_block_completions (t : t) ~(rel_path : string) ~(line : int)
+  : CompletionItem.t list option
+  =
+  let content = buffer_content t rel_path in
+  if not (Command_block.in_command_block content ~line)
+  then None
+  else
+    List.map Command_block.all_of_command ~f:(fun c ->
+      let name = Command_block.name_of_command c in
+      CompletionItem.create
+        ~label:name
+        ~kind:CompletionItemKind.Event
+        ~detail:(Command_block.doc_of_command c)
+          (* What it would do here, today — the same text the lens would show. *)
+        ~documentation:(`String (resolve_command t ~rel_path c).label)
+        ())
+    |> Option.return
+;;
+
 (** Handle [workspace/executeCommand].  [None] for an unknown command or
     unusable arguments — an editor is free to send either. *)
 let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
@@ -558,7 +738,15 @@ let code_action
     | Some kinds -> List.mem kinds kind ~equal:Poly.equal
   in
   let daily =
-    if requested CodeActionKind.Refactor then daily_note_actions t ~rel_path else []
+    if requested CodeActionKind.Refactor
+    then (
+      (* On a command-block line the panel's own action is the answer, and the
+         whole daily-note menu would bury it.  See
+         {!page-"feature-command-block".surfaces}. *)
+      match command_block_actions t ~rel_path ~line:start_line with
+      | [] -> daily_note_actions t ~rel_path
+      | actions -> actions)
+    else []
   in
   let quick_fixes =
     match t.vault with
@@ -616,27 +804,33 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   match t.vault with
   | None -> None
   | Some v ->
-    Feature.Completion.complete
-      ~index:v.index
-      ~rel_path
-      ~content:(buffer_content t rel_path)
-      ~line
-      ~character
-      ()
-    |> List.map ~f:(fun (i : Feature.Completion.item) ->
-      let kind =
-        match i.kind with
-        | Feature.Completion.File -> CompletionItemKind.File
-        | Feature.Completion.Reference -> CompletionItemKind.Reference
-      in
-      CompletionItem.create
-        ~label:i.label
-        ?detail:i.detail
-        ?filterText:i.filter_text
-        ?insertText:i.insert_text
-        ~kind
-        ())
-    |> Option.return
+    (* Inside a command block the note-name and fragment completions make no
+     sense: the content there is a command name.  See
+     {!page-"feature-command-block".surfaces}. *)
+    (match command_block_completions t ~rel_path ~line with
+     | Some items -> Some items
+     | None ->
+       Feature.Completion.complete
+         ~index:v.index
+         ~rel_path
+         ~content:(buffer_content t rel_path)
+         ~line
+         ~character
+         ()
+       |> List.map ~f:(fun (i : Feature.Completion.item) ->
+         let kind =
+           match i.kind with
+           | Feature.Completion.File -> CompletionItemKind.File
+           | Feature.Completion.Reference -> CompletionItemKind.Reference
+         in
+         CompletionItem.create
+           ~label:i.label
+           ?detail:i.detail
+           ?filterText:i.filter_text
+           ?insertText:i.insert_text
+           ~kind
+           ())
+       |> Option.return)
 ;;
 
 let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
