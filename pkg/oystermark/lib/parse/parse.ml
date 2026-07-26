@@ -64,14 +64,15 @@ let of_string
       ~block_id:true
       ~wikilink:true
       ~callout:(Block.Callout.Config.make ())
+      (* CommonMark behaviors the djot preset would disable. Kept on. *)
+      ~intraword_emphasis:true
+      ~underscore_thematic_break:true
       (* Djot extensions begin *)
       ~div:true
       ~inline_attributes:true
       ~block_attributes:true
-      ~intraword_emphasis:true
       ~marked_emphasis_delims:true
       ~extra_inline_containers:Inline.Extra_inline_container.Config.djot
-      ~underscore_thematic_break:true
       ~colon_symbols:true
       ~extended_ordered_list_styles:true
       ~table_captions:true
