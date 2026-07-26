@@ -51,6 +51,7 @@
   feature-attribute-anchors
   feature-codeaction-create-unresolved-link
   feature-completion
+  feature-daily-notes
   feature-diagnostics
   feature-document-outline
   feature-document-sync

@@ -120,7 +120,7 @@ let%expect_test "trace: diagnostics spans" =
 ------------ *)
 
 let%expect_test "server: unresolved link produces diagnostic on didOpen" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   open_doc s ~rel_path:"note-b.md"
   |> diagnostic_positions
   |> List.iter ~f:(fun (msg, line, char) -> printf "%d:%d %s\n" line char msg);
@@ -128,7 +128,7 @@ let%expect_test "server: unresolved link produces diagnostic on didOpen" =
 ;;
 
 let%expect_test "server: didChange republishes diagnostics" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   (* didOpen: no unresolved links *)
   let on_open = open_doc s ~rel_path:"subdir/nested.md" in
   printf "after open: %d diagnostics\n" (List.length on_open);
@@ -148,7 +148,7 @@ let%expect_test "server: didChange republishes diagnostics" =
 ;;
 
 let%expect_test "server: resolved links produce no diagnostics" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   let diags = open_doc s ~rel_path:"subdir/nested.md" in
   printf "%d diagnostics\n" (List.length diags);
   [%expect {| 0 diagnostics |}]

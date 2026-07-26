@@ -15,7 +15,7 @@ let%expect_test "didSave refreshes diagnostics in other open docs" =
   with_tmp_vault
     ~files:[ "a.md", "# A\n\nLink: [[brand-new]]\n" ]
     (fun vault_root ->
-       let s = start_server ~vault_root in
+       let s = start_server ~vault_root () in
        (* Initial diagnostics: one unresolved-link warning in a.md. *)
        let initial = open_doc s ~rel_path:"a.md" in
        printf "initial: %d diagnostic(s)\n" (List.length initial);
@@ -43,7 +43,7 @@ let%expect_test "didSave refreshes every open document" =
       ; "b.md", "# B\n\nAlso: [[brand-new]] and [[still-missing]]\n"
       ]
     (fun vault_root ->
-       let s = start_server ~vault_root in
+       let s = start_server ~vault_root () in
        did_open s ~rel_path:"a.md";
        did_open s ~rel_path:"b.md";
        Out_channel.write_all
@@ -67,7 +67,7 @@ let%expect_test "didClose stops refreshing a document" =
   with_tmp_vault
     ~files:[ "a.md", "# A\n\nLink: [[missing]]\n"; "b.md", "# B\n" ]
     (fun vault_root ->
-       let s = start_server ~vault_root in
+       let s = start_server ~vault_root () in
        did_open s ~rel_path:"a.md";
        did_open s ~rel_path:"b.md";
        Server.did_close s ~rel_path:"a.md";

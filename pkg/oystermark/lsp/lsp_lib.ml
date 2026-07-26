@@ -11,6 +11,7 @@
 
 module Util = Lsp_util
 module Config = Lsp_config
+module Daily_notes = Daily_notes
 module Link_collect = Link_collect
 module Go_to_definition = Go_to_definition
 module Completion = Completion

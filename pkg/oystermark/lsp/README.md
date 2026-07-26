@@ -66,6 +66,19 @@ logic of its own. Spec: [feature-attribute-anchors.mld](docs/feature-attribute-a
 | Inlay hints | Reference counts next to headings and at the top of the file. | [inlay-hints](docs/feature-inlay-hints.mld) |
 | Rename | Renames a note and rewrites the links pointing at it. | [rename](docs/feature-rename.mld) |
 | Code action | Creates the note behind an unresolved link. | [codeaction](docs/feature-codeaction-create-unresolved-link.mld) |
+| Daily notes | Open or create today's / yesterday's / tomorrow's note, and jump to the previous or next existing one. | [daily-notes](docs/feature-daily-notes.mld) |
+
+Daily notes are configured through the client's `initializationOptions`:
+
+```json
+{ "dailyNotes": { "format": "YYYY/MM/YYYY-MM-DD", "folder": "journal" } }
+```
+
+`format` is a subset of the [moment.js](https://momentjs.com/docs/#/displaying/format/)
+tokens and may contain `/` to nest notes in folders; `folder` defaults to the
+vault root. Obsidian's own `.obsidian/daily-notes.json` is not read — see
+[the reference spec](../../../specification/obsidian/daily-notes.md) for how
+Obsidian behaves.
 
 Positions are UTF-16 code units, per the LSP spec — see
 [feature-utf16-positions](docs/feature-utf16-positions.mld).

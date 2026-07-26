@@ -285,15 +285,19 @@ let%test_module "go_to_definition" =
     let show_link ~(rel_path : string) ~(content : string) ~(label : string) needle =
       let offset = Option.value_exn (String.substr_index content ~pattern:needle) + 3 in
       let line, character = Lsp_util.position_of_byte_offset content offset in
-      let res = go_to_definition ~read_file ~index ~rel_path ~content ~line ~character () in
+      let res =
+        go_to_definition ~read_file ~index ~rel_path ~content ~line ~character ()
+      in
       match res with
       | None -> printf "%-28s -> unresolved\n" label
       | Some { path; line; character } ->
         printf "%-28s -> %s:%d:%d\n" label path line character
     ;;
 
-    let%expect_test "intra-note: {wikilink, markdown link} x {heading, block \
-                     attribute, inline attribute}" =
+    let%expect_test
+        "intra-note: {wikilink, markdown link} x {heading, block attribute, inline \
+         attribute}"
+      =
       let rel_path = "note-m.md" in
       let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
       let show ~label needle = show_link ~rel_path ~content ~label needle in
@@ -303,7 +307,8 @@ let%test_module "go_to_definition" =
       show ~label:"markdown link x heading" "[h](#Mu)";
       show ~label:"markdown link x block attr" "[a](#aside)";
       show ~label:"markdown link x inline attr" "[k](#kt)";
-      [%expect {|
+      [%expect
+        {|
         wikilink x heading           -> note-m.md:1:0
         wikilink x block attr        -> note-m.md:6:0
         wikilink x inline attr       -> note-m.md:3:4

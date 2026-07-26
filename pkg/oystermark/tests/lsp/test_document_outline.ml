@@ -61,7 +61,7 @@ let%expect_test "unknown file has no outline" =
 
 let%expect_test "server: documentSymbol returns a hierarchical result" =
   let vault_root = Filename.concat (Core_unix.getcwd ()) "data" in
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-a.md";
   let rec print_symbols depth (symbols : DocumentSymbol.t list) =
     List.iter symbols ~f:(fun (symbol : DocumentSymbol.t) ->

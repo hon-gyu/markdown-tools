@@ -32,7 +32,7 @@ let files =
 let index = Vault_helper.make_index files
 
 let%expect_test "server: wikilink to note" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:2 ~character:13 |> definition_result s
@@ -42,7 +42,7 @@ let%expect_test "server: wikilink to note" =
 ;;
 
 let%expect_test "server: wikilink to heading" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:4 ~character:10 |> definition_result s
@@ -52,7 +52,7 @@ let%expect_test "server: wikilink to heading" =
 ;;
 
 let%expect_test "server: wikilink to block id" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:6 ~character:10 |> definition_result s
@@ -66,7 +66,7 @@ let%expect_test "server: wikilink to block id" =
    See {!page-"feature-attribute-anchors"} and
    {!page-"feature-go-to-definition".target_position}. *)
 let%expect_test "server: wikilink to inline attribute anchor (column-precise)" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"anchor-source.md";
   let result =
     Server.definition s ~rel_path:"anchor-source.md" ~line:2 ~character:10
@@ -77,7 +77,7 @@ let%expect_test "server: wikilink to inline attribute anchor (column-precise)" =
 ;;
 
 let%expect_test "server: markdown link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:8 ~character:18 |> definition_result s
@@ -87,7 +87,7 @@ let%expect_test "server: markdown link" =
 ;;
 
 let%expect_test "server: unresolved link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:10 ~character:16
@@ -98,7 +98,7 @@ let%expect_test "server: unresolved link" =
 ;;
 
 let%expect_test "server: cursor not on link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.definition s ~rel_path:"note-b.md" ~line:0 ~character:2 |> definition_result s
@@ -108,7 +108,7 @@ let%expect_test "server: cursor not on link" =
 ;;
 
 let%expect_test "server: cross-directory link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"subdir/nested.md";
   let result =
     Server.definition s ~rel_path:"subdir/nested.md" ~line:2 ~character:13

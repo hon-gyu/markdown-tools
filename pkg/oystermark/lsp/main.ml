@@ -13,6 +13,11 @@ class oystermark_server ~sw =
   object (self)
     inherit Linol_eio.Jsonrpc2.server as super
     val server : Server.t = Server.create ()
+
+    (** Whether the client advertised [window/showDocument] at [initialize].
+        Set once, read by the daily-note command. *)
+    val mutable can_show_document : bool = false
+
     method spawn_query_handler f = Linol_eio.spawn ~sw f
     method! config_definition = Some (`Bool true)
     method! config_hover = Some (`Bool true)
@@ -20,8 +25,12 @@ class oystermark_server ~sw =
     method! config_symbol = Some (`Bool true)
 
     method! config_code_action_provider =
+      (* [Refactor] carries the daily-note actions, which no diagnostic
+         underlies. See {!page-"feature-daily-notes"}. *)
       `CodeActionOptions
-        (CodeActionOptions.create ~codeActionKinds:[ CodeActionKind.QuickFix ] ())
+        (CodeActionOptions.create
+           ~codeActionKinds:[ CodeActionKind.QuickFix; CodeActionKind.Refactor ]
+           ())
 
     method! config_completion : CompletionOptions.t option =
       (* [[[] opens a wikilink; [#] starts a fragment. See {!page-"feature-completion"}. *)
@@ -35,6 +44,8 @@ class oystermark_server ~sw =
       ; renameProvider =
           Some (`RenameOptions (RenameOptions.create ~prepareProvider:true ()))
       ; positionEncoding = Some PositionEncodingKind.UTF16
+      ; executeCommandProvider =
+          Some (ExecuteCommandOptions.create ~commands:[ Server.daily_note_command ] ())
       }
 
     method! config_sync_opts : TextDocumentSyncOptions.t =
@@ -59,7 +70,17 @@ class oystermark_server ~sw =
         | Some uri -> Some (DocumentUri.to_path uri)
         | None -> Option.join params.rootPath
       in
-      Option.iter root ~f:(fun root -> Server.initialize server ~root);
+      (* [initializationOptions] is forwarded raw: parsing it, and tolerating a
+         malformed one, is {!Lsp_lib.Config}'s job. *)
+      Option.iter root ~f:(fun root ->
+        Server.initialize server ~root ?init_options:params.initializationOptions ());
+      (* The client tells us here whether it can honor [window/showDocument];
+         the daily-note command degrades when it cannot. See
+         {!page-"feature-daily-notes"}. *)
+      can_show_document
+      <- (match params.capabilities.window with
+          | Some { showDocument = Some { support }; _ } -> support
+          | _ -> false);
       super#on_req_initialize ~notify_back params
 
     (* Document synchronization
@@ -196,7 +217,7 @@ class oystermark_server ~sw =
         {!Linol_eio.Jsonrpc2.server}, so they arrive here. *)
     method! on_request_unhandled
       : type r. notify_back:_ -> id:_ -> r Linol.Lsp.Client_request.t -> r =
-      fun ~notify_back:_ ~id:_ (req : r Linol.Lsp.Client_request.t) ->
+      fun ~notify_back ~id:_ (req : r Linol.Lsp.Client_request.t) ->
         match req with
         | Linol.Lsp.Client_request.TextDocumentReferences params ->
           Server.references
@@ -217,7 +238,47 @@ class oystermark_server ~sw =
             ~line:params.position.line
             ~character:params.position.character
             ~new_name:params.newName
+        | Linol.Lsp.Client_request.ExecuteCommand params ->
+          self#execute_command ~notify_back ~params
         | _ -> failwith "unhandled request"
+
+    (** Run a server command.  The decision of {i what} to do is
+        {!Lsp_lib.Server.execute_command}'s; this only turns the resulting
+        {!Lsp_lib.Server.open_note} into the two protocol effects — create the
+        file, then focus it.  See {!page-"feature-daily-notes"}. *)
+    method
+      private execute_command
+      ~notify_back
+      ~(params : ExecuteCommandParams.t)
+      : Yojson.Safe.t =
+      match
+        Server.execute_command server ~command:params.command ~arguments:params.arguments
+      with
+      | None -> `Null
+      | Some { uri; create } ->
+        (* Both are fire-and-forget: the client's acknowledgement carries
+           nothing this command needs. *)
+        let ignore_response _ = () in
+        Option.iter create ~f:(fun edit ->
+          let _ =
+            notify_back#send_request
+              (Linol.Lsp.Server_request.WorkspaceApplyEdit
+                 (ApplyWorkspaceEditParams.create ~edit ()))
+              ignore_response
+          in
+          ());
+        if can_show_document
+        then (
+          let _ =
+            notify_back#send_request
+              (Linol.Lsp.Server_request.ShowDocumentRequest
+                 (ShowDocumentParams.create ~takeFocus:true ~uri ()))
+              ignore_response
+          in
+          ());
+        (* A client without [window/showDocument] still gets the note created;
+           the path is the answer it can act on. *)
+        `String (DocumentUri.to_path uri)
   end
 
 let () =

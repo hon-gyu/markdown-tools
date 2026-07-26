@@ -16,6 +16,7 @@
   {- {!page-"feature-rename"}}
   {- {!page-"feature-document-outline"}}
   {- {!page-"feature-codeaction-create-unresolved-link"}}
+  {- {!page-"feature-daily-notes"}}
   {- {!page-"feature-inlay-hints"}}
   {- {!page-"feature-completion"}}
   {- {!page-"feature-utf16-positions"}}

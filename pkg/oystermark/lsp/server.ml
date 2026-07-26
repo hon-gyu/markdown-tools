@@ -36,11 +36,37 @@ type t =
           the editor currently has open.  Diagnostics and the
           cursor-position features answer against this; the rest read from
           disk.  See {!page-"feature-document-sync"}. *)
+  ; mutable config : Lsp_config.t
+    (** Client-supplied settings, seen once at {!initialize}. *)
+  ; mutable daily_table : (Date.t * Daily_notes.Table.t) option
+    (** Memoized recognition table with the date it was built for; a server
+          left running overnight rebuilds it.  See
+          {!page-"feature-daily-notes".recognition}. *)
+  ; now : unit -> Date.t
+    (** The clock, as a dependency: daily-note answers depend on today's date,
+          and a test that cannot fix "today" would change meaning overnight. *)
   }
 
 let build_vault = Oystermark.Vault.of_root_path ~skip_expand:true
-let create () : t = { vault = None; open_docs = String.Table.create () }
-let initialize (t : t) ~(root : string) : unit = t.vault <- Some (build_vault root)
+
+(** Today in the machine's own timezone — the real clock, used unless a caller
+    substitutes one. *)
+let system_today () : Date.t = Date.today ~zone:(Lazy.force Time_float_unix.Zone.local)
+
+let create ?(now : unit -> Date.t = system_today) () : t =
+  { vault = None
+  ; open_docs = String.Table.create ()
+  ; config = Lsp_config.default
+  ; daily_table = None
+  ; now
+  }
+;;
+
+let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+  t.config <- Lsp_config.of_initialization_options init_options;
+  t.daily_table <- None;
+  t.vault <- Some (build_vault root)
+;;
 
 let rebuild_vault (t : t) : unit =
   match t.vault with
@@ -357,6 +383,142 @@ let document_symbol (t : t) ~(rel_path : string) : DocumentSymbol.t list option 
     |> Option.return
 ;;
 
+(* Daily notes
+   ============
+
+   See {!page-"feature-daily-notes"}. *)
+
+(** The command a daily-note code action carries.  A code action cannot focus
+    an editor by itself, so the action defers to this command, which the client
+    sends back as [workspace/executeCommand]. *)
+let daily_note_command = "oystermark.dailyNote.open"
+
+(** What {!execute_command} decided should happen.  Returning an intent rather
+    than performing it keeps the protocol effects — [workspace/applyEdit] and
+    [window/showDocument] — in the adapter, and this decision testable. *)
+type open_note =
+  { uri : DocumentUri.t
+  ; create : WorkspaceEdit.t option (** [None] when the note already exists. *)
+  }
+
+(** Whether a vault-relative path exists on disk.  Read from disk rather than
+    the index because a note created moments ago by this very command has not
+    been indexed yet. *)
+let file_exists (t : t) (rel_path : string) : bool =
+  match vault_root t with
+  | None -> false
+  | Some root -> Stdlib.Sys.file_exists (Filename.concat root rel_path)
+;;
+
+(** The recognition table for the configured settings, rebuilt when the day
+    turns over.  [Error] when the configured format is unsupported, which
+    disables the daily-note actions. *)
+let daily_table (t : t) : (Daily_notes.Table.t, string) Result.t =
+  match Lsp_config.daily_notes_settings t.config with
+  | Error _ as e -> e
+  | Ok settings ->
+    let today = t.now () in
+    (match t.daily_table with
+     | Some (built_for, table) when Date.equal built_for today -> Ok table
+     | _ ->
+       let table = Daily_notes.Table.create settings ~today in
+       t.daily_table <- Some (today, table);
+       Ok table)
+;;
+
+(** One daily-note code action: a title that says whether the note will be
+    created, and the command that opens it. *)
+let daily_note_action (t : t) ~(title : string) ~(path : string) : CodeAction.t =
+  let exists = file_exists t path in
+  CodeAction.create
+    ~title:(sprintf "%s %s" (if exists then "Open" else "Create") title)
+    ~kind:CodeActionKind.Refactor
+    ~command:
+      (Command.create
+         ~title
+         ~command:daily_note_command
+         ~arguments:[ `String path; `Bool (not exists) ]
+         ())
+    ()
+;;
+
+(** The daily-note actions available at [rel_path].
+
+    The calendar family is always offered and creates on demand; the existing
+    family is offered only from a file that is itself a daily note, and only
+    when there is somewhere to go.  See {!page-"feature-daily-notes"}. *)
+let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
+  match daily_table t with
+  | Error _ -> []
+  | Ok table ->
+    let settings = table.Daily_notes.Table.settings in
+    let today = t.now () in
+    let calendar =
+      [ "today's daily note", today
+      ; "yesterday's daily note", Date.add_days today (-1)
+      ; "tomorrow's daily note", Date.add_days today 1
+      ]
+      |> List.map ~f:(fun (title, date) ->
+        daily_note_action t ~title ~path:(Daily_notes.path_of_date settings date))
+    in
+    let existing =
+      match Daily_notes.Table.date_of_path table rel_path with
+      | None -> []
+      | Some date ->
+        let exists p = file_exists t p in
+        let step title f =
+          match f table ~exists date with
+          | None -> []
+          | Some (_, path) ->
+            [ CodeAction.create
+                ~title
+                ~kind:CodeActionKind.Refactor
+                ~command:
+                  (Command.create
+                     ~title
+                     ~command:daily_note_command
+                     ~arguments:[ `String path; `Bool false ]
+                     ())
+                ()
+            ]
+        in
+        step "Open previous daily note" Daily_notes.Table.previous_existing
+        @ step "Open next daily note" Daily_notes.Table.next_existing
+    in
+    calendar @ existing
+;;
+
+(** Handle [workspace/executeCommand].  [None] for an unknown command or
+    unusable arguments — an editor is free to send either. *)
+let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
+  : open_note option
+  =
+  match command, arguments with
+  | cmd, Some [ `String path; `Bool create ] when String.equal cmd daily_note_command ->
+    let uri = uri_of_rel_path t path in
+    let create =
+      if create && not (file_exists t path)
+      then
+        Some
+          (WorkspaceEdit.create
+             ~documentChanges:
+               [ `CreateFile
+                   (CreateFile.create
+                      ~uri
+                      ~options:
+                        (CreateFileOptions.create
+                           ~ignoreIfExists:true
+                           ~overwrite:false
+                           ())
+                      ())
+               ]
+             ())
+      else None
+    in
+    Some { uri; create }
+  | _ -> None
+;;
+
 let code_action
       (t : t)
       ?(only : CodeActionKind.t list option)
@@ -368,56 +530,62 @@ let code_action
       ()
   : CodeAction.t list
   =
-  let quick_fixes_requested =
+  let requested (kind : CodeActionKind.t) =
     match only with
     | None -> true
-    | Some kinds -> List.mem kinds CodeActionKind.QuickFix ~equal:Poly.equal
+    | Some kinds -> List.mem kinds kind ~equal:Poly.equal
   in
-  match t.vault with
-  | _ when not quick_fixes_requested -> []
-  | None -> []
-  | Some v ->
-    let content = disk_content t rel_path in
-    (match
-       Feature.Create_unresolved_note.action_at_range
-         ~index:v.index
-         ~rel_path
-         ~content
-         ~first_byte:
-           (byte_of_position content ~line:start_line ~character:start_character)
-         ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
-     with
-     | None -> []
-     | Some action ->
-       let target_uri = uri_of_rel_path t action.rel_path in
-       let create =
-         `CreateFile
-           (CreateFile.create
-              ~uri:target_uri
-              ~options:
-                (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
-              ())
-       in
-       let zero = Position.create ~line:0 ~character:0 in
-       let initialize =
-         `TextDocumentEdit
-           (TextDocumentEdit.create
-              ~textDocument:
-                (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
-              ~edits:
-                [ `TextEdit
-                    (TextEdit.create
-                       ~range:(Range.create ~start:zero ~end_:zero)
-                       ~newText:("# " ^ action.title ^ "\n"))
-                ])
-       in
-       [ CodeAction.create
-           ~title:(sprintf "Create note \"%s\"" action.rel_path)
-           ~kind:CodeActionKind.QuickFix
-           ~isPreferred:true
-           ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
-           ()
-       ])
+  let daily =
+    if requested CodeActionKind.Refactor then daily_note_actions t ~rel_path else []
+  in
+  let quick_fixes =
+    match t.vault with
+    | _ when not (requested CodeActionKind.QuickFix) -> []
+    | None -> []
+    | Some v ->
+      let content = disk_content t rel_path in
+      (match
+         Feature.Create_unresolved_note.action_at_range
+           ~index:v.index
+           ~rel_path
+           ~content
+           ~first_byte:
+             (byte_of_position content ~line:start_line ~character:start_character)
+           ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
+       with
+       | None -> []
+       | Some action ->
+         let target_uri = uri_of_rel_path t action.rel_path in
+         let create =
+           `CreateFile
+             (CreateFile.create
+                ~uri:target_uri
+                ~options:
+                  (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
+                ())
+         in
+         let zero = Position.create ~line:0 ~character:0 in
+         let initialize =
+           `TextDocumentEdit
+             (TextDocumentEdit.create
+                ~textDocument:
+                  (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
+                ~edits:
+                  [ `TextEdit
+                      (TextEdit.create
+                         ~range:(Range.create ~start:zero ~end_:zero)
+                         ~newText:("# " ^ action.title ^ "\n"))
+                  ])
+         in
+         [ CodeAction.create
+             ~title:(sprintf "Create note \"%s\"" action.rel_path)
+             ~kind:CodeActionKind.QuickFix
+             ~isPreferred:true
+             ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
+             ()
+         ])
+  in
+  quick_fixes @ daily
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
