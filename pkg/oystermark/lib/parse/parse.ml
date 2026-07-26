@@ -62,11 +62,22 @@ let of_string
       ~locs:true
       ~heading_auto_ids:true
       ~block_id:true
-      ~div:true
       ~wikilink:true
+      ~callout:(Block.Callout.Config.make ())
+      (* Djot extensions begin *)
+      ~div:true
       ~inline_attributes:true
       ~block_attributes:true
-      ~callout:(Block.Callout.Config.make ())
+      ~intraword_emphasis:true
+      ~marked_emphasis_delims:true
+      ~extra_inline_containers:Inline.Extra_inline_container.Config.djot
+      ~underscore_thematic_break:true
+      ~colon_symbols:true
+      ~extended_ordered_list_styles:true
+      ~table_captions:true
+      ~multiline_atx_headings:true
+      ~smart_punctuation:true
+      (* Djot extensions end *)
       body
   in
   let body_doc = Mapper.map_doc (mk_mapper ()) cmarkit_doc in
