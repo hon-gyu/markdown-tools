@@ -34,7 +34,7 @@ let mk_mapper () : Cmarkit.Mapper.t =
   Cmarkit.Mapper.make
     ~inline_ext_default:(fun _m i -> Some i)
     ~block:
-      (compose_all_block_maps [ Heading_slug.mk_block_map (); Cb_attribute.block_map ])
+      (compose_block_maps [ Heading_slug.mk_block_map (); Cb_attribute.block_map ])
     ()
 ;;
 

@@ -23,11 +23,11 @@ let compose_inline_map (m1 : Inline.t Mapper.mapper) (m2 : Inline.t Mapper.mappe
      | other -> other)
 ;;
 
-let compose_all_block_maps (ms : Block.t Mapper.mapper list) =
+let compose_block_maps (ms : Block.t Mapper.mapper list) =
   List.fold_right ms ~init:(fun m b -> Mapper.default) ~f:compose_block_map
 ;;
 
-let compose_all_inline_maps (ms : Inline.t Mapper.mapper list) =
+let compose_inline_maps (ms : Inline.t Mapper.mapper list) =
   List.fold_right ms ~init:(fun m i -> Mapper.default) ~f:compose_inline_map
 ;;
 
