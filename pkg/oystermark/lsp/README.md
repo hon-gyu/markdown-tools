@@ -76,7 +76,8 @@ Daily notes are configured through the client's `initializationOptions`:
 
 `format` is a subset of the [moment.js](https://momentjs.com/docs/#/displaying/format/)
 tokens and may contain `/` to nest notes in folders; `folder` defaults to the
-vault root. Obsidian's own `.obsidian/daily-notes.json` is not read — see
+vault root. A format the server cannot support disables the feature and is
+reported as a warning message at startup. Obsidian's own `.obsidian/daily-notes.json` is not read — see
 [the reference spec](../../../specification/obsidian/daily-notes.md) for how
 Obsidian behaves.
 

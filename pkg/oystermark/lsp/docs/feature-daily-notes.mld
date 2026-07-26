@@ -76,10 +76,16 @@ no daily-note action is offered — rather than silently naming the wrong file.
 Week-based tokens ([ww], [gggg]) are excluded on purpose: they do not identify a
 single day.
 
-{b Not yet implemented}: the rejection is silent. The validation error is
-computed ({!Lsp_lib.Config.daily_notes_settings} returns it) but never reaches
-the user, so a mistyped format looks like a missing feature. Surfacing it as a
-[window/showMessage] at initialize is the obvious fix.
+A rejection is {b reported}, once, as a [window/showMessage] of severity
+[Warning] at initialize, naming what was wrong with the format. Offering no
+action is also what a correctly configured server does when it has nothing to
+offer, so without the message a mistyped format would be indistinguishable from
+a feature that is simply absent. {!Lsp_lib.Config.daily_notes_settings}
+computes the error, {!Lsp_lib.Server.daily_notes_error} holds it from
+initialize onward, and the adapter sends it.
+
+Nothing is reported later: the settings arrive once, so a repeat on every code
+action would say the same thing indefinitely.
 
 A format is also rejected when it starts with [/], or when the text it produces
 contains a path-illegal character. This matches the validation Obsidian's

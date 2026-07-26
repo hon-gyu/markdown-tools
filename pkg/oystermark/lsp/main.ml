@@ -81,6 +81,17 @@ class oystermark_server ~sw =
       <- (match params.capabilities.window with
           | Some { showDocument = Some { support }; _ } -> support
           | _ -> false);
+      (* A rejected daily-note format is reported here, once.  [showMessage] is
+         one of the few notifications the protocol allows before the
+         [initialize] result, and the alternative — staying quiet — makes a
+         typo look like a missing feature.  See
+         {!page-"feature-daily-notes".format}. *)
+      Option.iter (Server.daily_notes_error server) ~f:(fun message ->
+        notify_back#send_notification
+          (Linol.Lsp.Server_notification.ShowMessage
+             (ShowMessageParams.create
+                ~type_:MessageType.Warning
+                ~message:(sprintf "oystermark: daily notes disabled — %s" message))));
       super#on_req_initialize ~notify_back params
 
     (* Document synchronization

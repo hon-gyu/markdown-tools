@@ -15,7 +15,7 @@ type fragment_behavior =
 
 (** Daily-note settings as written by the client, before validation.  Held as
     strings so {!t} stays comparable; {!daily_notes_settings} turns them into a
-    {!Daily_notes.settings}, or an error when the format is unsupported.
+    {!Daily_notes.type-settings}, or an error when the format is unsupported.
     See {!page-"feature-daily-notes"}. *)
 type daily_notes =
   { format : string

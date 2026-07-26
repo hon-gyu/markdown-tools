@@ -27,7 +27,7 @@ val create : ?now:(unit -> Core.Date.t) -> unit -> t
 (** Build the vault from [root] and adopt the client's settings.  Called from
     [initialize] with its [rootUri] and [initializationOptions]; the options are
     taken raw so that parsing — and its tolerance for malformed input — lives in
-    {!Lsp_config}. *)
+    {!Lsp_lib.Config}. *)
 val initialize : t -> root:string -> ?init_options:Yojson.Safe.t -> unit -> unit
 
 (** The vault root, or [None] before {!initialize}. *)
@@ -45,6 +45,13 @@ val rel_path_of_uri : t -> DocumentUri.t -> string
 
 (** The command name advertised in [executeCommandProvider]. *)
 val daily_note_command : string
+
+(** [daily_notes_error t] is why the configured format was rejected — and hence
+    why no daily-note action is offered — or [None] when the settings are
+    usable.  Meaningful only after {!initialize}.  The adapter reports it once,
+    since a silent rejection is indistinguishable from an absent feature.
+    See {!page-"feature-daily-notes".format}. *)
+val daily_notes_error : t -> string option
 
 (** What running {!daily_note_command} decided: the note to focus, and the edit
     that creates it first when it does not exist. *)
