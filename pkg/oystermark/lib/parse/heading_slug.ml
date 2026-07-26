@@ -1,9 +1,24 @@
-(** Add slug to the metadata of headings
+(** Add slug to the metadata of headings.
 
-    Heading slug generation: GitHub-style anchors with deduplication.
+    {b Deprecated, and no longer wired into {!Oystermark.Parse.of_string}.} The
+    parser assigns heading identifiers itself now: [Doc.of_string] is called with
+    [~heading_auto_ids:true] and the identifier lives in {!Cmarkit.Block.Heading.id},
+    read via {!Common.heading_id}. Nothing stamps {!meta_key} any more, so
+    {!sexp_of_meta} prints nothing and {!mk_block_map} is unused.
 
-    Slugs are stamped onto heading blocks' [Cmarkit.Meta.t] during parsing,
-    providing a single source of truth for heading identifiers. *)
+    It is kept for reference, because it documents what oyster used to mean by a
+    heading identifier and the two differ:
+
+    - {!slugify} is GitHub-style — every non-alphanumeric byte becomes [-], runs
+      collapse, case is folded — whereas the parser follows CommonMark's
+      {!Cmarkit.Inline.id}, which {e drops} punctuation instead: [foo/bar] was
+      [foo-bar] and is now [foobar].
+    - Deduplication was over one pass of one document, keyed by base slug. The
+      parser's is in document order and counts explicit [ {#id} ] attributes as
+      taken.
+
+    New code must read {!Common.heading_id}, or {!Common.heading_id_of_text} to
+    resolve a fragment written as text. *)
 
 open Core
 
@@ -34,22 +49,10 @@ let dedup_slug (seen : (string, int) Hashtbl.t) (text : string) : string =
   if count = 0 then base else sprintf "%s-%d" base count
 ;;
 
-(** Render inlines to plain text, losing their markdown syntax. Used in rendering
-    heading to plain text. *)
-let inline_to_plain_text (inline : Cmarkit.Inline.t) : string =
-  let lines =
-    Cmarkit.Inline.to_plain_text
-      ~ext:(fun ~break_on_soft inline ->
-        match inline with
-        | Cmarkit.Inline.Ext_wikilink (wl, _meta) ->
-          let text = Cmarkit.Inline.Wikilink.to_plain_text wl in
-          Cmarkit.Inline.Text (text, Cmarkit.Meta.none)
-        | other -> other)
-      ~break_on_soft:false
-      inline
-  in
-  String.concat ~sep:"\n" (List.map lines ~f:(String.concat ~sep:""))
-;;
+(** Moved to {!Common.inline_to_plain_text}, which no longer needs an [~ext] for
+    wikilinks: [Cmarkit.Inline.to_plain_text] handles
+    [Cmarkit.Inline.Ext_wikilink] itself. *)
+let inline_to_plain_text = Common.inline_to_plain_text
 
 let mk_block_map () : Cmarkit.Block.t Cmarkit.Mapper.mapper =
   let open Cmarkit.Mapper in

@@ -31,6 +31,26 @@ let compose_inline_maps (ms : Inline.t Mapper.mapper list) =
   List.fold_right ms ~init:(fun m i -> Mapper.default) ~f:compose_inline_map
 ;;
 
+let heading_id (h : Block.Heading.t) : string option =
+  match Block.Heading.id h with
+  | Some (`Auto id | `Id id) -> Some id
+  | None -> None
+;;
+
+(** The identifier the parser would derive from heading text [s]. For resolving a
+    link fragment written as text, e.g. a wikilink [ [[note#Some Heading]] ] —
+    against {!heading_id}. Matches the first heading of that text. *)
+let heading_id_of_text (s : string) : string =
+  Inline.id (Inline.Text (s, Meta.none))
+;;
+
+(** Render inlines to plain text, losing their markdown syntax. Used to render a
+    heading to the plain text that names it. *)
+let inline_to_plain_text (inline : Inline.t) : string =
+  let lines = Inline.to_plain_text ~break_on_soft:false inline in
+  String.concat ~sep:"\n" (List.map lines ~f:(String.concat ~sep:""))
+;;
+
 (** Reconstruct a fork {!Cmarkit.Block.Div.t} with a new [body], preserving its
     indent/fences/class so commonmark roundtrip is unaffected. Used by passes
     that recurse into a div's body (e.g. Struct, block attributes). *)

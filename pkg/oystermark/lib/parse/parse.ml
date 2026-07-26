@@ -18,7 +18,6 @@ open Core
 open Common
 module Common = Common
 module Frontmatter = Frontmatter
-module Heading_slug = Heading_slug
 module Cb_attribute = Cb_attribute
 module Textloc_conv = Textloc_conv
 module Struct = Struct
@@ -33,15 +32,14 @@ type block_id =
 let mk_mapper () : Cmarkit.Mapper.t =
   Cmarkit.Mapper.make
     ~inline_ext_default:(fun _m i -> Some i)
-    ~block:
-      (compose_block_maps [ Heading_slug.mk_block_map (); Cb_attribute.block_map ])
+    ~block:(compose_block_maps [ Cb_attribute.block_map ])
     ()
 ;;
 
 (** [of_string ?strict ?layout s] parses markdown string [s] into a
     [Cmarkit.Doc.t] with frontmatter embedded as a {!Frontmatter.Frontmatter}
-    block and wikilinks/block IDs parsed. Heading slugs are stamped onto
-    heading block metadata. *)
+    block and wikilinks/block IDs parsed. Heading identifiers are assigned by the
+    parser ([~heading_auto_ids:true]) and read via {!Common.heading_id}. *)
 let of_string
       (* Cmarkit config *)
       ?(strict = false)
@@ -62,6 +60,7 @@ let of_string
       ~strict
       ~layout
       ~locs:true
+      ~heading_auto_ids:true
       ~block_id:true
       ~div:true
       ~wikilink:true
@@ -208,12 +207,7 @@ let sexp_of_ =
       ; Struct.sexp_of_block
       ; block_attributes_sexp_of_block
       ]
-    ~metas:
-      [ Heading_slug.sexp_of_meta
-      ; block_id_sexp_of_meta
-      ; callout_sexp_of_meta
-      ; Cb_attribute.sexp_of_meta
-      ]
+    ~metas:[ block_id_sexp_of_meta; callout_sexp_of_meta; Cb_attribute.sexp_of_meta ]
     ()
 ;;
 

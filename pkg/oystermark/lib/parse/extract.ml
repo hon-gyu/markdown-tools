@@ -12,8 +12,8 @@ let rec flatten (blocks : Cmarkit.Block.t list) : Cmarkit.Block.t list =
     | other -> [ other ])
 ;;
 
-(** Collect the section starting at the heading with id stamped in
-    {!module:Heading_slug}, up to (but not including) the
+(** Collect the section starting at the heading whose identifier (see
+    {!Common.heading_id}) is [heading_id], up to (but not including) the
     next heading of equal or lesser level.  Returns [] when the heading is not
     found. *)
 let get_heading_section (blocks : Cmarkit.Block.t list) (heading_id : string)
@@ -28,8 +28,8 @@ let get_heading_section (blocks : Cmarkit.Block.t list) (heading_id : string)
     | [] -> None
     | block :: rest ->
       (match block with
-       | Block.Heading (h, meta) ->
-         (match Meta.find Heading_slug.meta_key meta with
+       | Block.Heading (h, _meta) ->
+         (match Common.heading_id h with
           | Some id when String.equal id heading_id ->
             Some (block, Block.Heading.level h, rest)
           | _ -> find_heading rest)

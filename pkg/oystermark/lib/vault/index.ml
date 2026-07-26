@@ -7,7 +7,9 @@ type heading_entry =
   { text : string
   ; level : int
   ; slug : string
-    (** GitHub-style anchor: lowercase, punctuation stripped, deduped with [-1], [-2], etc. *)
+    (** The identifier the parser gave the heading: case-folded, punctuation
+        dropped, spaces to [-], deduped with [-1], [-2], … See
+        {!Parse.Common.heading_id}. *)
   ; loc : Cmarkit.Textloc.t option
   }
 
@@ -40,7 +42,7 @@ type t =
   }
 
 (* Use Cmarkit.Folder to extract headings from a document.
-   Reads slugs from heading block meta (stamped during parsing). *)
+   Reads the identifier the parser assigned, see {!Parse.Common.heading_id}. *)
 let extract_headings (doc : Cmarkit.Doc.t) : heading_entry list =
   let folder =
     Cmarkit.Folder.make
@@ -48,12 +50,12 @@ let extract_headings (doc : Cmarkit.Doc.t) : heading_entry list =
         match block with
         | Cmarkit.Block.Heading (h, meta) ->
           let level = Cmarkit.Block.Heading.level h in
-          let text = Heading_slug.inline_to_plain_text (Cmarkit.Block.Heading.inline h) in
+          let text = Common.inline_to_plain_text (Cmarkit.Block.Heading.inline h) in
           let slug =
-            Cmarkit.Meta.find Heading_slug.meta_key meta
+            Common.heading_id h
             |> Option.value_exn
                  ~message:
-                   "heading missing slug meta — doc must be parsed via Parse.of_string"
+                   "heading missing identifier — doc must be parsed via Parse.of_string"
           in
           let loc =
             let tl = Cmarkit.Meta.textloc meta in
@@ -98,10 +100,10 @@ let extract_block_ids (doc : Cmarkit.Doc.t) : block_entry list =
 
 (* Extract explicit djot attribute ids ([{#id}]) from a document.
 
-   Attribute ids come from three AST sources (see {!page-"feature-attribute-anchors"}):
-   - [Block.Ext_attributes]: a djot attribute line attached to a block.
+   Attribute ids come from two AST sources (see {!page-"feature-attribute-anchors"}):
+   - [Block.Ext_attributes]: a djot attribute line attached to a block, a heading
+     included — the heading's own [`Id] mirrors it, see below.
    - [Inline.Ext_attributes]: [{#id}] attached to an inline span (column-precise).
-   - a heading carrying an explicitly-supplied [`Id], distinct from its slug.
 
    The [Ext_attributes] wrappers are visited by the top-level folder callback and
    then recursed into manually, so ids nested inside an attributed block/span are
@@ -132,10 +134,10 @@ let extract_attr_ids (doc : Cmarkit.Doc.t) : attr_entry list =
           let acc = add_attr acc (Cmarkit.Block.Attributes.attributes a) meta in
           Cmarkit.Folder.ret
             (Cmarkit.Folder.fold_block f acc (Cmarkit.Block.Attributes.block a))
-        | Cmarkit.Block.Heading (h, meta) ->
-          (match Cmarkit.Block.Heading.id h with
-           | Some (`Id id) -> Cmarkit.Folder.ret (add_id acc id meta)
-           | Some (`Auto _) | None -> Cmarkit.Folder.default)
+        (* A heading's [`Id] is not collected here: the parser resolves it from
+           the [ {#id} ] line above the heading, which is the [Ext_attributes]
+           wrapper visited above — collecting both would report the anchor twice,
+           and the attribute line is the better place to jump to. *)
         | _ -> Cmarkit.Folder.default)
       ~inline_ext_default:(fun _f acc _i -> acc)
       ~block_ext_default:(fun _f acc _b -> acc)
@@ -188,7 +190,7 @@ let%expect_test "extract_headings" =
     {|
     H1: Title [title]
     H2: Chapter 1 [chapter-1]
-    H3: Section 1.1 [section-1-1]
+    H3: Section 1.1 [section-11]
     H2: Chapter 2 [chapter-2]
     H4: Deep [deep]
     |}]
