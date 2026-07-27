@@ -82,6 +82,25 @@ logic of its own. Spec: [feature-attribute-anchors.mld](docs/feature-attribute-a
 | Daily notes | Open or create today's / yesterday's / tomorrow's note, and jump to the previous or next existing one. | [daily-notes](docs/feature-daily-notes.mld) |
 | Command block | A fenced `oysterlsp` block whose lines become clickable code lenses — a small control panel inside a note. | [command-block](docs/feature-command-block.mld) |
 
+## Demo vault
+
+[demo-vault/](demo-vault/) is a vault where every feature in the table above
+has somewhere to be tried. Open the directory as the workspace root — it
+carries its own `oysterlsp.json` — and start from `start-here.md`.
+
+Its control panel, `command-panel.md`, is generated from
+`Command_block.all_of_command` by a dune rule and promoted into the source
+tree, so a new command appears there on the next build rather than the note
+quietly going out of date. Regenerate it with:
+
+```bash
+dune build @demo-vault
+```
+
+The vault is a demo, not a test: nothing asserts against it. Two of its notes
+are wrong on purpose — `notes/diagnostics.md` and the unresolved section of
+`notes/links.md` — and everything else in it should be quiet.
+
 ## Adapter smoke check
 
 `tests/lsp/` drives `Lsp_lib.Server` in process, so `main.ml` — capability

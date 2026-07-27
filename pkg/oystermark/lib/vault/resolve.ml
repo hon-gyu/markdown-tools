@@ -94,8 +94,30 @@ let%expect_test "is_path_subsequence" =
     |}]
 ;;
 
-(** Resolve a target string to a file entry. Exact match first, then subsequence. *)
-let resolve_file (files : Index.file_entry list) (target_str : string)
+(** How good a subsequence match is, smaller being better: its depth, then
+    whether it sits in the linking note's own folder.
+
+    A bare [ [[note]] ] names no directory, so every [note.md] in the vault
+    matches it.  Ranking them is not a preference, it is the difference between
+    an answer and whichever answer the filesystem listed first.  See
+    {b Ranking Multiple Matches} in [specification/obsidian/link-resolution.md],
+    where the order is measured against Obsidian itself: depth wins first, and
+    a sibling of the linking note only breaks a tie between equal depths. *)
+let match_rank ~(source_dir : string) (f : Index.file_entry) : int * int =
+  let depth = List.length (String.split f.rel_path ~on:'/') in
+  let in_source_dir =
+    if String.equal (Filename.dirname f.rel_path) source_dir then 0 else 1
+  in
+  depth, in_source_dir
+;;
+
+(** Resolve a target string to a file entry, as written in [source].
+
+    Exact match on the whole vault-relative path first, then the best
+    subsequence match.  Candidates that tie on every rank keep index order —
+    arbitrary, as it is in Obsidian, but at least it is the same arbitrary
+    answer every time the index is built the same way. *)
+let resolve_file ~(source : string) (files : Index.file_entry list) (target_str : string)
   : Index.file_entry option
   =
   let normalize_target s = if String.mem s '.' then s else s ^ ".md" in
@@ -106,9 +128,16 @@ let resolve_file (files : Index.file_entry list) (target_str : string)
   | None ->
     (* Subsequence match: split needle into path components *)
     let needle = String.split normalized ~on:'/' in
-    List.find files ~f:(fun f ->
+    let source_dir = Filename.dirname source in
+    List.filter files ~f:(fun f ->
       let haystack = String.split f.rel_path ~on:'/' in
       is_path_subsequence ~haystack ~needle)
+    |> List.fold ~init:None ~f:(fun best (f : Index.file_entry) ->
+      match best with
+      | Some b
+        when [%compare: int * int] (match_rank ~source_dir b) (match_rank ~source_dir f)
+             <= 0 -> best
+      | _ -> Some f)
 ;;
 
 (** Resolve a heading query (list of heading texts) against document headings.
@@ -198,7 +227,7 @@ let resolve (link_ref : Link_ref.t) (curr_file : string) (index : Index.t) : tar
               | None -> Curr_file))
         | None -> Curr_file))
   | Some target_str ->
-    (match resolve_file index.files target_str with
+    (match resolve_file ~source:curr_file index.files target_str with
      | None -> Unresolved
      | Some file ->
        let file_or_note (path : string) : target =
@@ -271,4 +300,64 @@ let resolve_docs (docs : (string * Cmarkit.Doc.t) list) (index : Index.t)
   List.map docs ~f:(fun (rel_path, doc) ->
     let mapper = resolution_cmarkit_mapper ~index ~curr_file:rel_path in
     rel_path, Cmarkit.Mapper.map_doc mapper doc)
+;;
+
+(* The vault of [specification/obsidian/link-resolution.md]'s "Ranking Multiple
+   Matches", note for note, so the expectations below can be read against the
+   evidence table there — each was measured against Obsidian itself via
+   [pkg/oystermark/obsidian-resolver]. [mmm/s7.md] precedes [bbb/s7.md] because
+   its folder was created first, which is the order Obsidian broke that tie by
+   and the only part of the ranking an author cannot predict. *)
+let%expect_test "ranking multiple subsequence matches" =
+  let files =
+    List.map
+      [ "s1.md"
+      ; "s2.md"
+      ; "aaa/s5.md"
+      ; "mmm/s7.md"
+      ; "bbb/s7.md"
+      ; "zzz/s6.md"
+      ; "notes/probe.md"
+      ; "notes/s1.md"
+      ; "notes/s3.md"
+      ; "notes/s5.md"
+      ; "notes/s6.md"
+      ; "deep/a/s1.md"
+      ; "deep/a/s2.md"
+      ; "deep/a/s3.md"
+      ; "deep/a/s4.md"
+      ; "deep/b/s4.md"
+      ]
+      ~f:(fun rel_path : Index.file_entry ->
+        { rel_path; headings = []; blocks = []; attrs = [] })
+  in
+  let resolve_from source target =
+    printf
+      "%-14s [[%s]] -> %s\n"
+      source
+      target
+      (match resolve_file ~source files target with
+       | Some f -> f.rel_path
+       | None -> "<unresolved>")
+  in
+  List.iter [ "s1"; "s2"; "s3"; "s4"; "s5"; "s6"; "s7" ] ~f:(fun t ->
+    resolve_from "notes/probe.md" t);
+  resolve_from "notes/probe.md" "notes/s1";
+  resolve_from "notes/probe.md" "deep/a/s1";
+  resolve_from "probe-root.md" "s1";
+  resolve_from "probe-root.md" "s3";
+  [%expect
+    {|
+    notes/probe.md [[s1]] -> s1.md
+    notes/probe.md [[s2]] -> s2.md
+    notes/probe.md [[s3]] -> notes/s3.md
+    notes/probe.md [[s4]] -> deep/a/s4.md
+    notes/probe.md [[s5]] -> notes/s5.md
+    notes/probe.md [[s6]] -> notes/s6.md
+    notes/probe.md [[s7]] -> mmm/s7.md
+    notes/probe.md [[notes/s1]] -> notes/s1.md
+    notes/probe.md [[deep/a/s1]] -> deep/a/s1.md
+    probe-root.md  [[s1]] -> s1.md
+    probe-root.md  [[s3]] -> notes/s3.md
+    |}]
 ;;

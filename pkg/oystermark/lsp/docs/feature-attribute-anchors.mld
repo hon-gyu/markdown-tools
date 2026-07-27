@@ -24,13 +24,22 @@ Before djot attributes, a fragment ([#...]) could only target:
 Djot attributes let {e any} inline span or block carry an explicit id:
 
 {[
-## Overview {#intro}
+{#intro}
+## Overview
 
 The [key term]{#key-term} is defined here.
 
-> A blockquote with an id.
 {#aside}
+> A blockquote with an id.
 ]}
+
+A block attribute is written on {b its own line, above} the block it names —
+a heading included. Pandoc's trailing form ([## Overview \{#intro\}]) is not
+read: the braces are consumed as part of the heading's inline content, so no
+anchor is recorded {e and} the heading text keeps a trailing space, which
+breaks the by-text fragment too. An attribute line below a block attaches to
+nothing. Inline attributes are the exception, and follow their span:
+[ [key term]\{#key-term\} ].
 
 This makes the id a first-class, author-controlled anchor. Unlike a
 heading slug (derived from text, changes when the text changes) or a
@@ -51,7 +60,11 @@ attribute whose {!Oystermark.Vault.Index}-visible id is present (i.e.
   {- {b Inline attributes}: [Cmarkit.Inline.Ext_attributes], attaching
      [{#id}] to a span.}
   {- {b Heading ids}: a heading's [Cmarkit.Block.Heading.id] of the form
-     [`Id s] (an id supplied explicitly rather than derived as a slug).}
+     [`Id s] (an id supplied explicitly rather than derived as a slug).
+     Not collected {e again} here: the parser resolves that id from the
+     attribute line above the heading, which the first bullet already
+     saw. Collecting both would make one authored anchor look like two —
+     see {!page-"feature-diagnostics".duplicate_ids}.}
 }
 
 {2 Location precision}

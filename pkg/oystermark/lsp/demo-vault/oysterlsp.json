@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json",
+  "dailyNotes": {
+    "format": "YYYY-MM-DD",
+    "folder": "journal",
+    "linkAction": true
+  },
+  "hover": { "maxChars": 2000 },
+  "goToDefinition": { "unresolvedFragment": "fallback" },
+  "diagnostics": { "unresolvedFragment": "fallback" }
+}

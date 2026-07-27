@@ -80,6 +80,54 @@ Vault structure:
 | `[[dir/note_in_inner_dir]]`           | `dir/inner_dir/note_in_inner_dir.md` | Subsequence                 |
 | `[[random/note_in_inner_dir]]`        | X unresolved                         | No `random` ancestor        |
 
+### Ranking Multiple Matches
+
+A subsequence query can match several files. `[[note]]` names no directory, so
+every `note.md` in the vault is a candidate. The winner is chosen by:
+
+1. **Fewest path components** — the candidate closest to the vault root.
+2. **Same folder as the linking note** — among candidates tied on depth.
+3. Otherwise, Obsidian's internal file order (creation order, *not*
+   alphabetical). Arbitrary from the author's point of view.
+
+Note the order: proximity to the linking note never beats path length. A link
+in `notes/probe.md` reaches the root copy, not the sibling.
+
+#### Evidence
+
+Measured against Obsidian via `pkg/oystermark/obsidian-resolver`, which asks
+Obsidian's own `getFirstLinkpathDest`. Vault:
+
+```
+├── s1.md, s2.md              (root)
+├── aaa/s5.md
+├── bbb/s7.md                 (created second)
+├── mmm/s7.md                 (created first)
+├── zzz/s6.md
+├── notes/
+│   ├── probe.md              (the linking note)
+│   └── s1.md, s3.md, s5.md, s6.md
+└── deep/
+    ├── a/s1.md, s2.md, s3.md, s4.md
+    └── b/s4.md
+```
+
+| Link in `notes/probe.md` | Candidates | Resolves to | Shows |
+| --- | --- | --- | --- |
+| `[[s1]]` | `s1.md`, `notes/s1.md`, `deep/a/s1.md` | `s1.md` | depth beats the sibling |
+| `[[s2]]` | `s2.md`, `deep/a/s2.md` | `s2.md` | depth, no sibling in play |
+| `[[s3]]` | `notes/s3.md`, `deep/a/s3.md` | `notes/s3.md` | depth again, not siblinghood |
+| `[[s5]]` | `aaa/s5.md`, `notes/s5.md` | `notes/s5.md` | tied depth → sibling wins over earlier name |
+| `[[s6]]` | `zzz/s6.md`, `notes/s6.md` | `notes/s6.md` | same, with the sibling named earlier |
+| `[[s7]]` | `bbb/s7.md`, `mmm/s7.md` | `mmm/s7.md` | tied depth, no sibling → creation order, not alphabetical |
+| `[[s4]]` | `deep/a/s4.md`, `deep/b/s4.md` | `deep/a/s4.md` | as above |
+| `[[notes/s1]]` | — | `notes/s1.md` | an explicit path still pins exactly |
+
+`[[s5]]` is what separates rules 2 and 3: `aaa` sorts before `notes`, so an
+alphabetical tiebreak would have chosen it. `[[s7]]` is what separates rule 3
+from alphabetical order: `bbb` sorts before `mmm`, and `mmm` won because its
+folder was created first.
+
 ### Subsequence Matching Algorithm
 
 Path components must appear in order (ancestor-descendant relationship):

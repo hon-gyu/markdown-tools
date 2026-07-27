@@ -153,3 +153,39 @@ let%expect_test "server: resolved links produce no diagnostics" =
   printf "%d diagnostics\n" (List.length diags);
   [%expect {| 0 diagnostics |}]
 ;;
+
+(* Duplicate anchor ids
+---------------------- *)
+
+(* An id written twice is ambiguous, and every occurrence is reported so both
+   sites are visible.  See {!page-"feature-diagnostics".duplicate_ids}. *)
+let%expect_test "an id written twice is reported at both sites" =
+  show
+    ~rel_path:"note-b.md"
+    ~content:"{#twice}\nFirst block.\n\n{#twice}\nSecond block.\n";
+  [%expect
+    {|
+    ((first_byte 9) (last_byte 20) (message "duplicate anchor id: twice"))
+    ((first_byte 32) (last_byte 44) (message "duplicate anchor id: twice"))
+    |}]
+;;
+
+(* A heading whose id is written rather than derived is one anchor, reachable
+   two ways.  It reaches the collection twice — as the heading's slug, which
+   the parser resolves from the attribute, and as the attribute line — and
+   that is not a collision. *)
+let%expect_test "an explicit id on a heading is not a duplicate of itself" =
+  show ~rel_path:"note-b.md" ~content:"{#intro}\n## Overview\n\nBody.\n";
+  [%expect {| |}]
+;;
+
+(* The cross-kind collision the check exists for still fires: a derived slug
+   and an unrelated hand-written id that happen to be the same string. *)
+let%expect_test "a derived slug colliding with a hand-written id is reported" =
+  show ~rel_path:"note-b.md" ~content:"## Overview\n\n{#overview}\nAn unrelated block.\n";
+  [%expect
+    {|
+    ((first_byte 0) (last_byte 10) (message "duplicate anchor id: overview"))
+    ((first_byte 25) (last_byte 43) (message "duplicate anchor id: overview"))
+    |}]
+;;

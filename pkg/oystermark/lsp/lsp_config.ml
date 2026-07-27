@@ -41,8 +41,9 @@ type t =
     (** Fragment behavior for {!Diagnostics}. *)
   ; hover_max_chars : int
     (** Maximum number of bytes of note content to include in a hover
-      response.  Content exceeding this limit is truncated at the
-      previous newline and a [*(truncated)*] suffix is appended.
+      response, excluding the path header.  Content exceeding this limit
+      is truncated at the previous newline and a notice reporting how
+      much is shown (in lines and percent) is appended.
       See {!page-"feature-hover".truncation}. *)
   ; daily_notes : daily_notes (** See {!page-"feature-daily-notes"}. *)
   }

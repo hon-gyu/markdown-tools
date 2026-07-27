@@ -14,11 +14,40 @@ type diagnostic =
   }
 [@@deriving sexp, equal, compare]
 
+(** Slugs of headings whose identifier was {e written} rather than derived —
+    the [ {#id} ] line above the heading.
+
+    Such an id reaches the collection below twice: once as the heading's slug,
+    which the parser resolves from the attribute, and once as the attribute
+    line {!Oystermark.Vault.Index.extract_attr_ids} sees.  One authored anchor
+    is not a collision, so the heading occurrence is dropped and the attribute
+    line — the better place to jump to — is kept.  A genuine collision between
+    the same id written twice is still two attribute occurrences.
+    See {!page-"feature-diagnostics".duplicate_ids}. *)
+let mirrored_heading_slugs (doc : Cmarkit.Doc.t) : String.Set.t =
+  let folder =
+    Cmarkit.Folder.make
+      ~block:(fun _f acc (b : Cmarkit.Block.t) ->
+        match b with
+        | Cmarkit.Block.Heading (h, _meta) ->
+          (match Cmarkit.Block.Heading.id h with
+           | Some (`Id id) -> Cmarkit.Folder.ret (Set.add acc id)
+           | Some (`Auto _) | None -> Cmarkit.Folder.default)
+        | _ -> Cmarkit.Folder.default)
+      ~inline:(fun _f acc _i -> Cmarkit.Folder.ret acc)
+      ~inline_ext_default:(fun _f acc _i -> acc)
+      ~block_ext_default:(fun _f acc _b -> acc)
+      ()
+  in
+  Cmarkit.Folder.fold_doc folder String.Set.empty doc
+;;
+
 (** Collect every anchor id in [doc] with its byte range, across the three
     anchor kinds (heading slug, caret block id, attribute id).  Occurrences
     without a location ([Textloc.none]) are dropped.
     See {!page-"feature-diagnostics".duplicate_ids}. *)
 let collect_anchor_occurrences (doc : Cmarkit.Doc.t) : (string * (int * int)) list =
+  let mirrored = mirrored_heading_slugs doc in
   let range_of_loc (loc : Cmarkit.Textloc.t option) : (int * int) option =
     match loc with
     | Some tl when not (Cmarkit.Textloc.is_none tl) ->
@@ -28,7 +57,9 @@ let collect_anchor_occurrences (doc : Cmarkit.Doc.t) : (string * (int * int)) li
   let headings =
     Oystermark.Vault.Index.extract_headings doc
     |> List.filter_map ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
-      Option.map (range_of_loc h.loc) ~f:(fun r -> h.slug, r))
+      if Set.mem mirrored h.slug
+      then None
+      else Option.map (range_of_loc h.loc) ~f:(fun r -> h.slug, r))
   in
   let blocks =
     Oystermark.Vault.Index.extract_block_ids doc
