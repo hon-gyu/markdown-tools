@@ -124,7 +124,7 @@ let%expect_test "unit: unresolved link returns empty" =
    ============ *)
 
 let%expect_test "server: references to note-a" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   Server.references s ~rel_path:"note-b.md" ~line:2 ~character:13
   |> reference_positions s
@@ -140,7 +140,7 @@ let%expect_test "server: references to note-a" =
 ;;
 
 let%expect_test "server: no references for cursor on plain text" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-a.md";
   let result =
     Server.references s ~rel_path:"note-a.md" ~line:0 ~character:0

@@ -142,7 +142,7 @@ let find_heading_in_content ~(slug : string) (content : string) : (int * int) op
         String.lstrip line ~drop:(fun c -> Char.equal c '#')
         |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
       in
-      String.equal (Oystermark.Parse.Heading_slug.slugify text) slug)
+      String.equal (Oystermark.Parse.Common.heading_id_of_text text) slug)
   |> Option.map ~f:(fun (i, line) ->
     let level = heading_level_of_line line |> Option.value_exn in
     i, level)
@@ -208,7 +208,7 @@ let hover
                let slug =
                  String.concat
                    ~sep:"-"
-                   (List.map hs ~f:Oystermark.Parse.Heading_slug.slugify)
+                   (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
                in
                (match find_heading_in_content ~slug file_content with
                 | Some (hline, hlevel) ->
@@ -257,7 +257,7 @@ let hover
             let slug =
               String.concat
                 ~sep:"-"
-                (List.map hs ~f:Oystermark.Parse.Heading_slug.slugify)
+                (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
             in
             (match find_heading_in_content ~slug content with
              | Some (hline, hlevel) ->

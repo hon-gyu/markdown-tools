@@ -34,7 +34,10 @@ let show_applied edits =
       List.filter edits ~f:(fun (e : Lsp_lib.Rename.edit) ->
         String.equal e.rel_path rel_path)
     in
-    printf "--- %s\n%s" rel_path (apply_edits (Option.value_exn (read_file rel_path)) edits))
+    printf
+      "--- %s\n%s"
+      rel_path
+      (apply_edits (Option.value_exn (read_file rel_path)) edits))
 ;;
 
 let%expect_test "rename heading from its definition updates wikilinks and markdown link" =
@@ -159,8 +162,12 @@ let%expect_test "rename note preserves aliases and fragments" =
    the definition. See {!Lsp_lib.Rename.attr_id_offset}. *)
 let collide_files =
   [ ( "collide.md"
-    , "# Doc\n\nSee [[collide#note]] first.\n\n{#note-extended}\n> Longer.\n\n{#note}\n> Short.\n"
-    )
+    , "# Doc\n\n\
+       See [[collide#note]] first.\n\n\
+       {#note-extended}\n\
+       > Longer.\n\n\
+       {#note}\n\
+       > Short.\n" )
   ]
 ;;
 
@@ -186,7 +193,8 @@ let%expect_test "attribute rename is not confused by prefixes or link fragments"
   in
   show edits;
   printf "---\n%s" (apply_edits content edits);
-  [%expect {|
+  [%expect
+    {|
     collide.md [21-25] -> renamed
     collide.md [66-70] -> renamed
     ---
@@ -204,7 +212,7 @@ let%expect_test "attribute rename is not confused by prefixes or link fragments"
 
 let%expect_test "server: note rename includes text edits and a file operation" =
   let vault_root = Filename.concat (Core_unix.getcwd ()) "data" in
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   Server.rename s ~rel_path:"note-b.md" ~line:2 ~character:13 ~new_name:"renamed"
   |> document_change_kinds

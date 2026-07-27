@@ -98,7 +98,7 @@ let detect_target
        (match link_ref.fragment with
         | Some (Oystermark.Vault.Link_ref.Heading hs) ->
           let slug =
-            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Heading_slug.slugify)
+            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path; slug })
         | Some (Block_ref bid) -> Some (Path_block { path; block_id = bid })
@@ -110,7 +110,7 @@ let detect_target
        (match link_ref.fragment with
         | Some (Oystermark.Vault.Link_ref.Heading hs) ->
           let slug =
-            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Heading_slug.slugify)
+            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path = rel_path; slug })
         | Some (Block_ref bid) -> Some (Path_block { path = rel_path; block_id = bid })
@@ -131,7 +131,7 @@ let detect_target
             String.lstrip line_str ~drop:(fun c -> Char.equal c '#')
             |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
           in
-          let slug = Oystermark.Parse.Heading_slug.slugify text in
+          let slug = Oystermark.Parse.Common.heading_id_of_text text in
           Some (Path_heading { path = rel_path; slug })
         | None ->
           (match block_id_of_line line_str with

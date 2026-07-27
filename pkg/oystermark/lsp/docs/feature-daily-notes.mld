@@ -1,0 +1,262 @@
+{0 Daily notes}
+
+Navigate to, and create on demand, the note for a calendar day. This mirrors
+Obsidian's {b Daily notes} core plugin — see
+[specification/obsidian/daily-notes.md] for the reference behavior it was
+decoded from — and adds the calendar-relative jumps that Obsidian's core does
+not provide.
+
+{1 Scope}
+
+Two families of navigation, deliberately kept distinct because their semantics
+differ:
+
+{ul
+  {- {b Calendar}: today, yesterday, tomorrow. Addressed by date arithmetic,
+     independent of what exists on disk, and {e creating} the note when it is
+     missing.}
+  {- {b Existing}: previous, next. Addressed by scanning the daily notes that
+     exist, relative to the date of the current file, and {e never} creating
+     anything. This is Obsidian's [daily-notes:goto-prev] / [goto-next].}
+}
+
+Conflating them would be a mistake: "previous" from a Monday note is the
+preceding {e daily note}, which may be days earlier, whereas "yesterday" is
+always Sunday.
+
+{1 Settings}
+
+Settings are Oystermark's own, read under the [dailyNotes] key from
+[oysterlsp.json] or the LSP [initializationOptions] — see
+{!page-"feature-configuration"} for the sources and how they combine — and
+stored in {!Lsp_lib.Config}. Obsidian's [.obsidian/daily-notes.json] is
+{b not} read: a vault's Obsidian configuration is not ours to depend on.
+
+{t
+  | Key        | Type   | Default | Meaning |
+  |------------|--------|---------|---------|
+  | [format]   | string | [YYYY-MM-DD] | Date format naming the note. May contain [/], which nests it in folders. |
+  | [folder]   | string | vault root   | Vault-relative folder the daily notes live under. |
+  | [template] | string | none         | {b Stubbed}: parsed and carried, ignored by note creation. See {!limitations}. |
+}
+
+Wiring [initializationOptions] into {!Lsp_lib.Config} is part of this
+feature: the record exists today but the server never populates it.
+
+An unparseable [dailyNotes] object leaves the defaults in place rather than
+failing initialization, matching {!Oystermark.Config}'s tolerance for stale
+config.
+
+{2:format Date format}
+
+The format is a subset of the {{:https://momentjs.com/docs/#/displaying/format/}
+moment.js} tokens, chosen so that a format written for Obsidian keeps naming the
+same file here.
+
+{t
+  | Token | Meaning | Example (2026-07-06) |
+  |-------|---------|----------------------|
+  | [YYYY] | 4-digit year | [2026] |
+  | [YY] | 2-digit year | [26] |
+  | [MM] | zero-padded month | [07] |
+  | [M] | month | [7] |
+  | [MMM] | abbreviated month name | [Jul] |
+  | [MMMM] | month name | [July] |
+  | [DD] | zero-padded day | [06] |
+  | [D] | day | [6] |
+  | [Do] | ordinal day | [6th] |
+  | [ddd] | abbreviated weekday | [Mon] |
+  | [dddd] | weekday | [Monday] |
+  | [\[...\]] | literal text | [\[Daily\]] → [Daily] |
+}
+
+Names are English-only; moment's locale machinery is out of scope.
+
+Any other token is {b rejected}: an unsupported format disables the feature —
+no daily-note action is offered — rather than silently naming the wrong file.
+Week-based tokens ([ww], [gggg]) are excluded on purpose: they do not identify a
+single day.
+
+A rejection is {b reported}, once, as a [window/showMessage] of severity
+[Warning] at initialize, naming what was wrong with the format. Offering no
+action is also what a correctly configured server does when it has nothing to
+offer, so without the message a mistyped format would be indistinguishable from
+a feature that is simply absent. {!Lsp_lib.Config.daily_notes_settings}
+computes the error and {!Lsp_lib.Server.config_warnings} carries it from
+initialize onward, alongside every other configuration complaint; see
+{!page-"feature-configuration".tolerance}.
+
+The format is the one setting validated on {e use} rather than at parse time —
+whether it is usable is a property of its value, not its type — but it is
+reported through the same channel, at the same moment.
+
+Nothing is reported later: the settings are read once, so a repeat on every
+code action would say the same thing indefinitely.
+
+A format is also rejected when it starts with [/], or when the text it produces
+contains a path-illegal character. This matches the validation Obsidian's
+settings tab applies.
+
+{1 Path computation}
+
+For a date [d]:
+
+{ol
+  {- [name] is [d] rendered through {!format}, then trimmed;}
+  {- the path is [folder ^ "/" ^ name ^ ".md"], or [name ^ ".md"] when [folder]
+     is unset;}
+  {- the path is looked up in the vault index. An existing note is used as-is.}
+}
+
+Because [format] may contain [/], the path may name folders that do not exist;
+creating a daily note creates them.
+
+Unlike Obsidian, lookup is {b case-sensitive} and an unset [folder] means the
+vault root exactly — Obsidian falls back to its app-level "default location for
+new notes", which is a setting we do not have.
+
+{1:recognition Recognition}
+
+Answering "is the current file a daily note, and for which date?" is the inverse
+of {!format}. Rather than write a strict parser, the inverse is obtained by
+{b candidate generation}: for every date in a window around today, render the
+format and record [path -> date] in a table.
+
+{ul
+  {- The window is today ± 5 years, rebuilt when the format changes.}
+  {- Correct by construction: recognition can never disagree with the formatter,
+     which is the bug a hand-written parser would invite.}
+  {- The cost is a bounded range: a note dated outside the window is not
+     recognized as a daily note. This is a deliberate trade, not an oversight.}
+}
+
+The {e existing} family uses this table intersected with the vault index: a file
+is a daily note iff its vault-relative path is a key of the table.
+
+{1 Actions}
+
+Offered as code actions on any Markdown file in the vault, under the
+[refactor] kind — they are not quick fixes, as no diagnostic underlies them.
+
+{t
+  | Title | Date | Creates? | Available when |
+  |-------|------|----------|----------------|
+  | [Open today's daily note] | today | yes | always |
+  | [Open yesterday's daily note] | the day before today | yes | always |
+  | [Open tomorrow's daily note] | the day after today | yes | always |
+  | [Open previous daily note] | latest daily note strictly before the current file's date | no | current file is a daily note and such a note exists |
+  | [Open next daily note] | earliest daily note strictly after it | no | current file is a daily note and such a note exists |
+}
+
+The calendar actions' titles state what will happen when the note is missing:
+[Create today's daily note] when it does not exist, [Open today's daily note]
+when it does.
+
+{2:link Linking instead of opening}
+
+One further action, [Insert link to today's daily note], writes [ [[2026-07-26]] ]
+at the cursor and creates the note if it is missing, in a single edit so the
+link resolves the moment it lands.
+
+It is the only member of the family that reaches its note {e without}
+[window/showDocument]: a [WorkspaceEdit] is all it asks for, and the link it
+leaves behind is followed by go-to-definition. Where focusing is unavailable
+(see {!focus}) this is the working route to today's note, at the cost of
+navigation that writes to the buffer — the link stays until it is deleted,
+which is why it is offered as a link rather than performed as a hidden step of
+the other actions.
+
+The link is the note's base name, not its path. Link resolution matches a path
+subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a nested
+format; a reader is spared the folders, and the link keeps working if the
+[folder] setting later changes.
+
+It is also the only action here offered in {e every} menu in the vault — the
+others are at least about navigating, while this one is an editing offer made
+wherever the cursor happens to be. In a vault where daily notes are not part of
+the writing habit that is noise, so it can be turned off on its own:
+
+{@json[
+{ "dailyNotes": { "linkAction": false } }
+]}
+
+Turning it off leaves the rest of the family intact; it is not a way to disable
+daily notes, which is what an unsupported [format] does. Where
+[window/showDocument] is missing, though, this action is the only route to the
+note, so switching it off there gives up reaching daily notes altogether — a
+trade worth making knowingly.
+
+{2 Mechanism}
+
+A code action cannot itself focus an editor, so each action carries a command,
+[oystermark.dailyNote.open], whose argument is the resolved vault-relative path
+and a flag saying whether it must be created. Executing it:
+
+{ol
+  {- creates the note — parent folders included — through a
+     [workspace/applyEdit] carrying a [CreateFile] edit, when the flag is set
+     and nothing is there. An existing file is never overwritten
+     ([ignoreIfExists]);}
+  {- requests [window/showDocument] with [takeFocus] to open it.}
+}
+
+The server therefore advertises [executeCommandProvider] for that command.
+
+{2:focus Focusing is the client's}
+
+Step 2 is the one effect the server cannot perform itself, and it is optional
+in the protocol. A client may:
+
+{ul
+  {- not advertise [window.showDocument] — then the request is never sent;}
+  {- advertise it and answer [success: false] — then it was sent and declined.}
+}
+
+Both end the same way: the note exists and nothing opened. Either case reports
+the path through [window/showMessage], because a command that finishes in
+silence is indistinguishable from one that failed. The [executeCommand] result
+is the path as well, for a client scripting against the server.
+
+The consequence is worth stating plainly: where the capability is missing, a
+command that only opens — [daily/today] on a note that already exists — does
+nothing visible but the message, while a command that {e creates} still puts a
+file on disk, since [workspace/applyEdit] is the better-supported half. Editors
+differ here and some in current use are on the wrong side of it (Zed, for one,
+neither advertises nor implements the request). Nothing in this server can make
+a client focus a document; closing that gap is client-side work.
+
+What the server {e can} do is offer a route that needs no such capability:
+{!link} writes a wikilink to the note, and go-to-definition follows it. That is
+the supported answer for these clients, and the reason the action exists.
+
+{1 Testing}
+
+{ul
+  {- Formatting: a table-driven expect test over the supported tokens, including
+     a format with [/] and one with a [\[literal\]].}
+  {- Round-trip: for a set of formats, every date in a sample range renders to a
+     path that the recognition table maps back to the same date.}
+  {- Rejection: unsupported and path-illegal formats disable the feature.}
+  {- Actions: a fixture vault with notes on non-consecutive days, asserting that
+     previous/next skip gaps, that they are unavailable off a daily note and at
+     the ends of the range, and that the calendar actions resolve to the right
+     path whether or not it exists.}
+}
+
+Property-based testing fits the round-trip obligation and is preferred there.
+
+{1:limitations Limitations and assumptions}
+
+{ul
+  {- {b Template is stubbed}: the setting round-trips but creation always makes
+     an empty note. Obsidian additionally resolves [{{title}}] in the template
+     body; when this is implemented it should match.}
+  {- {b Bounded recognition window} (see {!recognition}).}
+  {- {b English month and weekday names only}.}
+  {- {b No Obsidian config}: a vault configured only through Obsidian's settings
+     needs its [format] restated in [initializationOptions].}
+  {- {b Opening depends on the client} (see {!focus}): where
+     [window/showDocument] is unsupported, the command reports the path instead
+     of focusing it.}
+  {- Positions and edits follow {!page-"feature-utf16-positions"}.}
+}

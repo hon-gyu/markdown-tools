@@ -87,7 +87,7 @@ let%expect_test "unit: partial range" =
    ============ *)
 
 let%expect_test "server: inlay hints for note-a" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-a.md";
   Server.inlay_hint s ~rel_path:"note-a.md" ~start_line:0 ~end_line:20
   |> inlay_hint_positions
@@ -100,7 +100,7 @@ let%expect_test "server: inlay hints for note-a" =
 ;;
 
 let%expect_test "server: inlay hints for file with no refs" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result =
     Server.inlay_hint s ~rel_path:"note-b.md" ~start_line:0 ~end_line:20

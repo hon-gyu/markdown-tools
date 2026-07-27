@@ -9,7 +9,6 @@ module C = Cmarkit_renderer.Context
 module Resolve = Vault.Resolve
 module Embed = Vault.Embed
 module Cb_attribute = Parse.Cb_attribute
-module Heading_slug = Parse.Heading_slug
 module H = Tyxml.Html
 
 let elt_to_string (e : 'a H.elt) : string = Format.asprintf "%a" (H.pp_elt ()) e
@@ -571,14 +570,17 @@ let render_block
         ()
   in
   function
-  | Block.Heading (h, meta) ->
-    let slug = Meta.find Heading_slug.meta_key meta in
+  | Block.Heading (h, _meta) ->
+    let slug = Parse.Common.heading_id h in
     (match slug, attr with
      | None, None -> false
      | _, _ ->
        let level = Block.Heading.level h in
        (* The attribute id wins over the auto slug if both present (djot says
-          last id wins; the user-written attribute is more specific). *)
+          last id wins; the user-written attribute is more specific). The parser
+          resolves this too — with [~heading_auto_ids:true] an explicit [ {#id} ]
+          is what {!Parse.Common.heading_id} returns — so the two agree; the
+          branch stays for headings not parsed by {!Parse.of_string}. *)
        let id_attr =
          match attr_id, slug with
          | Some id, _ -> sprintf " id=\"%s\"" id
@@ -746,7 +748,7 @@ let%expect_test "block attribute on paragraph" =
   let open For_test in
   let doc = Parse.of_string "{#water .important key=\"my val\"}\nDon't forget!" in
   Format.printf "%a%!" (pp_doc `Plain) doc;
-  [%expect {| <p id="water" class="important" key="my val">Don't forget!</p> |}]
+  [%expect {| <p id="water" class="important" key="my val">Don’t forget!</p> |}]
 ;;
 
 let%expect_test "block attribute on heading combines with slug; attr id wins" =

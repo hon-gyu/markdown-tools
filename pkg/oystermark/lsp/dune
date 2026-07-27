@@ -5,6 +5,8 @@
   lsp_lib
   lsp_util
   lsp_config
+  daily_notes
+  command_block
   link_collect
   go_to_definition
   completion
@@ -16,7 +18,13 @@
   create_unresolved_note
   inlay_hints
   server)
- (libraries oystermark core linol.lsp trace.core)
+ (libraries
+  oystermark
+  core
+  core_unix.time_float_unix
+  yojson
+  linol.lsp
+  trace.core)
  (inline_tests)
  (preprocess
   (pps ppx_jane ppx_string)))

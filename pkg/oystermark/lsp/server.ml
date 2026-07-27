@@ -36,11 +36,59 @@ type t =
           the editor currently has open.  Diagnostics and the
           cursor-position features answer against this; the rest read from
           disk.  See {!page-"feature-document-sync"}. *)
+  ; mutable config : Lsp_config.t
+    (** Client-supplied settings, seen once at {!initialize}. *)
+  ; mutable config_warnings : string list
+    (** Everything the configuration sources asked for and could not have,
+          gathered at {!initialize} for the adapter to report.  A setting
+          ignored in silence is indistinguishable from one that does not
+          exist.  See {!page-"feature-configuration".tolerance}. *)
+  ; mutable daily_table : (Date.t * Daily_notes.Table.t) option
+    (** Memoized recognition table with the date it was built for; a server
+          left running overnight rebuilds it.  See
+          {!page-"feature-daily-notes".recognition}. *)
+  ; now : unit -> Date.t
+    (** The clock, as a dependency: daily-note answers depend on today's date,
+          and a test that cannot fix "today" would change meaning overnight. *)
   }
 
 let build_vault = Oystermark.Vault.of_root_path ~skip_expand:true
-let create () : t = { vault = None; open_docs = String.Table.create () }
-let initialize (t : t) ~(root : string) : unit = t.vault <- Some (build_vault root)
+
+(** Today in the machine's own timezone — the real clock, used unless a caller
+    substitutes one. *)
+let system_today () : Date.t = Date.today ~zone:(Lazy.force Time_float_unix.Zone.local)
+
+let create ?(now : unit -> Date.t = system_today) () : t =
+  { vault = None
+  ; open_docs = String.Table.create ()
+  ; config = Lsp_config.default
+  ; config_warnings = []
+  ; daily_table = None
+  ; now
+  }
+;;
+
+let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+  let config, warnings = Lsp_config.load ~root ~init_options in
+  t.config <- config;
+  (* The daily-note format is validated here rather than at parse time — it is
+     the one setting whose usability is a property of its {e value} — but it
+     joins the same list, so the user hears about it the same way. *)
+  let daily_notes_warning =
+    match Lsp_config.daily_notes_settings config with
+    | Ok _ -> []
+    | Error e -> [ sprintf "daily notes disabled: %s" e ]
+  in
+  t.config_warnings <- warnings @ daily_notes_warning;
+  t.daily_table <- None;
+  t.vault <- Some (build_vault root)
+;;
+
+(** What the configuration sources asked for and could not have.  Empty when
+    the configuration is clean; meaningful only after {!initialize}, which is
+    also the only time it is computed.  See
+    {!page-"feature-configuration".tolerance}. *)
+let config_warnings (t : t) : string list = t.config_warnings
 
 let rebuild_vault (t : t) : unit =
   match t.vault with
@@ -110,18 +158,52 @@ let byte_of_position (content : string) ~(line : int) ~(character : int) : int =
 (* Document synchronization
    ========================= *)
 
+(** Every line of a command block that names nothing.  A misspelling would
+    otherwise be inert, and inert looks exactly like unimplemented. *)
+let command_block_diagnostics (content : string) : Diagnostic.t list =
+  Command_block.entries content
+  |> List.filter_map ~f:(fun (e : Command_block.entry) ->
+    match e.command with
+    | Some _ -> None
+    | None ->
+      let line_start = Lsp_util.line_start_byte content ~line:e.line in
+      Some
+        (Diagnostic.create
+           ~range:
+             (range_of_bytes
+                content
+                ~first_byte:line_start
+                ~last_byte:(line_start + String.length e.text))
+           ~severity:DiagnosticSeverity.Warning
+           ~source:"oystermark"
+           ~message:
+             (`String
+                 (sprintf
+                    "unknown oysterlsp command %S; expected one of %s"
+                    e.text
+                    (String.concat
+                       ~sep:", "
+                       (List.map
+                          Command_block.all_of_command
+                          ~f:Command_block.name_of_command))))
+           ()))
+;;
+
 let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   match t.vault with
   | None -> []
   | Some v ->
-    Feature.Diagnostics.compute ~index:v.index ~rel_path ~content ()
-    |> List.map ~f:(fun (d : Feature.Diagnostics.diagnostic) ->
-      Diagnostic.create
-        ~range:(range_of_bytes content ~first_byte:d.first_byte ~last_byte:d.last_byte)
-        ~severity:DiagnosticSeverity.Warning
-        ~source:"oystermark"
-        ~message:(`String d.message)
-        ())
+    let links =
+      Feature.Diagnostics.compute ~index:v.index ~rel_path ~content ()
+      |> List.map ~f:(fun (d : Feature.Diagnostics.diagnostic) ->
+        Diagnostic.create
+          ~range:(range_of_bytes content ~first_byte:d.first_byte ~last_byte:d.last_byte)
+          ~severity:DiagnosticSeverity.Warning
+          ~source:"oystermark"
+          ~message:(`String d.message)
+          ())
+    in
+    links @ command_block_diagnostics content
 ;;
 
 let did_open (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
@@ -357,6 +439,397 @@ let document_symbol (t : t) ~(rel_path : string) : DocumentSymbol.t list option 
     |> Option.return
 ;;
 
+(* Daily notes
+   ============
+
+   See {!page-"feature-daily-notes"}. *)
+
+(** The command a daily-note code action carries.  A code action cannot focus
+    an editor by itself, so the action defers to this command, which the client
+    sends back as [workspace/executeCommand]. *)
+let daily_note_command = "oystermark.dailyNote.open"
+
+(** What {!execute_command} decided should happen.  Returning an intent rather
+    than performing it keeps the protocol effects — [workspace/applyEdit] and
+    [window/showDocument] — in the adapter, and this decision testable. *)
+type open_note =
+  { uri : DocumentUri.t
+  ; create : WorkspaceEdit.t option (** [None] when the note already exists. *)
+  }
+
+(** Whether a vault-relative path exists on disk.  Read from disk rather than
+    the index because a note created moments ago by this very command has not
+    been indexed yet. *)
+let file_exists (t : t) (rel_path : string) : bool =
+  match vault_root t with
+  | None -> false
+  | Some root -> Stdlib.Sys.file_exists (Filename.concat root rel_path)
+;;
+
+(** The recognition table for the configured settings, rebuilt when the day
+    turns over.  [Error] when the configured format is unsupported, which
+    disables the daily-note actions. *)
+let daily_table (t : t) : (Daily_notes.Table.t, string) Result.t =
+  match Lsp_config.daily_notes_settings t.config with
+  | Error _ as e -> e
+  | Ok settings ->
+    let today = t.now () in
+    (match t.daily_table with
+     | Some (built_for, table) when Date.equal built_for today -> Ok table
+     | _ ->
+       let table = Daily_notes.Table.create settings ~today in
+       t.daily_table <- Some (today, table);
+       Ok table)
+;;
+
+(** One daily-note code action: a title that says whether the note will be
+    created, and the command that opens it. *)
+let daily_note_action (t : t) ~(title : string) ~(path : string) : CodeAction.t =
+  let exists = file_exists t path in
+  CodeAction.create
+    ~title:(sprintf "%s %s" (if exists then "Open" else "Create") title)
+    ~kind:CodeActionKind.Refactor
+    ~command:
+      (Command.create
+         ~title
+         ~command:daily_note_command
+         ~arguments:[ `String path; `Bool (not exists) ]
+         ())
+    ()
+;;
+
+(** The daily-note actions available at [rel_path].
+
+    The calendar family is always offered and creates on demand; the existing
+    family is offered only from a file that is itself a daily note, and only
+    when there is somewhere to go.  See {!page-"feature-daily-notes"}. *)
+let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
+  match daily_table t with
+  | Error _ -> []
+  | Ok table ->
+    let settings = table.Daily_notes.Table.settings in
+    let today = t.now () in
+    let calendar =
+      [ "today's daily note", today
+      ; "yesterday's daily note", Date.add_days today (-1)
+      ; "tomorrow's daily note", Date.add_days today 1
+      ]
+      |> List.map ~f:(fun (title, date) ->
+        daily_note_action t ~title ~path:(Daily_notes.path_of_date settings date))
+    in
+    let existing =
+      match Daily_notes.Table.date_of_path table rel_path with
+      | None -> []
+      | Some date ->
+        let exists p = file_exists t p in
+        let step title f =
+          match f table ~exists date with
+          | None -> []
+          | Some (_, path) ->
+            [ CodeAction.create
+                ~title
+                ~kind:CodeActionKind.Refactor
+                ~command:
+                  (Command.create
+                     ~title
+                     ~command:daily_note_command
+                     ~arguments:[ `String path; `Bool false ]
+                     ())
+                ()
+            ]
+        in
+        step "Open previous daily note" Daily_notes.Table.previous_existing
+        @ step "Open next daily note" Daily_notes.Table.next_existing
+    in
+    calendar @ existing
+;;
+
+(** Write a wikilink to today's daily note at the cursor, creating the note
+    when it is missing.
+
+    Every other action in the family reaches its note through
+    [window/showDocument], which the protocol makes optional and not every
+    client implements.  This one asks for nothing but a [WorkspaceEdit], and
+    leaves behind a link that go-to-definition follows — so the note stays
+    reachable wherever that capability is missing.  It is also, independently,
+    an ordinary thing to want in a note.
+
+    The link is the note's base name: [resolve_file] matches a path
+    subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a
+    nested format without the writer spelling out the folders.  See
+    {!page-"feature-daily-notes".link}. *)
+let daily_note_link_actions (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+  : CodeAction.t list
+  =
+  match daily_table t with
+  | Error _ -> []
+  (* Unlike the rest of the family this one is offered in every menu in the
+     vault, wanted there or not, so it is the one worth being able to turn off
+     without disabling daily notes.  See {!page-"feature-daily-notes".link}. *)
+  | Ok _ when not t.config.daily_notes.link_action -> []
+  | Ok table ->
+    let path = Daily_notes.path_of_date table.Daily_notes.Table.settings (t.now ()) in
+    let name = Filename.chop_extension (Filename.basename path) in
+    let create =
+      if file_exists t path
+      then []
+      else
+        [ `CreateFile
+            (CreateFile.create
+               ~uri:(uri_of_rel_path t path)
+               ~options:
+                 (CreateFileOptions.create ~ignoreIfExists:true ~overwrite:false ())
+               ())
+        ]
+    in
+    let at = Position.create ~line ~character in
+    let insert =
+      `TextDocumentEdit
+        (TextDocumentEdit.create
+           ~textDocument:
+             (OptionalVersionedTextDocumentIdentifier.create
+                ~uri:(uri_of_rel_path t rel_path)
+                ())
+           ~edits:
+             [ `TextEdit
+                 (TextEdit.create
+                    ~range:(Range.create ~start:at ~end_:at)
+                    ~newText:(sprintf "[[%s]]" name))
+             ])
+    in
+    (* Creation first: the link should resolve the moment it is written. *)
+    [ CodeAction.create
+        ~title:"Insert link to today's daily note"
+        ~kind:CodeActionKind.Refactor
+        ~edit:(WorkspaceEdit.create ~documentChanges:(create @ [ insert ]) ())
+        ()
+    ]
+;;
+
+(* Command blocks
+   ===============
+
+   See {!page-"feature-command-block"}.  Nothing new happens here: a block line
+   is another way to reach the daily-note command, lifted from the code-action
+   menu onto a line where a lens can render it. *)
+
+(** What a command-block line amounts to right now, in this note.  [target] is
+    [None] when the command is understood but cannot run — then [label] says
+    why, and the surfaces show it without anything to click. *)
+type resolved_command =
+  { label : string
+  ; target : (string * bool) option (** [(path, create_it)]. *)
+  }
+
+let resolve_command (t : t) ~(rel_path : string) (c : Command_block.command)
+  : resolved_command
+  =
+  match daily_table t with
+  | Error _ -> { label = "daily notes disabled"; target = None }
+  | Ok table ->
+    let settings = table.Daily_notes.Table.settings in
+    let today = t.now () in
+    (* Calendar commands always have a target: a missing note is created. *)
+    let calendar (what : string) (date : Date.t) =
+      let path = Daily_notes.path_of_date settings date in
+      let exists = file_exists t path in
+      { label = sprintf "%s %s daily note" (if exists then "Open" else "Create") what
+      ; target = Some (path, not exists)
+      }
+    in
+    (* Previous/next answer relative to the {e host} note, which is why the
+       block lives in a note.  Neither ever creates. *)
+    let step (what : string) f =
+      match Daily_notes.Table.date_of_path table rel_path with
+      | None ->
+        { label = sprintf "no %s daily note: this note is not one" what; target = None }
+      | Some date ->
+        (match f table ~exists:(fun p -> file_exists t p) date with
+         | None -> { label = sprintf "no %s daily note" what; target = None }
+         | Some (_, path) ->
+           { label = sprintf "Open %s daily note (%s)" what path
+           ; target = Some (path, false)
+           })
+    in
+    (match c with
+     | Daily_today -> calendar "today's" today
+     | Daily_yesterday -> calendar "yesterday's" (Date.add_days today (-1))
+     | Daily_tomorrow -> calendar "tomorrow's" (Date.add_days today 1)
+     | Daily_prev -> step "previous" Daily_notes.Table.previous_existing
+     | Daily_next -> step "next" Daily_notes.Table.next_existing)
+;;
+
+(** The lens for one line: a whole-line range, the resolved label, and the
+    command when there is one to run. *)
+let lens_of_entry
+      (t : t)
+      ~(rel_path : string)
+      ~(content : string)
+      (e : Command_block.entry)
+  : CodeLens.t option
+  =
+  match e.command with
+  (* An unknown name gets a diagnostic instead; a lens saying nothing useful
+     would only compete with it. *)
+  | None -> None
+  | Some c ->
+    let { label; target } = resolve_command t ~rel_path c in
+    let line_start = Lsp_util.line_start_byte content ~line:e.line in
+    let range =
+      range_of_bytes
+        content
+        ~first_byte:line_start
+        ~last_byte:(line_start + String.length e.text)
+    in
+    Some
+      (CodeLens.create
+         ~range
+         ?command:
+           (Option.map target ~f:(fun (path, create) ->
+              Command.create
+                ~title:label
+                ~command:daily_note_command
+                ~arguments:[ `String path; `Bool create ]
+                ()))
+         ~data:(`String label)
+         ())
+;;
+
+(** Spec: {!page-"feature-command-block".surfaces}.  [None] outside a vault, so
+    a client learns nothing is coming rather than seeing an empty list. *)
+let code_lens (t : t) ~(rel_path : string) : CodeLens.t list option =
+  match t.vault with
+  | None -> None
+  | Some _ ->
+    let content = buffer_content t rel_path in
+    Command_block.entries content
+    |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content)
+    |> Option.return
+;;
+
+(** The single action for the command-block line under the cursor, if that is
+    where the cursor is.  The keyboard route to what the lens offers. *)
+let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeAction.t list =
+  let content = buffer_content t rel_path in
+  match Command_block.entry_at content ~line with
+  | None -> []
+  | Some { command = None; _ } -> []
+  | Some { command = Some c; _ } ->
+    (match resolve_command t ~rel_path c with
+     | { target = None; _ } -> []
+     | { label; target = Some (path, create) } ->
+       [ CodeAction.create
+           ~title:label
+           ~kind:CodeActionKind.Refactor
+           ~isPreferred:true
+           ~command:
+             (Command.create
+                ~title:label
+                ~command:daily_note_command
+                ~arguments:[ `String path; `Bool create ]
+                ())
+           ()
+       ])
+;;
+
+(** The action that seeds a note with a panel of its own, at the cursor's line.
+
+    Offered only where there is no block yet, and listing only the commands
+    that can run in {e this} note — an ordinary note gets the calendar three,
+    a daily note with neighbours gets all five.  Inserting the whole catalogue
+    everywhere would hand most notes two lines the lenses immediately report as
+    dead.  See {!page-"feature-command-block".insert}. *)
+let insert_command_block_actions (t : t) ~(rel_path : string) ~(line : int)
+  : CodeAction.t list
+  =
+  let content = buffer_content t rel_path in
+  if Command_block.has_command_block content
+  then []
+  else (
+    match
+      List.filter Command_block.all_of_command ~f:(fun c ->
+        Option.is_some (resolve_command t ~rel_path c).target)
+    with
+    (* Nothing runs here — daily notes are off — so there is no panel worth
+       writing. *)
+    | [] -> []
+    | commands ->
+      let at = Position.create ~line ~character:0 in
+      [ CodeAction.create
+          ~title:"Insert oysterlsp command block"
+          ~kind:CodeActionKind.Refactor
+          ~edit:
+            (WorkspaceEdit.create
+               ~documentChanges:
+                 [ `TextDocumentEdit
+                     (TextDocumentEdit.create
+                        ~textDocument:
+                          (OptionalVersionedTextDocumentIdentifier.create
+                             ~uri:(uri_of_rel_path t rel_path)
+                             ())
+                        ~edits:
+                          [ `TextEdit
+                              (TextEdit.create
+                                 ~range:(Range.create ~start:at ~end_:at)
+                                 ~newText:(Command_block.render commands))
+                          ])
+                 ]
+               ())
+          ()
+      ])
+;;
+
+(** The catalogue, offered inside a command block and nowhere else. *)
+let command_block_completions (t : t) ~(rel_path : string) ~(line : int)
+  : CompletionItem.t list option
+  =
+  let content = buffer_content t rel_path in
+  if not (Command_block.in_command_block content ~line)
+  then None
+  else
+    List.map Command_block.all_of_command ~f:(fun c ->
+      let name = Command_block.name_of_command c in
+      CompletionItem.create
+        ~label:name
+        ~kind:CompletionItemKind.Event
+        ~detail:(Command_block.doc_of_command c)
+          (* What it would do here, today — the same text the lens would show. *)
+        ~documentation:(`String (resolve_command t ~rel_path c).label)
+        ())
+    |> Option.return
+;;
+
+(** Handle [workspace/executeCommand].  [None] for an unknown command or
+    unusable arguments — an editor is free to send either. *)
+let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
+  : open_note option
+  =
+  match command, arguments with
+  | cmd, Some [ `String path; `Bool create ] when String.equal cmd daily_note_command ->
+    let uri = uri_of_rel_path t path in
+    let create =
+      if create && not (file_exists t path)
+      then
+        Some
+          (WorkspaceEdit.create
+             ~documentChanges:
+               [ `CreateFile
+                   (CreateFile.create
+                      ~uri
+                      ~options:
+                        (CreateFileOptions.create
+                           ~ignoreIfExists:true
+                           ~overwrite:false
+                           ())
+                      ())
+               ]
+             ())
+      else None
+    in
+    Some { uri; create }
+  | _ -> None
+;;
+
 let code_action
       (t : t)
       ?(only : CodeActionKind.t list option)
@@ -368,56 +841,73 @@ let code_action
       ()
   : CodeAction.t list
   =
-  let quick_fixes_requested =
+  let requested (kind : CodeActionKind.t) =
     match only with
     | None -> true
-    | Some kinds -> List.mem kinds CodeActionKind.QuickFix ~equal:Poly.equal
+    | Some kinds -> List.mem kinds kind ~equal:Poly.equal
   in
-  match t.vault with
-  | _ when not quick_fixes_requested -> []
-  | None -> []
-  | Some v ->
-    let content = disk_content t rel_path in
-    (match
-       Feature.Create_unresolved_note.action_at_range
-         ~index:v.index
-         ~rel_path
-         ~content
-         ~first_byte:
-           (byte_of_position content ~line:start_line ~character:start_character)
-         ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
-     with
-     | None -> []
-     | Some action ->
-       let target_uri = uri_of_rel_path t action.rel_path in
-       let create =
-         `CreateFile
-           (CreateFile.create
-              ~uri:target_uri
-              ~options:
-                (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
-              ())
-       in
-       let zero = Position.create ~line:0 ~character:0 in
-       let initialize =
-         `TextDocumentEdit
-           (TextDocumentEdit.create
-              ~textDocument:
-                (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
-              ~edits:
-                [ `TextEdit
-                    (TextEdit.create
-                       ~range:(Range.create ~start:zero ~end_:zero)
-                       ~newText:("# " ^ action.title ^ "\n"))
-                ])
-       in
-       [ CodeAction.create
-           ~title:(sprintf "Create note \"%s\"" action.rel_path)
-           ~kind:CodeActionKind.QuickFix
-           ~isPreferred:true
-           ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
-           ()
-       ])
+  let daily =
+    if requested CodeActionKind.Refactor
+    then (
+      (* On a command-block line the panel's own action is the answer, and the
+         whole daily-note menu would bury it.  See
+         {!page-"feature-command-block".surfaces}. *)
+      match command_block_actions t ~rel_path ~line:start_line with
+      | [] ->
+        daily_note_actions t ~rel_path
+        @ daily_note_link_actions t ~rel_path ~line:start_line ~character:start_character
+        @ insert_command_block_actions t ~rel_path ~line:start_line
+      | actions -> actions)
+    else []
+  in
+  let quick_fixes =
+    match t.vault with
+    | _ when not (requested CodeActionKind.QuickFix) -> []
+    | None -> []
+    | Some v ->
+      let content = disk_content t rel_path in
+      (match
+         Feature.Create_unresolved_note.action_at_range
+           ~index:v.index
+           ~rel_path
+           ~content
+           ~first_byte:
+             (byte_of_position content ~line:start_line ~character:start_character)
+           ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
+       with
+       | None -> []
+       | Some action ->
+         let target_uri = uri_of_rel_path t action.rel_path in
+         let create =
+           `CreateFile
+             (CreateFile.create
+                ~uri:target_uri
+                ~options:
+                  (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
+                ())
+         in
+         let zero = Position.create ~line:0 ~character:0 in
+         let initialize =
+           `TextDocumentEdit
+             (TextDocumentEdit.create
+                ~textDocument:
+                  (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
+                ~edits:
+                  [ `TextEdit
+                      (TextEdit.create
+                         ~range:(Range.create ~start:zero ~end_:zero)
+                         ~newText:("# " ^ action.title ^ "\n"))
+                  ])
+         in
+         [ CodeAction.create
+             ~title:(sprintf "Create note \"%s\"" action.rel_path)
+             ~kind:CodeActionKind.QuickFix
+             ~isPreferred:true
+             ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
+             ()
+         ])
+  in
+  quick_fixes @ daily
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
@@ -426,27 +916,33 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   match t.vault with
   | None -> None
   | Some v ->
-    Feature.Completion.complete
-      ~index:v.index
-      ~rel_path
-      ~content:(buffer_content t rel_path)
-      ~line
-      ~character
-      ()
-    |> List.map ~f:(fun (i : Feature.Completion.item) ->
-      let kind =
-        match i.kind with
-        | Feature.Completion.File -> CompletionItemKind.File
-        | Feature.Completion.Reference -> CompletionItemKind.Reference
-      in
-      CompletionItem.create
-        ~label:i.label
-        ?detail:i.detail
-        ?filterText:i.filter_text
-        ?insertText:i.insert_text
-        ~kind
-        ())
-    |> Option.return
+    (* Inside a command block the note-name and fragment completions make no
+     sense: the content there is a command name.  See
+     {!page-"feature-command-block".surfaces}. *)
+    (match command_block_completions t ~rel_path ~line with
+     | Some items -> Some items
+     | None ->
+       Feature.Completion.complete
+         ~index:v.index
+         ~rel_path
+         ~content:(buffer_content t rel_path)
+         ~line
+         ~character
+         ()
+       |> List.map ~f:(fun (i : Feature.Completion.item) ->
+         let kind =
+           match i.kind with
+           | Feature.Completion.File -> CompletionItemKind.File
+           | Feature.Completion.Reference -> CompletionItemKind.Reference
+         in
+         CompletionItem.create
+           ~label:i.label
+           ?detail:i.detail
+           ?filterText:i.filter_text
+           ?insertText:i.insert_text
+           ~kind
+           ())
+       |> Option.return)
 ;;
 
 let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)

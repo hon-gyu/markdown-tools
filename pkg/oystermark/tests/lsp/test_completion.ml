@@ -15,7 +15,7 @@ let vault_root =
    heading slug and the attribute id — are offered.
    See {!page-"feature-attribute-anchors"}. *)
 let%expect_test "server: fragment completion offers heading and attribute id" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"complete-src.md";
   Server.completion s ~rel_path:"complete-src.md" ~line:2 ~character:20
   |> completion_items

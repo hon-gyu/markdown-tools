@@ -19,11 +19,24 @@ open Linol_lsp.Lsp.Types
 
 type t
 
-val create : unit -> t
+(** [create ?now ()] makes a server whose daily-note answers are dated by
+    [now], defaulting to the system clock.  Substituting it is what lets a test
+    of {!page-"feature-daily-notes"} mean the same thing tomorrow. *)
+val create : ?now:(unit -> Core.Date.t) -> unit -> t
 
-(** Build the vault from [root].  Called from [initialize] with the client's
-    [rootUri]. *)
-val initialize : t -> root:string -> unit
+(** Build the vault from [root] and adopt the configuration: the client's
+    [initializationOptions], overridden by [oysterlsp.json] at the root.  The
+    options are taken raw so that parsing — and its tolerance for malformed
+    input — lives in {!Lsp_lib.Config}.  See {!page-"feature-configuration"}. *)
+val initialize : t -> root:string -> ?init_options:Yojson.Safe.t -> unit -> unit
+
+(** [config_warnings t] is everything the configuration sources asked for and
+    could not have: bad values, unknown keys, an unreadable [oysterlsp.json], a
+    rejected daily-note format.  Empty when the configuration is clean.
+    Computed by {!initialize}; the adapter reports each one, since a setting
+    ignored in silence is indistinguishable from one that does not exist.
+    See {!page-"feature-configuration".tolerance}. *)
+val config_warnings : t -> string list
 
 (** The vault root, or [None] before {!initialize}. *)
 val vault_root : t -> string option
@@ -32,7 +45,45 @@ val vault_root : t -> string option
     for files outside the vault (and before {!initialize}). *)
 val rel_path_of_uri : t -> DocumentUri.t -> string
 
+(** {1 Daily notes}
+
+    See {!page-"feature-daily-notes"}.  The code actions carry
+    {!daily_note_command}; running it yields an {!open_note} describing what the
+    adapter should ask the client to do. *)
+
+(** The command name advertised in [executeCommandProvider]. *)
+val daily_note_command : string
+
+(** What running {!daily_note_command} decided: the note to focus, and the edit
+    that creates it first when it does not exist. *)
+type open_note =
+  { uri : DocumentUri.t
+  ; create : WorkspaceEdit.t option
+  }
+
+(** Handle [workspace/executeCommand].  [None] for an unknown command or
+    unusable arguments. *)
+val execute_command
+  :  t
+  -> command:string
+  -> arguments:Yojson.Safe.t list option
+  -> open_note option
+
 val uri_of_rel_path : t -> string -> DocumentUri.t
+
+(** {1 Command blocks}
+
+    See {!page-"feature-command-block"}.  A fenced [oysterlsp] block lifts the
+    commands above onto lines, where a lens can render them; the other surfaces
+    it adds — one code action on the cursor's line, an action that seeds a note
+    with a block of its own, completion of the command names, a diagnostic on
+    an unknown one — are folded into {!code_action}, {!completion} and the
+    diagnostics the sync handlers return. *)
+
+(** Spec: {!page-"feature-command-block".surfaces}.  One lens per recognized
+    line; a line whose command cannot run right now keeps its lens, without a
+    command attached, so that {i why} stays visible. *)
+val code_lens : t -> rel_path:string -> CodeLens.t list option
 
 (** {1 Document synchronization}
 

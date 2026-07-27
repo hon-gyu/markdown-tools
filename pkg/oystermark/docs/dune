@@ -50,7 +50,10 @@
   design-index
   feature-attribute-anchors
   feature-codeaction-create-unresolved-link
+  feature-command-block
   feature-completion
+  feature-configuration
+  feature-daily-notes
   feature-diagnostics
   feature-document-outline
   feature-document-sync

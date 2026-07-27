@@ -33,7 +33,7 @@ let index = Vault_helper.make_index files
 let read_file rel_path = List.Assoc.find files ~equal:String.equal rel_path
 
 let%expect_test "server: hover on wikilink to note" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   (* Line 2: "Link to [[note-a]] here." — cursor on "note-a" *)
   let result = Server.hover s ~rel_path:"note-b.md" ~line:2 ~character:13 |> hover_text in
@@ -56,7 +56,7 @@ let%expect_test "server: hover on wikilink to note" =
 ;;
 
 let%expect_test "server: hover on heading fragment" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   (* Line 4: "See [[note-a#Section One]]." *)
   let result = Server.hover s ~rel_path:"note-b.md" ~line:4 ~character:10 |> hover_text in
@@ -73,7 +73,7 @@ let%expect_test "server: hover on heading fragment" =
 ;;
 
 let%expect_test "server: hover on block fragment" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   (* Line 6: "Also [[note-a#^block1]]." *)
   let result = Server.hover s ~rel_path:"note-b.md" ~line:6 ~character:10 |> hover_text in
@@ -87,7 +87,7 @@ let%expect_test "server: hover on block fragment" =
 ;;
 
 let%expect_test "server: hover on empty note" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-c.md";
   (* Line 2: "See [[empty]]." *)
   let result = Server.hover s ~rel_path:"note-c.md" ~line:2 ~character:8 |> hover_text in
@@ -101,7 +101,7 @@ let%expect_test "server: hover on empty note" =
 ;;
 
 let%expect_test "server: hover on unresolved link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   (* Line 10: "Unresolved [[missing-note]]." *)
   let result =
@@ -112,7 +112,7 @@ let%expect_test "server: hover on unresolved link" =
 ;;
 
 let%expect_test "server: hover cursor not on link" =
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
   let result = Server.hover s ~rel_path:"note-b.md" ~line:0 ~character:2 |> hover_text in
   print_s [%sexp (result : string option)];

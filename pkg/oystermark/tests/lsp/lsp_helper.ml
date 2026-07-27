@@ -17,10 +17,19 @@ module Server = Lsp_lib.Server
 (* Session
    ======== *)
 
-(** Create a server and point it at [vault_root], as [initialize] would. *)
-let start_server ~(vault_root : string) : Server.t =
-  let server = Server.create () in
-  Server.initialize server ~root:vault_root;
+(** Create a server and point it at [vault_root], as [initialize] would.
+    [init_options] stands in for the client's [initializationOptions], and
+    [today] fixes the clock so daily-note expectations do not drift.  See
+    {!page-"feature-daily-notes"}. *)
+let start_server
+      ?(init_options : Yojson.Safe.t option)
+      ?(today : Date.t option)
+      ~(vault_root : string)
+      ()
+  : Server.t
+  =
+  let server = Server.create ?now:(Option.map today ~f:(fun d () -> d)) () in
+  Server.initialize server ~root:vault_root ?init_options ();
   server
 ;;
 
@@ -150,19 +159,21 @@ let document_change_kinds (edit : WorkspaceEdit.t) : string list =
     edits raise, since a client's behaviour on them is undefined. *)
 let apply_edits (content : string) (edits : Lsp_lib.Rename.edit list) : string =
   List.sort edits ~compare:(fun a b -> Int.descending a.first_byte b.first_byte)
-  |> List.fold ~init:(content, String.length content) ~f:(fun (acc, prev_start) e ->
-    if e.last_byte > prev_start
-    then
-      failwithf
-        "overlapping edits: [%d-%d] extends past the next edit's start %d"
-        e.first_byte
-        e.last_byte
-        prev_start
-        ();
-    ( String.sub acc ~pos:0 ~len:e.first_byte
-      ^ e.new_text
-      ^ String.subo acc ~pos:e.last_byte
-    , e.first_byte ))
+  |> List.fold
+       ~init:(content, String.length content)
+       ~f:(fun (acc, prev_start) e ->
+         if e.last_byte > prev_start
+         then
+           failwithf
+             "overlapping edits: [%d-%d] extends past the next edit's start %d"
+             e.first_byte
+             e.last_byte
+             prev_start
+             ();
+         ( String.sub acc ~pos:0 ~len:e.first_byte
+           ^ e.new_text
+           ^ String.subo acc ~pos:e.last_byte
+         , e.first_byte ))
   |> fst
 ;;
 

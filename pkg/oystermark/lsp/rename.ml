@@ -161,7 +161,7 @@ let find_definition_line content target =
             String.lstrip text ~drop:(Char.equal '#')
             |> String.lstrip ~drop:(Char.equal ' ')
           in
-          String.equal (Oystermark.Parse.Heading_slug.slugify heading) slug)
+          String.equal (Oystermark.Parse.Common.heading_id_of_text heading) slug)
       | Path_block { block_id; _ } ->
         Option.equal String.equal (Find_references.block_id_of_line text) (Some block_id)
       | Path_attr { id; _ } -> Option.is_some (attr_id_offset ~id text)

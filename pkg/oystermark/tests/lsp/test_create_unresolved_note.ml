@@ -51,10 +51,13 @@ let%expect_test "fragments, embeds, images, and traversal have no action" =
 
 let%expect_test "server: quick fix creates and initializes the note" =
   let vault_root = Filename.concat (Core_unix.getcwd ()) "data" in
-  let s = start_server ~vault_root in
+  let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-b.md";
+  (* Ask for quick fixes only: the daily-note actions are [Refactor] and carry
+     a command rather than an edit.  See {!page-"feature-daily-notes"}. *)
   Server.code_action
     s
+    ~only:[ CodeActionKind.QuickFix ]
     ~rel_path:"note-b.md"
     ~start_line:10
     ~start_character:11

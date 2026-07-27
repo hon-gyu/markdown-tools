@@ -41,7 +41,7 @@ let headings_in_range
           String.lstrip line_str ~drop:(fun c -> Char.equal c '#')
           |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
         in
-        let slug = Oystermark.Parse.Heading_slug.slugify text in
+        let slug = Oystermark.Parse.Common.heading_id_of_text text in
         let end_char = String.length line_str in
         Some (i, end_char, slug)))
 ;;
