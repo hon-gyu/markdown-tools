@@ -69,6 +69,30 @@ logic of its own. Spec: [feature-attribute-anchors.mld](docs/feature-attribute-a
 | Daily notes | Open or create today's / yesterday's / tomorrow's note, and jump to the previous or next existing one. | [daily-notes](docs/feature-daily-notes.mld) |
 | Command block | A fenced `oysterlsp` block whose lines become clickable code lenses — a small control panel inside a note. | [command-block](docs/feature-command-block.mld) |
 
+## Adapter smoke check
+
+`tests/lsp/` drives `Lsp_lib.Server` in process, so `main.ml` — capability
+advertisement and request dispatch — is not covered by `dune runtest`. The gap
+is not theoretical: `workspace/executeCommand` was once answered from
+`on_request_unhandled`, which linol never consults for `ExecuteCommand`, so the
+daily-note command silently returned `null` in every client while the suite
+stayed green.
+
+After changing `main.ml`, run the session-level check by hand:
+
+```bash
+dune build pkg/oystermark/lsp/main.exe
+uv run --no-project pkg/oystermark/lsp/scripts/smoke.py
+```
+
+It opens a real stdio session against a bare vault (no `oysterlsp.json`, no
+`initializationOptions`) and asserts the effects an editor observes: the
+advertised capabilities, the code actions offered, that a command reaches its
+handler and produces `workspace/applyEdit` plus `window/showDocument`, and that
+a command-block line gets a lens carrying a command. Pass a path to check
+another binary — `… scripts/smoke.py $(which oystermark-lsp)` verifies what is
+installed, which is what your editor actually runs.
+
 ## Configuration
 
 Settings come from `oysterlsp.json` at the vault root, falling back to the

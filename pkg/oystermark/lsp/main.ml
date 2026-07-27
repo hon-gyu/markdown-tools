@@ -239,47 +239,23 @@ class oystermark_server ~sw =
         ~start_line:range.start.line
         ~end_line:range.end_.line
 
-    (** [references], [prepareRename] and [rename] have no dedicated hook in
-        {!Linol_eio.Jsonrpc2.server}, so they arrive here. *)
-    method! on_request_unhandled
-      : type r. notify_back:_ -> id:_ -> r Linol.Lsp.Client_request.t -> r =
-      fun ~notify_back ~id:_ (req : r Linol.Lsp.Client_request.t) ->
-        match req with
-        | Linol.Lsp.Client_request.TextDocumentReferences params ->
-          Server.references
-            server
-            ~rel_path:(self#rel_path params.textDocument.uri)
-            ~line:params.position.line
-            ~character:params.position.character
-        | Linol.Lsp.Client_request.TextDocumentPrepareRename params ->
-          Server.prepare_rename
-            server
-            ~rel_path:(self#rel_path params.textDocument.uri)
-            ~line:params.position.line
-            ~character:params.position.character
-        | Linol.Lsp.Client_request.TextDocumentRename params ->
-          Server.rename
-            server
-            ~rel_path:(self#rel_path params.textDocument.uri)
-            ~line:params.position.line
-            ~character:params.position.character
-            ~new_name:params.newName
-        | Linol.Lsp.Client_request.ExecuteCommand params ->
-          self#execute_command ~notify_back ~params
-        | _ -> failwith "unhandled request"
-
     (** Run a server command.  The decision of {i what} to do is
         {!Lsp_lib.Server.execute_command}'s; this only turns the resulting
         {!Lsp_lib.Server.open_note} into the two protocol effects — create the
-        file, then focus it.  See {!page-"feature-daily-notes"}. *)
-    method
-      private execute_command
+        file, then focus it.  See {!page-"feature-daily-notes"}.
+
+        This overrides the dedicated hook rather than answering in
+        {!on_request_unhandled}: [ExecuteCommand] is dispatched to
+        [on_req_execute_command] before the unhandled path is consulted, so a
+        branch there would never run. *)
+    method! on_req_execute_command
       ~notify_back
-      ~(params : ExecuteCommandParams.t)
+      ~id:_
+      ~workDoneToken:_
+      (command : string)
+      (arguments : Yojson.Safe.t list option)
       : Yojson.Safe.t =
-      match
-        Server.execute_command server ~command:params.command ~arguments:params.arguments
-      with
+      match Server.execute_command server ~command ~arguments with
       | None -> `Null
       | Some { uri; create } ->
         (* Both are fire-and-forget: the client's acknowledgement carries
@@ -305,6 +281,33 @@ class oystermark_server ~sw =
         (* A client without [window/showDocument] still gets the note created;
            the path is the answer it can act on. *)
         `String (DocumentUri.to_path uri)
+
+    (** [references], [prepareRename] and [rename] have no dedicated hook in
+        {!Linol_eio.Jsonrpc2.server}, so they arrive here. *)
+    method! on_request_unhandled
+      : type r. notify_back:_ -> id:_ -> r Linol.Lsp.Client_request.t -> r =
+      fun ~notify_back ~id:_ (req : r Linol.Lsp.Client_request.t) ->
+        match req with
+        | Linol.Lsp.Client_request.TextDocumentReferences params ->
+          Server.references
+            server
+            ~rel_path:(self#rel_path params.textDocument.uri)
+            ~line:params.position.line
+            ~character:params.position.character
+        | Linol.Lsp.Client_request.TextDocumentPrepareRename params ->
+          Server.prepare_rename
+            server
+            ~rel_path:(self#rel_path params.textDocument.uri)
+            ~line:params.position.line
+            ~character:params.position.character
+        | Linol.Lsp.Client_request.TextDocumentRename params ->
+          Server.rename
+            server
+            ~rel_path:(self#rel_path params.textDocument.uri)
+            ~line:params.position.line
+            ~character:params.position.character
+            ~new_name:params.newName
+        | _ -> failwith "unhandled request"
   end
 
 let () =
