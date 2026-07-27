@@ -11,6 +11,19 @@ restrictions are not adopted: where djot removes something from Markdown
 (indented code blocks, setext headings, CommonMark emphasis flanking, `___`
 thematic breaks), the CommonMark behavior is kept.
 
+One addition changes the meaning of text that was already valid CommonMark, so
+it is worth stating on its own: **a heading runs to the next blank line**, djot
+style, rather than ending at its own line.
+
+```markdown
+# Section
+some content
+```
+
+is one heading titled `Section some content`, not a heading followed by a
+paragraph — so `[[note#Section]]` does not find it. Leave a blank line under a
+heading.
+
 ## Anchors
 
 A `#fragment` is matched against one namespace, in this order; first match wins:

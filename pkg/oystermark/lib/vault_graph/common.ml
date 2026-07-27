@@ -327,7 +327,7 @@ let%test_module "graph" =
 
     let%expect_test "heading link" =
       let vault =
-        build_vault [ "a.md", "see [[b#Section]]"; "b.md", "# Section\nsome content" ]
+        build_vault [ "a.md", "see [[b#Section]]"; "b.md", "# Section\n\nsome content" ]
       in
       let g = of_vault vault in
       show_edges g;
@@ -349,7 +349,7 @@ let%test_module "graph" =
     ;;
 
     let%expect_test "self-links" =
-      let vault = build_vault [ "a.md", "# Top\nsee [[a]] and [[a#Top]]" ] in
+      let vault = build_vault [ "a.md", "# Top\n\nsee [[a]] and [[a#Top]]" ] in
       let g = of_vault vault in
       show_edges g;
       [%expect
@@ -359,7 +359,7 @@ let%test_module "graph" =
           ((path a.md)
            (kind
             (Link
-             ((first_byte 10) (last_byte 14) (first_line (2 6)) (last_line (2 6)))))))
+             ((first_byte 11) (last_byte 15) (first_line (3 7)) (last_line (3 7)))))))
          (Tgt ((path a.md) (kind Note))))
 
         1
@@ -367,7 +367,7 @@ let%test_module "graph" =
           ((path a.md)
            (kind
             (Link
-             ((first_byte 20) (last_byte 28) (first_line (2 6)) (last_line (2 6)))))))
+             ((first_byte 21) (last_byte 29) (first_line (3 7)) (last_line (3 7)))))))
          (Tgt
           ((path a.md)
            (kind

@@ -748,7 +748,7 @@ let%expect_test "block attribute on paragraph" =
   let open For_test in
   let doc = Parse.of_string "{#water .important key=\"my val\"}\nDon't forget!" in
   Format.printf "%a%!" (pp_doc `Plain) doc;
-  [%expect {| <p id="water" class="important" key="my val">Don't forget!</p> |}]
+  [%expect {| <p id="water" class="important" key="my val">Don’t forget!</p> |}]
 ;;
 
 let%expect_test "block attribute on heading combines with slug; attr id wins" =
