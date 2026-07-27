@@ -51,10 +51,35 @@ by [*(empty)*].
 
 {2 Truncation}
 
-If the content string exceeds {!Lsp_lib.Config.t.hover_max_chars} bytes,
-it is truncated at that boundary (snapped to the previous newline to
-avoid cutting mid-word) and the suffix ["\n\n*(truncated)*"] is
-appended.
+The budget applies to the {b body} only: the path header is short,
+always useful, and survives however small
+{!Lsp_lib.Config.t.hover_max_chars} is.
+
+If the body exceeds {!Lsp_lib.Config.t.hover_max_chars} bytes, it is
+truncated at that boundary (snapped to the previous newline to avoid
+cutting mid-word) and a notice is appended after a blank line, reporting
+how much of the body the reader is seeing:
+
+{[
+*(truncated: showing 42 of 80 lines, 52%)*
+]}
+
+Lines are the unit, because that is what a reader perceives and the cut
+lands on a line boundary, so the count is exact. The percentage is
+derived from the very same counts, so the two figures can never
+disagree.
+
+When one or zero lines are hidden the line counts carry no information
+(the remainder is a single long line, e.g. a wide table row: ["1 of 2
+lines, 50%"] would hide kilobytes), the notice switches wholesale to
+bytes rather than mixing units:
+
+{[
+*(truncated: showing 240 B of 12 KB, 2%)*
+]}
+
+The percentage is rounded down and clamped to \[1, 99\]: truncation did
+happen, so the reader is never told [0%] or [100%].
 
 {1 Edge cases}
 

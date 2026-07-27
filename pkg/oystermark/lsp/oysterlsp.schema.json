@@ -52,7 +52,7 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 2000,
-          "description": "Bytes of note content a hover may include. Content past the limit is truncated at the previous newline, with a '*(truncated)*' suffix."
+          "description": "Bytes of note content a hover may include, excluding the path header. Content past the limit is truncated at the previous newline, followed by a notice reporting how much is shown, e.g. '*(truncated: showing 42 of 80 lines, 52%)*'."
         }
       }
     },

@@ -8,9 +8,44 @@ open Core
 
 (** {2 Content extraction} *)
 
+(** Number of lines in [s], counting a final line that lacks a trailing
+    newline.  The empty string has no lines. *)
+let count_lines (s : string) : int =
+  if String.is_empty s
+  then 0
+  else
+    String.count s ~f:(Char.equal '\n') + if String.is_suffix s ~suffix:"\n" then 0 else 1
+;;
+
+(** Render [n] bytes for human consumption: [B], [KB] or [MB]. *)
+let human_bytes (n : int) : string =
+  if n < 1024
+  then sprintf "%d B" n
+  else if n < 1024 * 1024
+  then sprintf "%d KB" ((n + 512) / 1024)
+  else sprintf "%d MB" ((n + (512 * 1024)) / (1024 * 1024))
+;;
+
 (** Truncate [s] to at most [max_chars] bytes, snapping to the previous
-    newline to avoid cutting mid-word, and appending a notice.
-    Returns [s] unchanged if it is already short enough. *)
+    newline to avoid cutting mid-word, and appending a notice reporting
+    how much of the content is shown.
+
+    The notice measures in {e lines}: that is the unit a reader
+    perceives, and the cut lands on a line boundary so the count is
+    exact.  The percentage is derived from the very same counts, so the
+    two figures can never disagree.
+
+    When one or zero lines are hidden the line counts carry no
+    information (the remainder is a single long line, e.g. a wide table
+    row), so the notice switches wholesale to bytes rather than mixing
+    units.
+
+    The percentage is clamped to \[1, 99\] and rounded down: truncation
+    did happen, so the reader is never shown [0%] or [100%].
+
+    Returns [s] unchanged if it is already short enough.
+
+    See {!page-"feature-hover".truncation}. *)
 let truncate ~max_chars (s : string) : string =
   if String.length s <= max_chars
   then s
@@ -21,7 +56,26 @@ let truncate ~max_chars (s : string) : string =
       | pos -> pos
       | exception Not_found_s _ -> max_chars
     in
-    String.prefix s cut ^ "\n\n*(truncated)*")
+    let shown = String.prefix s cut in
+    let pct ~shown ~total = Int.max 1 (Int.min 99 (shown * 100 / Int.max 1 total)) in
+    let total_lines = count_lines s in
+    let shown_lines = count_lines shown in
+    let notice =
+      if total_lines - shown_lines <= 1
+      then
+        sprintf
+          "*(truncated: showing %s of %s, %d%%)*"
+          (human_bytes (String.length shown))
+          (human_bytes (String.length s))
+          (pct ~shown:(String.length shown) ~total:(String.length s))
+      else
+        sprintf
+          "*(truncated: showing %d of %d lines, %d%%)*"
+          shown_lines
+          total_lines
+          (pct ~shown:shown_lines ~total:total_lines)
+    in
+    shown ^ "\n\n" ^ notice)
 ;;
 
 (** Extract the section of [content] starting at [heading_line] (0-based)
@@ -220,7 +274,7 @@ let hover
                 | None -> file_content)
              | None -> file_content
            in
-           Some (format_hover ~path body))
+           Some (path, body))
       | Heading { path; slug; _ } ->
         (match read_file path with
          | None -> None
@@ -231,7 +285,7 @@ let hover
                extract_section ~heading_line:hline ~heading_level:hlevel file_content
              | None -> file_content
            in
-           Some (format_hover ~path body))
+           Some (path, body))
       | Block { path; block_id } ->
         (match read_file path with
          | None -> None
@@ -241,7 +295,7 @@ let hover
              | Some p -> p
              | None -> file_content
            in
-           Some (format_hover ~path body))
+           Some (path, body))
       | Attr { path; id; _ } ->
         (match read_file path with
          | None -> None
@@ -249,7 +303,7 @@ let hover
            let body =
              Option.value (extract_attr_block ~id file_content) ~default:file_content
            in
-           Some (format_hover ~path body))
+           Some (path, body))
       | Curr_file ->
         let body =
           match link_ref.fragment with
@@ -269,7 +323,7 @@ let hover
              | None -> content)
           | None -> content
         in
-        Some (format_hover ~path:rel_path body)
+        Some (rel_path, body)
       | Curr_heading { slug; _ } ->
         let body =
           match find_heading_in_content ~slug content with
@@ -277,20 +331,22 @@ let hover
             extract_section ~heading_line:hline ~heading_level:hlevel content
           | None -> content
         in
-        Some (format_hover ~path:rel_path body)
+        Some (rel_path, body)
       | Curr_block { block_id } ->
         let body =
           match extract_block ~block_id content with
           | Some p -> p
           | None -> content
         in
-        Some (format_hover ~path:rel_path body)
+        Some (rel_path, body)
       | Curr_attr { id; _ } ->
         let body = Option.value (extract_attr_block ~id content) ~default:content in
-        Some (format_hover ~path:rel_path body)
+        Some (rel_path, body)
     in
-    Option.map result_opt ~f:(fun raw ->
-      let text = truncate ~max_chars:config.hover_max_chars raw in
+    (* The budget applies to the body only: the path header is short,
+       always useful, and must survive however small the budget is. *)
+    Option.map result_opt ~f:(fun (path, body) ->
+      let text = format_hover ~path (truncate ~max_chars:config.hover_max_chars body) in
       Trace_core.add_data_to_span _sp [ "content_bytes", `Int (String.length text) ];
       text, ll.first_byte, ll.last_byte)
 ;;
@@ -308,14 +364,53 @@ let%test_module "truncate" =
         |}]
     ;;
 
-    let%expect_test "truncates at newline" =
+    let%expect_test "truncates at newline, reporting lines and percentage" =
       let s = "line one\nline two\nline three" in
       print_string (truncate ~max_chars:15 s);
       [%expect
         {|
         line one
 
-        *(truncated)* |}]
+        *(truncated: showing 1 of 3 lines, 33%)* |}]
+    ;;
+
+    (* The remainder is a single long line, so line counts would say
+       "1 of 2, 50%" while hiding almost everything.  Report bytes. *)
+    let%expect_test "single long remainder reports bytes" =
+      let s = "head\n" ^ String.make 4000 'x' in
+      print_string (truncate ~max_chars:100 s);
+      [%expect
+        {|
+        head
+
+        *(truncated: showing 4 B of 4 KB, 1%)* |}]
+    ;;
+
+    (* No newline at all: nothing to snap back to, cut at the budget. *)
+    let%expect_test "no newline reports bytes" =
+      print_string (truncate ~max_chars:10 (String.make 40 'y'));
+      [%expect
+        {|
+        yyyyyyyyyy
+
+        *(truncated: showing 10 B of 40 B, 25%)* |}]
+    ;;
+
+    (* Truncation happened, so neither 0% nor 100% may be reported:
+       a sliver of a huge note is 1%, and all-but-a-sliver is 99%. *)
+    let%expect_test "percentage is clamped away from the extremes" =
+      let notice s = List.last_exn (String.split_lines s) in
+      let many =
+        List.init 500 ~f:(fun i -> sprintf "line %d" i) |> String.concat ~sep:"\n"
+      in
+      print_endline (notice (truncate ~max_chars:20 many));
+      let one_line = String.make 10_000 'z' in
+      print_endline (notice (truncate ~max_chars:9_999 one_line));
+      [%expect
+        {|
+        *(truncated: showing 2 of 500 lines, 1%)*
+        *(truncated: showing 10 KB of 10 KB, 99%)*
+        |}]
     ;;
   end)
 ;;
@@ -563,8 +658,10 @@ let%test_module "hover" =
 
         # Alpha
 
+        ## Section One
 
-        *(truncated)*
+
+        *(truncated: showing 3 of 9 lines, 33%)*
         |}]
     ;;
   end)
