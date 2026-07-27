@@ -1,0 +1,24 @@
+;; The demo vault is opened in an editor rather than built, so the one
+;; generated note is promoted into the source tree and committed with the rest
+;; of the vault. Building it is what keeps it honest: the note lists every
+;; command the server understands, and dune regenerates it whenever
+;; [Command_block] changes. A stale committed copy shows up as a dirty working
+;; tree, not as a demo that quietly lies.
+
+(rule
+ (mode
+  (promote (until-clean)))
+ (action
+  (with-stdout-to
+   command-panel.md
+   (run ./tools/gen_panel.exe))))
+
+(alias
+ (name demo-vault)
+ (deps command-panel.md))
+
+;; Built by default so `dune build` regenerates the note.
+
+(alias
+ (name default)
+ (deps command-panel.md))

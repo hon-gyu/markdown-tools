@@ -69,8 +69,16 @@ than once in a file makes every [#id] reference to it ambiguous.
      whose location is unknown ([Textloc.none]) is skipped.}
 }
 
+One id written once is not a duplicate, however many extractors see it.
+A heading whose identifier is {e written} — the [{#id}] line above it —
+is collected twice: the parser resolves the heading's slug from that
+attribute, and the attribute line is an anchor in its own right. The
+heading occurrence is dropped, keeping the attribute line, which is the
+better place to jump to.
+
 This covers both same-kind duplicates (two [{#foo}]) and cross-kind
-collisions (a heading whose slug equals a hand-written [{#foo}]).
+collisions (a heading whose slug is {e derived} from its text and equals
+a hand-written [{#foo}] elsewhere).
 Heading-vs-heading slug collisions do not arise here because slugs are
 auto-deduped during parsing.
 

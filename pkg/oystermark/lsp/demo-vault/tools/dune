@@ -1,0 +1,4 @@
+(executable
+ (name gen_panel)
+ (modules gen_panel)
+ (libraries core lsp_lib))
