@@ -152,6 +152,40 @@ The calendar actions' titles state what will happen when the note is missing:
 [Create today's daily note] when it does not exist, [Open today's daily note]
 when it does.
 
+{2:link Linking instead of opening}
+
+One further action, [Insert link to today's daily note], writes [ [[2026-07-26]] ]
+at the cursor and creates the note if it is missing, in a single edit so the
+link resolves the moment it lands.
+
+It is the only member of the family that reaches its note {e without}
+[window/showDocument]: a [WorkspaceEdit] is all it asks for, and the link it
+leaves behind is followed by go-to-definition. Where focusing is unavailable
+(see {!focus}) this is the working route to today's note, at the cost of
+navigation that writes to the buffer — the link stays until it is deleted,
+which is why it is offered as a link rather than performed as a hidden step of
+the other actions.
+
+The link is the note's base name, not its path. Link resolution matches a path
+subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a nested
+format; a reader is spared the folders, and the link keeps working if the
+[folder] setting later changes.
+
+It is also the only action here offered in {e every} menu in the vault — the
+others are at least about navigating, while this one is an editing offer made
+wherever the cursor happens to be. In a vault where daily notes are not part of
+the writing habit that is noise, so it can be turned off on its own:
+
+{@json[
+{ "dailyNotes": { "linkAction": false } }
+]}
+
+Turning it off leaves the rest of the family intact; it is not a way to disable
+daily notes, which is what an unsupported [format] does. Where
+[window/showDocument] is missing, though, this action is the only route to the
+note, so switching it off there gives up reaching daily notes altogether — a
+trade worth making knowingly.
+
 {2 Mechanism}
 
 A code action cannot itself focus an editor, so each action carries a command,
@@ -166,9 +200,34 @@ and a flag saying whether it must be created. Executing it:
   {- requests [window/showDocument] with [takeFocus] to open it.}
 }
 
-The server therefore advertises [executeCommandProvider] for that command. When
-the client does not advertise [window.showDocument], the note is still created
-and the action reports the path rather than silently doing half the job.
+The server therefore advertises [executeCommandProvider] for that command.
+
+{2:focus Focusing is the client's}
+
+Step 2 is the one effect the server cannot perform itself, and it is optional
+in the protocol. A client may:
+
+{ul
+  {- not advertise [window.showDocument] — then the request is never sent;}
+  {- advertise it and answer [success: false] — then it was sent and declined.}
+}
+
+Both end the same way: the note exists and nothing opened. Either case reports
+the path through [window/showMessage], because a command that finishes in
+silence is indistinguishable from one that failed. The [executeCommand] result
+is the path as well, for a client scripting against the server.
+
+The consequence is worth stating plainly: where the capability is missing, a
+command that only opens — [daily/today] on a note that already exists — does
+nothing visible but the message, while a command that {e creates} still puts a
+file on disk, since [workspace/applyEdit] is the better-supported half. Editors
+differ here and some in current use are on the wrong side of it (Zed, for one,
+neither advertises nor implements the request). Nothing in this server can make
+a client focus a document; closing that gap is client-side work.
+
+What the server {e can} do is offer a route that needs no such capability:
+{!link} writes a wikilink to the note, and go-to-definition follows it. That is
+the supported answer for these clients, and the reason the action exists.
 
 {1 Testing}
 
@@ -196,5 +255,8 @@ Property-based testing fits the round-trip obligation and is preferred there.
   {- {b English month and weekday names only}.}
   {- {b No Obsidian config}: a vault configured only through Obsidian's settings
      needs its [format] restated in [initializationOptions].}
+  {- {b Opening depends on the client} (see {!focus}): where
+     [window/showDocument] is unsupported, the command reports the path instead
+     of focusing it.}
   {- Positions and edits follow {!page-"feature-utf16-positions"}.}
 }

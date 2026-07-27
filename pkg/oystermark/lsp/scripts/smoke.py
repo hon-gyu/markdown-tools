@@ -57,6 +57,7 @@ class Session:
         self.stdout: IO[bytes] = self.proc.stdout
         self.root = root
         self.requests = []  # methods the server sent us, in order
+        self.messages = []  # window/showMessage texts, in order
         self.next_id = 1
 
     def send(self, msg):
@@ -98,6 +99,8 @@ class Session:
                     else {"success": True}
                 )
                 self.send({"jsonrpc": "2.0", "id": msg["id"], "result": result})
+            elif msg.get("method") == "window/showMessage":
+                self.messages.append(msg["params"]["message"])
             elif msg.get("id") == id_:
                 if "error" in msg:
                     raise RuntimeError(f"{method} failed: {msg['error']}")
@@ -128,7 +131,7 @@ def check(label, ok, detail="", hint=""):
         failures.append(label)
 
 
-def run(binary):
+def run(binary, show_document=True):
     root = tempfile.mkdtemp(prefix="oysterlsp-smoke-")
     with open(os.path.join(root, NOTE), "w") as f:
         f.write(NOTE_TEXT)
@@ -137,12 +140,13 @@ def run(binary):
     try:
         # A bare vault: no oysterlsp.json, no initializationOptions.  Daily
         # notes must still work off their defaults.
+        window = {"showDocument": {"support": True}} if show_document else {}
         caps = s.request(
             "initialize",
             {
                 "processId": None,
                 "rootUri": "file://" + root,
-                "capabilities": {"window": {"showDocument": {"support": True}}},
+                "capabilities": {"window": window},
             },
         )["capabilities"]
 
@@ -197,7 +201,7 @@ def run(binary):
         if daily is None:
             check("a code action carries a command", False)
         else:
-            before = len(s.requests)
+            before, said = len(s.requests), len(s.messages)
             result = s.request(
                 "workspace/executeCommand",
                 {
@@ -205,7 +209,7 @@ def run(binary):
                     "arguments": daily["command"]["arguments"],
                 },
             )
-            sent = s.requests[before:]
+            sent, messages = s.requests[before:], s.messages[said:]
             check(
                 "reaches the handler (result is not null)",
                 result is not None,
@@ -213,7 +217,21 @@ def run(binary):
                 "not overridden — check which linol method handles it",
             )
             check("sends workspace/applyEdit", "workspace/applyEdit" in sent)
-            check("sends window/showDocument", "window/showDocument" in sent)
+            if show_document:
+                check("sends window/showDocument", "window/showDocument" in sent)
+                check("stays quiet when the client can focus", not messages)
+            else:
+                # Where focusing is impossible the command must still say so:
+                # silence is indistinguishable from failure.
+                check(
+                    "does not send window/showDocument",
+                    "window/showDocument" not in sent,
+                )
+                check(
+                    "reports the path instead",
+                    any(root in m for m in messages),
+                    f"said {messages}",
+                )
 
         # Code lenses carry the same commands; a client that renders them is
         # the whole point of the command block.
@@ -246,7 +264,12 @@ if __name__ == "__main__":
             f"no such binary: {binary}\n(build it with: dune build {DEFAULT_BINARY})"
         )
     print(f"smoke-checking {binary}")
+    print("\n### client that supports window/showDocument")
     run(binary)
+    # The other half of the world, and the one several editors are in: the
+    # command cannot focus, and must say so rather than finish in silence.
+    print("\n### client that does not support window/showDocument")
+    run(binary, show_document=False)
     print(
         f"\n{len(failures)} failure(s)"
         + (": " + ", ".join(failures) if failures else "")

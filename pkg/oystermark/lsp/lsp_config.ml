@@ -25,6 +25,12 @@ type daily_notes =
   { format : string
   ; folder : string option (** [None] is the vault root. *)
   ; template : string option (** Carried; note creation ignores it (stubbed). *)
+  ; link_action : bool
+    (** Whether to offer [Insert link to today's daily note].  It is the one
+      daily-note action that reaches its note without
+      [window/showDocument], and the one that appears in every menu
+      whether or not the note is wanted there — so it is the one worth
+      turning off.  See {!page-"feature-daily-notes".link}. *)
   }
 [@@deriving sexp, equal]
 
@@ -46,6 +52,7 @@ let default_daily_notes =
   { format = Daily_notes.Format.to_string Daily_notes.default_format
   ; folder = None
   ; template = None
+  ; link_action = true
   }
 ;;
 
@@ -78,6 +85,7 @@ module Partial = struct
     { format : string option
     ; folder : string option
     ; template : string option
+    ; link_action : bool option
     }
 
   type t =
@@ -91,7 +99,7 @@ module Partial = struct
     { gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
-    ; daily_notes = { format = None; folder = None; template = None }
+    ; daily_notes = { format = None; folder = None; template = None; link_action = None }
     }
   ;;
 
@@ -109,6 +117,7 @@ module Partial = struct
         { format = pick upper.daily_notes.format lower.daily_notes.format
         ; folder = pick upper.daily_notes.folder lower.daily_notes.folder
         ; template = pick upper.daily_notes.template lower.daily_notes.template
+        ; link_action = pick upper.daily_notes.link_action lower.daily_notes.link_action
         }
     }
   ;;
@@ -126,6 +135,8 @@ let resolve (p : Partial.t) : resolved =
       { format = Option.value p.daily_notes.format ~default:default_daily_notes.format
       ; folder = p.daily_notes.folder
       ; template = p.daily_notes.template
+      ; link_action =
+          Option.value p.daily_notes.link_action ~default:default_daily_notes.link_action
       }
   }
 ;;
@@ -171,6 +182,14 @@ let parse_positive_int (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t) : in
     None
 ;;
 
+let parse_bool (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t) : bool option =
+  match j with
+  | `Bool b -> Some b
+  | got ->
+    Warnings.bad_value w ~key ~expected:"a boolean" got;
+    None
+;;
+
 let parse_fragment_behavior (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t)
   : fragment_behavior option
   =
@@ -202,7 +221,9 @@ let parse_object
 ;;
 
 let parse_daily_notes (w : Warnings.t) (j : Yojson.Safe.t) : Partial.daily_notes =
-  let acc = ref { Partial.format = None; folder = None; template = None } in
+  let acc =
+    ref { Partial.format = None; folder = None; template = None; link_action = None }
+  in
   parse_object w ~self:"dailyNotes" ~prefix:"dailyNotes." j ~f:(fun ~key name value ->
     let str () = parse_string w ~key value in
     match name with
@@ -214,6 +235,9 @@ let parse_daily_notes (w : Warnings.t) (j : Yojson.Safe.t) : Partial.daily_notes
       true
     | "template" ->
       acc := { !acc with Partial.template = str () };
+      true
+    | "linkAction" ->
+      acc := { !acc with Partial.link_action = parse_bool w ~key value };
       true
     | _ -> false);
   !acc
@@ -269,8 +293,74 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
             true
           | _ -> false);
       true
+    (* Not a setting: the association a JSON language server reads to offer
+       completion and validation over this very file.  Reporting it as unknown
+       would penalize the one line that makes the file self-documenting.  See
+       {!page-"feature-configuration".schema-file}. *)
+    | "$schema" -> true
     | _ -> false);
   !acc, Warnings.to_list w
+;;
+
+(** {1:keys Key inventory}
+
+    Every dotted key {!parse} accepts, [$schema] aside.  It exists to be
+    checked against — the published JSON Schema is a second statement of the
+    same thing, and two statements drift.  See
+    {!page-"feature-configuration".schema-file}. *)
+let known_keys : string list =
+  [ "dailyNotes.format"
+  ; "dailyNotes.folder"
+  ; "dailyNotes.template"
+  ; "dailyNotes.linkAction"
+  ; "hover.maxChars"
+  ; "goToDefinition.unresolvedFragment"
+  ; "diagnostics.unresolvedFragment"
+  ]
+;;
+
+(** Where the published schema lives: the [$schema] value
+    [--print-default-config] writes, and the [$id] the schema file itself
+    carries.  A raw URL, not a [github.com/blob] one — that serves HTML, which
+    a JSON language server cannot read.  See
+    {!page-"feature-configuration".schema-file}. *)
+let schema_url =
+  "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json"
+;;
+
+(** {1:json Emitting}
+
+    The inverse of {!parse}, over a resolved {!t}: what a configuration file
+    would have to say to produce these settings.  Used by
+    [--print-default-config] to hand over a starting file. *)
+
+let json_of_fragment_behavior : fragment_behavior -> Yojson.Safe.t = function
+  | Fallback -> `String "fallback"
+  | Strict -> `String "strict"
+;;
+
+let to_json (t : t) : Yojson.Safe.t =
+  (* [folder] and [template] are optional with no default; omitting them says
+     "vault root" and "no template" more honestly than [null] would. *)
+  let optional key = function
+    | None -> []
+    | Some v -> [ key, `String v ]
+  in
+  `Assoc
+    [ ( "dailyNotes"
+      , `Assoc
+          ([ "format", `String t.daily_notes.format ]
+           @ optional "folder" t.daily_notes.folder
+           @ optional "template" t.daily_notes.template
+           @ [ "linkAction", `Bool t.daily_notes.link_action ]) )
+    ; "hover", `Assoc [ "maxChars", `Int t.hover_max_chars ]
+    ; ( "goToDefinition"
+      , `Assoc
+          [ "unresolvedFragment", json_of_fragment_behavior t.gtd_unresolved_fragment ] )
+    ; ( "diagnostics"
+      , `Assoc
+          [ "unresolvedFragment", json_of_fragment_behavior t.diag_unresolved_fragment ] )
+    ]
 ;;
 
 (** {1:sources Sources}
@@ -360,7 +450,7 @@ let%test_module "configuration" =
     let%expect_test "every key" =
       show
         {|{ "dailyNotes": {"format": "YYYY/MM/YYYY-MM-DD", "folder": "journal",
-                           "template": "tpl.md"},
+                           "template": "tpl.md", "linkAction": false},
             "hover": {"maxChars": 400},
             "goToDefinition": {"unresolvedFragment": "strict"},
             "diagnostics": {"unresolvedFragment": "strict"} }|};
@@ -369,7 +459,22 @@ let%test_module "configuration" =
         ((gtd_unresolved_fragment Strict) (diag_unresolved_fragment Strict)
          (hover_max_chars 400)
          (daily_notes
-          ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md)))))
+          ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md))
+           (link_action false))))
+        |}]
+    ;;
+
+    (* The switch is a plain boolean: anything else is dropped and named,
+       rather than being read as truthy. *)
+    let%expect_test "linkAction must be a boolean" =
+      show {|{"dailyNotes": {"linkAction": "no"}}|};
+      [%expect
+        {|
+        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
+         (hover_max_chars 2000)
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
+        ! dailyNotes.linkAction: expected a boolean, got "no"
         |}]
     ;;
 
@@ -393,7 +498,8 @@ let%test_module "configuration" =
         {|
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 2000)
-         (daily_notes ((format YYYY-MM-DD) (folder ()) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got "400px"
         ! goToDefinition.unresolvedFragment: expected "fallback" or "strict", got "lenient"
         ! dailyNotes.format: expected a non-empty string, got 42
@@ -409,7 +515,8 @@ let%test_module "configuration" =
         {|
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 2000)
-         (daily_notes ((format YYYY-MM-DD) (folder ()) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got 0
         |}]
     ;;
@@ -422,7 +529,8 @@ let%test_module "configuration" =
         {|
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 2000)
-         (daily_notes ((format YYYY-MM-DD) (folder ()) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! unknown key "dailynotes"
         ! unknown key "hover.maxchars"
         ! unknown key "disable"
@@ -436,11 +544,13 @@ let%test_module "configuration" =
         {|
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 2000)
-         (daily_notes ((format YYYY-MM-DD) (folder ()) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 2000)
-         (daily_notes ((format YYYY-MM-DD) (folder ()) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes: expected an object, got []
         |}]
     ;;
@@ -467,7 +577,8 @@ let%test_module "configuration" =
         {|
         ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
          (hover_max_chars 100)
-         (daily_notes ((format YYYY-MM-DD) (folder (journal)) (template ()))))
+         (daily_notes
+          ((format YYYY-MM-DD) (folder (journal)) (template ()) (link_action true))))
         |}]
     ;;
 
@@ -494,7 +605,8 @@ let%test_module "configuration" =
 
     let%expect_test "no file: the client's settings stand" =
       load_show None ~init_options:{|{"dailyNotes": {"folder": "from-client"}}|};
-      [%expect {| ((format YYYY-MM-DD) (folder (from-client)) (template ())) |}]
+      [%expect
+        {| ((format YYYY-MM-DD) (folder (from-client)) (template ()) (link_action true)) |}]
     ;;
 
     let%expect_test "file overrides the client, and says which source erred" =
@@ -503,7 +615,7 @@ let%test_module "configuration" =
         ~init_options:{|{"dailyNotes": {"folder": "from-client"}, "nope": 1}|};
       [%expect
         {|
-        ((format YYYY-MM-DD) (folder (from-file)) (template ()))
+        ((format YYYY-MM-DD) (folder (from-file)) (template ()) (link_action true))
         ! initializationOptions: unknown key "nope"
         ! oysterlsp.json: hover.maxChars: expected a positive integer, got []
         |}]
@@ -517,7 +629,7 @@ let%test_module "configuration" =
         ~init_options:{|{"dailyNotes": {"folder": "c"}}|};
       [%expect
         {|
-        ((format YYYY-MM-DD) (folder (c)) (template ()))
+        ((format YYYY-MM-DD) (folder (c)) (template ()) (link_action true))
         ! oysterlsp.json: not valid JSON — Line 1, bytes 15-16: Unexpected end of input
         |}]
     ;;

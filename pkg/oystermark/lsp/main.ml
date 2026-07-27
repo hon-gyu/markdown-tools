@@ -258,8 +258,8 @@ class oystermark_server ~sw =
       match Server.execute_command server ~command ~arguments with
       | None -> `Null
       | Some { uri; create } ->
-        (* Both are fire-and-forget: the client's acknowledgement carries
-           nothing this command needs. *)
+        (* The client's acknowledgement of the edit carries nothing this
+           command needs. *)
         let ignore_response _ = () in
         Option.iter create ~f:(fun edit ->
           let _ =
@@ -269,18 +269,48 @@ class oystermark_server ~sw =
               ignore_response
           in
           ());
+        let created = Option.is_some create in
         if can_show_document
         then (
           let _ =
             notify_back#send_request
               (Linol.Lsp.Server_request.ShowDocumentRequest
                  (ShowDocumentParams.create ~takeFocus:true ~uri ()))
-              ignore_response
+              (function
+                (* A client may advertise the capability and still decline: the
+                 result is the only place that shows up. *)
+                | Ok ({ success = true } : ShowDocumentResult.t) -> ()
+                | Ok _ | Error _ -> self#report_unfocused ~notify_back ~created uri)
           in
-          ());
-        (* A client without [window/showDocument] still gets the note created;
-           the path is the answer it can act on. *)
+          ())
+        else self#report_unfocused ~notify_back ~created uri;
+        (* A client that cannot focus still gets the note created; the path is
+           the answer it can act on. *)
         `String (DocumentUri.to_path uri)
+
+    (** Say that the note was not opened, and where it is.
+
+        Focusing is [window/showDocument]'s job and the one effect the server
+        cannot perform itself.  Where a client does not support it — or
+        declines — the command would otherwise finish in complete silence,
+        indistinguishable from one that failed.  See
+        {!page-"feature-daily-notes".focus}. *)
+    method
+      private report_unfocused
+      ~notify_back
+      ~(created : bool)
+      (uri : DocumentUri.t)
+      : unit =
+      notify_back#send_notification
+        (Linol.Lsp.Server_notification.ShowMessage
+           (ShowMessageParams.create
+              ~type_:MessageType.Info
+              ~message:
+                (sprintf
+                   "oystermark: %s %s — this client cannot open documents on request \
+                    (window/showDocument)"
+                   (if created then "created" else "daily note is at")
+                   (DocumentUri.to_path uri))))
 
     (** [references], [prepareRename] and [rename] have no dedicated hook in
         {!Linol_eio.Jsonrpc2.server}, so they arrive here. *)
@@ -310,7 +340,25 @@ class oystermark_server ~sw =
         | _ -> failwith "unhandled request"
   end
 
-let () =
+(** A starting [oysterlsp.json], on stdout.
+
+    Every key at its default, with the [$schema] association first so the file
+    documents itself in any editor with a JSON language server. The point is a
+    file to edit rather than a file to keep: defaults written down are frozen,
+    and a key left out is a key that follows this server as it changes. See
+    {!page-"feature-configuration".schema-file}. *)
+let print_default_config () : unit =
+  let fields =
+    match Lsp_lib.Config.to_json Lsp_lib.Config.default with
+    | `Assoc fields -> fields
+    | other -> [ "config", other ]
+  in
+  print_endline
+    (Yojson.Safe.pretty_to_string
+       (`Assoc (("$schema", `String Lsp_lib.Config.schema_url) :: fields)))
+;;
+
+let run_server () =
   Eio_main.run
   @@ fun env ->
   let enable_otel = Option.is_some (Sys.getenv "OTEL_EXPORTER_OTLP_ENDPOINT") in
@@ -323,4 +371,12 @@ let () =
   let s = new oystermark_server ~sw in
   let server = Linol_eio.Jsonrpc2.create_stdio ~env s in
   Linol_eio.Jsonrpc2.run server
+;;
+
+(* Anything but the flag starts the server: an editor spawns this with no
+   arguments, and an unrecognized one must not stop it from doing so. *)
+let () =
+  match Sys.get_argv () |> Array.to_list |> List.tl with
+  | Some [ "--print-default-config" ] -> print_default_config ()
+  | _ -> run_server ()
 ;;

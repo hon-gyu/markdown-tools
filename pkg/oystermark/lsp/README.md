@@ -99,14 +99,33 @@ Settings come from `oysterlsp.json` at the vault root, falling back to the
 client's `initializationOptions` key by key — full schema in
 [configuration](docs/feature-configuration.mld).
 
+For a starting file with every key at its default:
+
+```bash
+oystermark-lsp --print-default-config > oysterlsp.json
+```
+
+It includes a `"$schema"` line pointing at the raw
+[oysterlsp.schema.json](oysterlsp.schema.json) on `main`, which any JSON
+language server picks up — that is where key completion, value validation and per-key
+documentation come from, so prefer it over memorizing the table.
+
 ```json
 {
-  "dailyNotes": { "format": "YYYY/MM/YYYY-MM-DD", "folder": "journal" },
+  "dailyNotes": {
+    "format": "YYYY/MM/YYYY-MM-DD",
+    "folder": "journal",
+    "linkAction": false
+  },
   "hover": { "maxChars": 400 },
   "goToDefinition": { "unresolvedFragment": "strict" },
   "diagnostics": { "unresolvedFragment": "strict" }
 }
 ```
+
+`linkAction` (default `true`) governs the one daily-note action offered in
+every menu — *Insert link to today's daily note* — so it can be withdrawn
+without disabling daily notes.
 
 The daily-note `format` is a subset of the
 [moment.js](https://momentjs.com/docs/#/displaying/format/) tokens and may

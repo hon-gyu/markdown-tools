@@ -179,6 +179,7 @@ let%expect_test "the usual actions elsewhere in the note" =
     Create yesterday's daily note
     Create tomorrow's daily note
     Open previous daily note
+    Insert link to today's daily note
     |}]
 ;;
 
@@ -191,6 +192,7 @@ let%expect_test "no action for an inapplicable command" =
     Open today's daily note
     Create yesterday's daily note
     Create tomorrow's daily note
+    Insert link to today's daily note
     |}]
 ;;
 
@@ -215,8 +217,7 @@ let insert_line (edit : WorkspaceEdit.t) : int =
 ;;
 
 (** The insert action offered at [line] of [rel_path], with where it would
-    write and what.  Actions carrying no edit — the daily-note menu — are
-    dropped, since this is about the one that writes a block. *)
+    write and what. *)
 let show_insert ?(files = files) ?(line = 0) rel_path =
   with_tmp_vault ~files (fun vault_root ->
     let s = start ~vault_root in
@@ -228,6 +229,10 @@ let show_insert ?(files = files) ?(line = 0) rel_path =
       ~end_line:line
       ~end_character:0
       ()
+    (* Other actions carry edits too — the daily-note link, for one — so
+       select this one by name rather than by having an edit at all. *)
+    |> List.filter ~f:(fun (a : CodeAction.t) ->
+      String.is_substring a.title ~substring:"command block")
     |> List.iter ~f:(fun (a : CodeAction.t) ->
       Option.iter a.edit ~f:(fun edit ->
         printf "%s, at line %d\n" a.title (insert_line edit);

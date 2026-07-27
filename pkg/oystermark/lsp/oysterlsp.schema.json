@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json",
+  "title": "oysterlsp.json",
+  "description": "Configuration for the Oystermark language server, read from oysterlsp.json at the vault root. Every setting also has an initializationOptions equivalent, which this file overrides key by key. Anything unusable falls back to the default and is reported at startup rather than failing.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Association to this schema, so an editor's JSON language server offers completion and validation here. Not a setting."
+    },
+    "dailyNotes": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where daily notes live and how they are named. See the daily-notes feature spec.",
+      "properties": {
+        "format": {
+          "type": "string",
+          "default": "YYYY-MM-DD",
+          "description": "Date format naming the note, as a subset of the moment.js tokens (YYYY, MM, DD, MMM, MMMM, ddd, dddd, and [literal] text). May contain '/' to nest notes in folders. An unsupported format disables the daily-note actions entirely and is reported at startup.",
+          "examples": [
+            "YYYY-MM-DD",
+            "YYYY/MM/YYYY-MM-DD",
+            "YYYY-MM-DD dddd"
+          ]
+        },
+        "folder": {
+          "type": "string",
+          "description": "Vault-relative folder the daily notes live under. Omit for the vault root.",
+          "examples": [
+            "journal",
+            "daily"
+          ]
+        },
+        "template": {
+          "type": "string",
+          "description": "Stubbed: the setting round-trips but note creation always makes an empty note."
+        },
+        "linkAction": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to offer the 'Insert link to today's daily note' code action. It is the only daily-note action offered in every menu in the vault, and the only one that reaches its note without window/showDocument — so turning it off in a client lacking that capability gives up reaching daily notes altogether."
+        }
+      }
+    },
+    "hover": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxChars": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 2000,
+          "description": "Bytes of note content a hover may include. Content past the limit is truncated at the previous newline, with a '*(truncated)*' suffix."
+        }
+      }
+    },
+    "goToDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unresolvedFragment": {
+          "enum": [
+            "fallback",
+            "strict"
+          ],
+          "default": "fallback",
+          "description": "What to do with a link whose file exists but whose heading or block-id fragment does not. 'fallback' jumps to the top of the file; 'strict' returns no result."
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unresolvedFragment": {
+          "enum": [
+            "fallback",
+            "strict"
+          ],
+          "default": "fallback",
+          "description": "What to do with a link whose file exists but whose fragment does not. 'fallback' warns about nothing; 'strict' reports the fragment as unresolved."
+        }
+      }
+    }
+  }
+}

@@ -27,6 +27,7 @@ The same shape in both sources — one schema, one parser.
   | [dailyNotes.format] | string | [YYYY-MM-DD] | Date format naming the note. See {!page-"feature-daily-notes".format}. |
   | [dailyNotes.folder] | string | vault root | Vault-relative folder the daily notes live under. |
   | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |
+  | [dailyNotes.linkAction] | bool | [true] | Whether to offer [Insert link to today's daily note]. See {!page-"feature-daily-notes".link}. |
   | [hover.maxChars] | positive int | [2000] | Bytes of note content a hover may include. See {!page-"feature-hover".truncation}. |
   | [goToDefinition.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Where a link with an unfindable fragment goes. See {!page-"feature-go-to-definition"}. |
   | [diagnostics.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Whether an unfindable fragment is reported. See {!page-"feature-diagnostics"}. |
@@ -41,6 +42,47 @@ A complete example:
     "goToDefinition": { "unresolvedFragment": "strict" }
   }
 ]}
+
+{1:schema-file Discovering the schema}
+
+The table above is the specification; [lsp/oysterlsp.schema.json] is the same
+thing in a form editors can act on. Naming it from the file itself is enough —
+a JSON language server picks it up with no editor configuration — and gives
+completion of every key, validation of every value, and the [description] text
+on hover:
+
+{[
+  {
+    "$schema": "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json",
+    "dailyNotes": { "format": "YYYY-MM-DD" }
+  }
+]}
+
+The URL is the {b raw} one: a [github.com/…/blob/…] link serves an HTML page,
+which a JSON language server cannot read. It tracks [main], so a vault picks up
+new settings as they land; pin a tag in place of [main] to hold a version
+still.
+
+[$schema] is accepted and ignored by the parser: it is an editor association,
+not a setting, and reporting it as an unknown key would penalize the one line
+that makes the file self-describing.
+
+For a starting file, [oystermark-lsp --print-default-config] writes every key
+at its default, with the association line already in place. It is meant as a
+file to {e edit}, not one to keep whole: a written-down default is frozen at
+the value it had the day it was written, while an omitted key follows this
+server as it changes.
+
+{2 Against drift}
+
+A published schema is a second statement of what the parser accepts, and two
+statements drift — a schema key the parser rejects would advertise a setting
+that does nothing, and a parser key the schema omits would be flagged as
+invalid in the user's editor. Both directions are tested against
+{!Lsp_lib.Config.known_keys}, which is in turn checked against the parser
+itself: each inventoried key is fed a value of the wrong type, and the
+complaint must be about the {e value}, since an unknown key complains about
+the key. See [tests/lsp/test_config_schema.ml].
 
 {1:precedence Precedence}
 
@@ -99,12 +141,14 @@ server capabilities would remain restart-only.
   {- The file is looked for at the vault root only: no search upward from the
      edited file, no per-directory overrides.}
   {- JSON, so no comments. Consistent with {!Oystermark.Config}.}
-  {- No environment-variable or command-line source. The server takes no
-     arguments.}
+  {- No environment-variable or command-line source for {e settings}. The one
+     argument the binary takes, [--print-default-config], writes a file and
+     exits; it configures nothing.}
 }
 
 {1:test Test}
 
 Parsing, merging, and the warnings: {!Lsp_lib.Config}'s inline tests.
 End to end, from a file on disk through {!Lsp_lib.Server}:
-[tests/lsp/test_configuration.ml].
+[tests/lsp/test_configuration.ml].  The published schema against the parser,
+and the emitted default file against both: [tests/lsp/test_config_schema.ml].

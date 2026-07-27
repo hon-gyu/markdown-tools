@@ -544,6 +544,68 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
     calendar @ existing
 ;;
 
+(** Write a wikilink to today's daily note at the cursor, creating the note
+    when it is missing.
+
+    Every other action in the family reaches its note through
+    [window/showDocument], which the protocol makes optional and not every
+    client implements.  This one asks for nothing but a [WorkspaceEdit], and
+    leaves behind a link that go-to-definition follows — so the note stays
+    reachable wherever that capability is missing.  It is also, independently,
+    an ordinary thing to want in a note.
+
+    The link is the note's base name: [resolve_file] matches a path
+    subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a
+    nested format without the writer spelling out the folders.  See
+    {!page-"feature-daily-notes".link}. *)
+let daily_note_link_actions (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+  : CodeAction.t list
+  =
+  match daily_table t with
+  | Error _ -> []
+  (* Unlike the rest of the family this one is offered in every menu in the
+     vault, wanted there or not, so it is the one worth being able to turn off
+     without disabling daily notes.  See {!page-"feature-daily-notes".link}. *)
+  | Ok _ when not t.config.daily_notes.link_action -> []
+  | Ok table ->
+    let path = Daily_notes.path_of_date table.Daily_notes.Table.settings (t.now ()) in
+    let name = Filename.chop_extension (Filename.basename path) in
+    let create =
+      if file_exists t path
+      then []
+      else
+        [ `CreateFile
+            (CreateFile.create
+               ~uri:(uri_of_rel_path t path)
+               ~options:
+                 (CreateFileOptions.create ~ignoreIfExists:true ~overwrite:false ())
+               ())
+        ]
+    in
+    let at = Position.create ~line ~character in
+    let insert =
+      `TextDocumentEdit
+        (TextDocumentEdit.create
+           ~textDocument:
+             (OptionalVersionedTextDocumentIdentifier.create
+                ~uri:(uri_of_rel_path t rel_path)
+                ())
+           ~edits:
+             [ `TextEdit
+                 (TextEdit.create
+                    ~range:(Range.create ~start:at ~end_:at)
+                    ~newText:(sprintf "[[%s]]" name))
+             ])
+    in
+    (* Creation first: the link should resolve the moment it is written. *)
+    [ CodeAction.create
+        ~title:"Insert link to today's daily note"
+        ~kind:CodeActionKind.Refactor
+        ~edit:(WorkspaceEdit.create ~documentChanges:(create @ [ insert ]) ())
+        ()
+    ]
+;;
+
 (* Command blocks
    ===============
 
@@ -793,6 +855,7 @@ let code_action
       match command_block_actions t ~rel_path ~line:start_line with
       | [] ->
         daily_note_actions t ~rel_path
+        @ daily_note_link_actions t ~rel_path ~line:start_line ~character:start_character
         @ insert_command_block_actions t ~rel_path ~line:start_line
       | actions -> actions)
     else []

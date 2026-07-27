@@ -4,6 +4,9 @@
  (libraries core core_unix linol.lsp lsp_lib trace_collect)
  (inline_tests
   (deps
-   (source_tree data)))
+   (source_tree data)
+   ;; The published schema is checked against the parser's own key inventory;
+   ;; see test_config_schema.ml.
+   %{project_root}/pkg/oystermark/lsp/oysterlsp.schema.json))
  (preprocess
   (pps ppx_expect ppx_jane)))
