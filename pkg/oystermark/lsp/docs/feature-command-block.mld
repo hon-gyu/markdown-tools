@@ -87,6 +87,26 @@ note that is not a daily note, or one with nothing before it — keeps its lens,
 without a command attached, showing why: [no previous daily note]. A lens that
 vanishes would be indistinguishable from one the server failed to produce.
 
+{1:insert Creating a block}
+
+The surfaces above all presuppose a block: completion offers the catalogue
+{e inside} one, so the names are discoverable only to someone who already knows
+the fence to type. A code action closes that circle — [Insert oysterlsp command
+block], offered anywhere in a note that has none, writing the fence and its
+lines at the cursor's line.
+
+It writes only the commands that {b can run in this note}, resolved exactly as
+the lenses resolve them — see the {e enabled when} column above: an ordinary
+note gets the calendar three, a daily note with neighbours on both sides gets
+all five. The alternative — always writing the catalogue — hands most notes two
+lines that the lenses immediately report as dead, and a panel is a list of the
+operations that matter here.
+
+The gate is the note, not the cursor: once a block exists the action stops
+being offered, since the way to add a line to a panel is to type it, with
+completion helping. A note where nothing resolves at all — daily notes are
+disabled — is offered nothing, there being no panel worth writing.
+
 {1:publishing Publishing}
 
 This is a {b dev-time} feature. The block is an ordinary code block to every
@@ -106,12 +126,15 @@ pipeline hook, no interaction with {!Oystermark.Config}.
      into today's daily note — are not implemented.}
   {- Lens rendering is a client capability. A client without it still gets the
      code actions, which is the whole set of behavior minus the clicking.}
+  {- An inserted block is written at column zero, so invoking the action from
+     inside a list item or a callout puts the fence outside it.}
   {- No lens is offered outside a command block, and no note is treated
      specially by name.}
 }
 
 {1:test Test}
 
-Recognition and the command catalogue: {!Lsp_lib.Command_block}'s inline tests.
-The lenses, actions, completions and diagnostics a server answers with:
-[tests/lsp/test_command_block.ml].
+Recognition, the command catalogue, and the text of a fresh block:
+{!Lsp_lib.Command_block}'s inline tests. The lenses, actions, completions and
+diagnostics a server answers with, and what the insert action writes into which
+note: [tests/lsp/test_command_block.ml].

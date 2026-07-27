@@ -75,9 +75,10 @@ val uri_of_rel_path : t -> string -> DocumentUri.t
 
     See {!page-"feature-command-block"}.  A fenced [oysterlsp] block lifts the
     commands above onto lines, where a lens can render them; the other surfaces
-    it adds — one code action on the cursor's line, completion of the command
-    names, a diagnostic on an unknown one — are folded into {!code_action},
-    {!completion} and the diagnostics the sync handlers return. *)
+    it adds — one code action on the cursor's line, an action that seeds a note
+    with a block of its own, completion of the command names, a diagnostic on
+    an unknown one — are folded into {!code_action}, {!completion} and the
+    diagnostics the sync handlers return. *)
 
 (** Spec: {!page-"feature-command-block".surfaces}.  One lens per recognized
     line; a line whose command cannot run right now keeps its lens, without a

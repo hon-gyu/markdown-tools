@@ -670,6 +670,53 @@ let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeActio
        ])
 ;;
 
+(** The action that seeds a note with a panel of its own, at the cursor's line.
+
+    Offered only where there is no block yet, and listing only the commands
+    that can run in {e this} note — an ordinary note gets the calendar three,
+    a daily note with neighbours gets all five.  Inserting the whole catalogue
+    everywhere would hand most notes two lines the lenses immediately report as
+    dead.  See {!page-"feature-command-block".insert}. *)
+let insert_command_block_actions (t : t) ~(rel_path : string) ~(line : int)
+  : CodeAction.t list
+  =
+  let content = buffer_content t rel_path in
+  if Command_block.has_command_block content
+  then []
+  else (
+    match
+      List.filter Command_block.all_of_command ~f:(fun c ->
+        Option.is_some (resolve_command t ~rel_path c).target)
+    with
+    (* Nothing runs here — daily notes are off — so there is no panel worth
+       writing. *)
+    | [] -> []
+    | commands ->
+      let at = Position.create ~line ~character:0 in
+      [ CodeAction.create
+          ~title:"Insert oysterlsp command block"
+          ~kind:CodeActionKind.Refactor
+          ~edit:
+            (WorkspaceEdit.create
+               ~documentChanges:
+                 [ `TextDocumentEdit
+                     (TextDocumentEdit.create
+                        ~textDocument:
+                          (OptionalVersionedTextDocumentIdentifier.create
+                             ~uri:(uri_of_rel_path t rel_path)
+                             ())
+                        ~edits:
+                          [ `TextEdit
+                              (TextEdit.create
+                                 ~range:(Range.create ~start:at ~end_:at)
+                                 ~newText:(Command_block.render commands))
+                          ])
+                 ]
+               ())
+          ()
+      ])
+;;
+
 (** The catalogue, offered inside a command block and nowhere else. *)
 let command_block_completions (t : t) ~(rel_path : string) ~(line : int)
   : CompletionItem.t list option
@@ -744,7 +791,9 @@ let code_action
          whole daily-note menu would bury it.  See
          {!page-"feature-command-block".surfaces}. *)
       match command_block_actions t ~rel_path ~line:start_line with
-      | [] -> daily_note_actions t ~rel_path
+      | [] ->
+        daily_note_actions t ~rel_path
+        @ insert_command_block_actions t ~rel_path ~line:start_line
       | actions -> actions)
     else []
   in

@@ -75,13 +75,17 @@ let is_ignorable (text : string) : bool =
   String.is_empty text || String.is_prefix text ~prefix:"#"
 ;;
 
-(** Every line of every command block in [content], blanks and comments
-    included, as [(line, stripped text)].
+(** Fold [f] over every command block in [content], in document order.
 
-    Lines are located through the parser rather than by scanning for fences:
+    Blocks are located through the parser rather than by scanning for fences:
     indented, nested and differently-fenced blocks are the parser's problem,
     and it has already solved them. *)
-let block_lines (content : string) : (int * string) list =
+let fold_command_blocks
+      (content : string)
+      ~(init : 'a)
+      ~(f : 'a -> Cmarkit.Block.Code_block.t -> 'a)
+  : 'a
+  =
   let doc = Lsp_util.parse_doc content in
   let folder =
     Cmarkit.Folder.make
@@ -95,13 +99,7 @@ let block_lines (content : string) : (int * string) list =
           in
           if not (is_command_block info)
           then Cmarkit.Folder.default
-          else
-            Cmarkit.Folder.ret
-              (List.fold (Cmarkit.Block.Code_block.code cb) ~init:acc ~f:(fun acc bl ->
-                 let line, _character =
-                   Lsp_util.position_of_textloc ~content (Cmarkit.Meta.textloc (snd bl))
-                 in
-                 (line, String.strip (Cmarkit.Block_line.to_string bl)) :: acc))
+          else Cmarkit.Folder.ret (f acc cb)
         | _ -> Cmarkit.Folder.default)
         (* Inlines cannot contain a code block, so skip them wholesale rather
          than teach the folder every inline extension Oystermark adds. *)
@@ -114,7 +112,26 @@ let block_lines (content : string) : (int * string) list =
       ~block_ext_default:(fun _folder acc _b -> acc)
       ()
   in
-  List.rev (Cmarkit.Folder.fold_doc folder [] doc)
+  Cmarkit.Folder.fold_doc folder init doc
+;;
+
+(** Every line of every command block in [content], blanks and comments
+    included, as [(line, stripped text)]. *)
+let block_lines (content : string) : (int * string) list =
+  List.rev
+    (fold_command_blocks content ~init:[] ~f:(fun acc cb ->
+       List.fold (Cmarkit.Block.Code_block.code cb) ~init:acc ~f:(fun acc bl ->
+         let line, _character =
+           Lsp_util.position_of_textloc ~content (Cmarkit.Meta.textloc (snd bl))
+         in
+         (line, String.strip (Cmarkit.Block_line.to_string bl)) :: acc)))
+;;
+
+(** Whether [content] already holds a block.  Asked before offering to insert
+    one; not [block_lines], which cannot tell an empty block from no block.
+    See {!page-"feature-command-block".insert}. *)
+let has_command_block (content : string) : bool =
+  fold_command_blocks content ~init:false ~f:(fun _acc _cb -> true)
 ;;
 
 (** [entries content] is every meaningful line of every command block, in
@@ -139,6 +156,19 @@ let entry_at (content : string) ~(line : int) : entry option =
     typed, and {!entries} skips those. *)
 let in_command_block (content : string) ~(line : int) : bool =
   List.exists (block_lines content) ~f:(fun (l, _) -> Int.equal l line)
+;;
+
+(** {1:render Writing a block}
+
+    The inverse of {!entries}, used by the action that seeds a note with a
+    panel.  See {!page-"feature-command-block".insert}. *)
+
+(** A fresh block listing [commands], one per line, fences included.  Ends in a
+    blank line so that whatever the insertion point pushed down stays a
+    paragraph of its own. *)
+let render (commands : command list) : string =
+  String.concat ~sep:"\n" (("```" ^ info_string) :: List.map commands ~f:name_of_command)
+  ^ "\n```\n\n"
 ;;
 
 (** {1:test Test} *)
@@ -270,6 +300,48 @@ prose
         1: entry=daily/today in_block=true
         2: entry=- in_block=true
         4: entry=- in_block=false
+        |}]
+    ;;
+
+    (* An empty block is a block: the insert action must not offer to add a
+       second one just because the first holds no lines yet. *)
+    let%expect_test "has_command_block" =
+      let check content = printf "%b\n" (has_command_block content) in
+      check "```oysterlsp\ndaily/today\n```\n";
+      check "```oysterlsp\n```\n";
+      check "```ocaml\ndaily/today\n```\n";
+      check "# prose only\n";
+      [%expect
+        {|
+        true
+        true
+        false
+        false
+        |}]
+    ;;
+
+    let%expect_test "render" =
+      print_string (render [ Daily_today; Daily_prev ]);
+      [%expect
+        {|
+        ```oysterlsp
+        daily/today
+        daily/prev
+        ```
+        |}]
+    ;;
+
+    (* What is written can be read back: rendering then parsing recovers the
+       commands, at the lines the block put them on. *)
+    let%expect_test "render round-trips through entries" =
+      show (render all_of_command);
+      [%expect
+        {|
+        1 daily/today        daily/today
+        2 daily/yesterday    daily/yesterday
+        3 daily/tomorrow     daily/tomorrow
+        4 daily/prev         daily/prev
+        5 daily/next         daily/next
         |}]
     ;;
 

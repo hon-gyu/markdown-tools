@@ -194,6 +194,145 @@ let%expect_test "no action for an inapplicable command" =
     |}]
 ;;
 
+(** {1 Creating a block}
+
+    See {!page-"feature-command-block".insert}: which notes are offered a
+    panel, and which lines it comes with. *)
+
+(** The line a workspace edit's first text edit starts at, [-1] if it has
+    none.  The block goes in at the cursor, and an edit with the right text at
+    the wrong place is still wrong. *)
+let insert_line (edit : WorkspaceEdit.t) : int =
+  Option.value edit.documentChanges ~default:[]
+  |> List.find_map ~f:(function
+    | `TextDocumentEdit (e : TextDocumentEdit.t) ->
+      List.hd e.edits
+      |> Option.map ~f:(function
+        | `TextEdit (t : TextEdit.t) -> t.range.start.line
+        | `AnnotatedTextEdit (t : AnnotatedTextEdit.t) -> t.range.start.line)
+    | `CreateFile _ | `RenameFile _ | `DeleteFile _ -> None)
+  |> Option.value ~default:(-1)
+;;
+
+(** The insert action offered at [line] of [rel_path], with where it would
+    write and what.  Actions carrying no edit — the daily-note menu — are
+    dropped, since this is about the one that writes a block. *)
+let show_insert ?(files = files) ?(line = 0) rel_path =
+  with_tmp_vault ~files (fun vault_root ->
+    let s = start ~vault_root in
+    Server.code_action
+      s
+      ~rel_path
+      ~start_line:line
+      ~start_character:0
+      ~end_line:line
+      ~end_character:0
+      ()
+    |> List.iter ~f:(fun (a : CodeAction.t) ->
+      Option.iter a.edit ~f:(fun edit ->
+        printf "%s, at line %d\n" a.title (insert_line edit);
+        List.iter (inserted_texts edit) ~f:print_string)))
+;;
+
+(* An ordinary note gets the calendar three; previous and next would be dead
+   the moment they were written. *)
+let%expect_test "an ordinary note is offered the calendar commands" =
+  show_insert ~files:[ "plain.md", "# Nothing here\n" ] "plain.md";
+  [%expect
+    {|
+    Insert oysterlsp command block, at line 0
+    ```oysterlsp
+    daily/today
+    daily/yesterday
+    daily/tomorrow
+    ```
+    |}]
+;;
+
+(* The panel goes in where the cursor is, not at the top of the note. *)
+let%expect_test "the block is written at the cursor's line" =
+  show_insert ~files:[ "plain.md", "# Nothing here\n\nprose.\n" ] ~line:2 "plain.md";
+  [%expect
+    {|
+    Insert oysterlsp command block, at line 2
+    ```oysterlsp
+    daily/today
+    daily/yesterday
+    daily/tomorrow
+    ```
+    |}]
+;;
+
+(* A daily note in the middle of the journal can use all five. *)
+let%expect_test "a daily note with neighbours is offered all five" =
+  let files =
+    List.map files ~f:(fun (path, content) ->
+      if String.equal path "journal/2026-07-10.md"
+      then path, "# Middle\n"
+      else path, content)
+  in
+  show_insert ~files "journal/2026-07-10.md";
+  [%expect
+    {|
+    Insert oysterlsp command block, at line 0
+    ```oysterlsp
+    daily/today
+    daily/yesterday
+    daily/tomorrow
+    daily/prev
+    daily/next
+    ```
+    |}]
+;;
+
+(* The earliest daily note has nothing behind it, so [daily/prev] is left out
+   of the block rather than written and immediately reported dead. *)
+let%expect_test "the earliest daily note gets no daily/prev" =
+  show_insert "journal/2026-07-03.md";
+  [%expect
+    {|
+    Insert oysterlsp command block, at line 0
+    ```oysterlsp
+    daily/today
+    daily/yesterday
+    daily/tomorrow
+    daily/next
+    ```
+    |}]
+;;
+
+(* Once a note has a panel the action stops: adding a line to one is typing,
+   which completion already helps with. *)
+let%expect_test "a note that already has a block is offered nothing" =
+  show_insert "idea.md";
+  [%expect {| |}]
+;;
+
+(* With daily notes disabled nothing resolves, and a block of dead lines is
+   not worth writing. *)
+let%expect_test "no commands, no block" =
+  with_tmp_vault
+    ~files:[ "plain.md", "# Nothing here\n" ]
+    (fun vault_root ->
+       let s =
+         start_server
+           ~init_options:(`Assoc [ "dailyNotes", `Assoc [ "format", `String "YYYY-ww" ] ])
+           ~today
+           ~vault_root
+           ()
+       in
+       Server.code_action
+         s
+         ~rel_path:"plain.md"
+         ~start_line:0
+         ~start_character:0
+         ~end_line:0
+         ~end_character:0
+         ()
+       |> List.iter ~f:(fun (a : CodeAction.t) -> printf "%s\n" a.title));
+  [%expect {| |}]
+;;
+
 (** {1 Completion and diagnostics} *)
 
 let%expect_test "completion inside the block offers the catalogue" =

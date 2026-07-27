@@ -57,6 +57,7 @@ let%expect_test "actions from a daily note: calendar plus previous/next" =
     Create yesterday's daily note    "journal/2026-07-25.md" true
     Create tomorrow's daily note     "journal/2026-07-27.md" true
     Open previous daily note         "journal/2026-07-10.md" false
+    Insert oysterlsp command block   no command
     |}]
 ;;
 
@@ -72,6 +73,7 @@ let%expect_test "previous and next from the middle of the range" =
     Create tomorrow's daily note     "journal/2026-07-27.md" true
     Open previous daily note         "journal/2026-07-03.md" false
     Open next daily note             "journal/2026-07-26.md" false
+    Insert oysterlsp command block   no command
     |}]
 ;;
 
@@ -84,6 +86,7 @@ let%expect_test "actions from an ordinary note" =
     Open today's daily note          "journal/2026-07-26.md" false
     Create yesterday's daily note    "journal/2026-07-25.md" true
     Create tomorrow's daily note     "journal/2026-07-27.md" true
+    Insert oysterlsp command block   no command
     |}]
 ;;
 
@@ -96,6 +99,7 @@ let%expect_test "nested format" =
     Create today's daily note        "journal/2026/07/2026-07-26.md" true
     Create yesterday's daily note    "journal/2026/07/2026-07-25.md" true
     Create tomorrow's daily note     "journal/2026/07/2026-07-27.md" true
+    Insert oysterlsp command block   no command
     |}]
 ;;
 
