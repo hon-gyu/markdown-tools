@@ -421,11 +421,20 @@ let label_is_empty : Inline.t -> bool = function
     rather than being unwrapped. *)
 let render_struct
       ~(style : struct_style)
+      ?(meta : Meta.t = Meta.none)
       (label_kind : [ `Paragraph | `List_item ])
       c
       label
       body
   =
+  (* A keyed node carries the block id of the paragraph or list item it
+     supplanted. Emit it in the [^id] form paragraphs already use, so a
+     [#^id] fragment lands on the node and its whole body. *)
+  let id_attr =
+    match Block.Block_id.find meta with
+    | None -> ""
+    | Some (b : Block.Block_id.t) -> sprintf " id=\"^%s\"" (Block.Block_id.id b)
+  in
   let label_empty = label_is_empty label in
   let label_kind_attr =
     match label_kind with
@@ -448,7 +457,7 @@ let render_struct
   let struct_style_attr_str = struct_style_attr style in
   C.string
     c
-    {%string|<div class="keyed" data-label-kind="%{label_kind_attr}" data-style="%{struct_style_attr_str}"%{body_attr}%{emtpy_label_attr}%{single_attr}>|};
+    {%string|<div class="keyed"%{id_attr} data-label-kind="%{label_kind_attr}" data-style="%{struct_style_attr_str}"%{body_attr}%{emtpy_label_attr}%{single_attr}>|};
   (* Always emit a label span, even when empty *)
   C.string c "<span class=\"keyed-label\">";
   if not label_empty then C.inline c label;
@@ -493,9 +502,9 @@ let list_has_keyed (l : Block.List'.t) : bool =
 let keyed_list_item ~(style : struct_style) ~(tight : bool) c (item, _) =
   let render_body () =
     match Block.List_item.block item with
-    | Block.Ext_keyed ((label, body), _) ->
+    | Block.Ext_keyed ((label, body), meta) ->
       C.byte c '\n';
-      render_struct ~style `List_item c (Struct.label_key label) body
+      render_struct ~style ~meta `List_item c (Struct.label_key label) body
     | b -> item_block ~tight c b
   in
   C.string c "<li>";
@@ -658,11 +667,11 @@ let render_block
        struct_style := prev);
     C.string c "</div>\n";
     true
-  | Cmarkit.Block.Ext_keyed ((label, body), _) ->
+  | Cmarkit.Block.Ext_keyed ((label, body), meta) ->
     (* A keyed node reached here is a {e free} block (a top-level keyed node, or
        the body of another keyed node). A keyed node that is a list item's block
        is handled positionally by [render_keyed_list], not here. *)
-    render_struct ~style:!struct_style `Paragraph c (Struct.label_key label) body;
+    render_struct ~style:!struct_style ~meta `Paragraph c (Struct.label_key label) body;
     true
   | Block.List (l, _) when list_has_keyed l ->
     render_keyed_list ~style:!struct_style c l;

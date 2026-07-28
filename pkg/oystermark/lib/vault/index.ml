@@ -72,9 +72,19 @@ let extract_headings (doc : Cmarkit.Doc.t) : heading_entry list =
 
 (* Use Cmarkit.Folder to extract block IDs from a document. *)
 let extract_block_ids (doc : Cmarkit.Doc.t) : block_entry list =
+  let add_entry acc (meta : Cmarkit.Meta.t) : block_entry list =
+    match Cmarkit.Block.Block_id.find meta with
+    | None -> acc
+    | Some (bid : Cmarkit.Block.Block_id.t) ->
+      let loc =
+        let tl = Cmarkit.Meta.textloc meta in
+        if Cmarkit.Textloc.is_none tl then None else Some tl
+      in
+      acc @ [ ({ id = Cmarkit.Block.Block_id.id bid; loc } : block_entry) ]
+  in
   let folder =
     Cmarkit.Folder.make
-      ~block:(fun _f acc block ->
+      ~block:(fun f acc block ->
         match block with
         | Cmarkit.Block.Paragraph (_p, meta) ->
           (* TODO: block id itself points to the block that contains
@@ -82,14 +92,15 @@ let extract_block_ids (doc : Cmarkit.Doc.t) : block_entry list =
              We should get it.
              *)
           (match Cmarkit.Block.Block_id.find meta with
-           | Some (bid : Cmarkit.Block.Block_id.t) ->
-             let loc =
-               let tl = Cmarkit.Meta.textloc meta in
-               if Cmarkit.Textloc.is_none tl then None else Some tl
-             in
-             Cmarkit.Folder.ret
-               (acc @ [ ({ id = Cmarkit.Block.Block_id.id bid; loc } : block_entry) ])
+           | Some _ -> Cmarkit.Folder.ret (add_entry acc meta)
            | None -> Cmarkit.Folder.default)
+        | Cmarkit.Block.Ext_keyed ((_label, body), meta) ->
+          (* A keyed node carries the identifier of the paragraph or list item
+             it supplanted (see {!Cmarkit.Struct}), so it is an id site in its
+             own right. [Folder.ret] suppresses the traversal the folder would
+             otherwise give the body, so fold it explicitly -- otherwise ids
+             nested under a keyed node go missing. *)
+          Cmarkit.Folder.ret (Cmarkit.Folder.fold_block f (add_entry acc meta) body)
         | _ -> Cmarkit.Folder.default)
       ~inline_ext_default:(fun _f acc _i -> acc)
       ~block_ext_default:(fun _f acc _b -> acc)
