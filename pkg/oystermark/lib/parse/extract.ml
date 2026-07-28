@@ -52,11 +52,15 @@ let get_heading_section (blocks : Cmarkit.Block.t list) (heading_id : string)
 
 (** Extract the block that {!Cmarkit.Block.Block_id.t} points to.
 
-    Two cases:
+    Three cases:
     - {b Inline}: the [^id] appears at the end of a paragraph with other content.
       The paragraph itself is the target.
     - {b Standalone}: the [^id] is the entire paragraph.
-      It references the previous non-blank block. *)
+      It references the previous non-blank block.
+    - {b Keyed}: the id is on a {!Cmarkit.Block.Ext_keyed} node, having been
+      forwarded from the paragraph or list item the node supplanted. The node
+      itself is the target, so the reference denotes the label {e and} everything
+      the key claimed as children -- an anchor for a whole subtree. *)
 let get_block_by_caret_id (blocks : Cmarkit.Block.t list) (id : string)
   : Cmarkit.Block.t option
   =
@@ -89,6 +93,13 @@ let get_block_by_caret_id (blocks : Cmarkit.Block.t list) (id : string)
             else (* Inline: the paragraph itself is the target *)
               Some block
           | false -> search (Some block) rest)
+       | Block.Ext_keyed ((_label, body), meta) ->
+         if has_matching_id meta
+         then Some block
+         else (
+           match search None (flatten [ body ]) with
+           | Some _ as found -> found
+           | None -> search (Some block) rest)
        | Block.Blank_line _ -> search prev rest
        | Block.List (l, _meta) ->
          (* Recurse into list items *)

@@ -311,3 +311,68 @@ let%expect_test "reverse_embed: image embed reversed to wikilink" =
   render_reversed [ "a.md", "![](b.md)"; "b.md", "Hello." ] "a.md";
   [%expect {| ![[b]] |}]
 ;;
+
+(* Keyed nodes as anchors
+   ======================
+
+   A block id on a keyed node names the node and everything the key claimed, so
+   embedding it pulls in the label together with its whole subtree. See
+   specification/oyster/struct.md. *)
+
+let%expect_test "block ref: keyed subtree" =
+  render
+    [ "a.md", "![[b#^k]]"; "b.md", "Intro.\n\ntopic: ^k\n- one\n- two\n\nAfter." ]
+    "a.md";
+  [%expect
+    {|
+    <div class="embed" data-embed-depth="1">
+    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain" data-body="list"><span class="keyed-label">topic</span>
+    <div class="keyed-body">
+    <ul>
+    <li>one</li>
+    <li>two</li>
+    </ul>
+    </div>
+    </div>
+    </div>
+    |}]
+;;
+
+let%expect_test "block ref: keyed list item" =
+  render [ "a.md", "![[b#^k]]"; "b.md", "- other\n- topic: ^k\n  - one\n  - two" ] "a.md";
+  [%expect
+    {|
+    <div class="embed" data-embed-depth="1">
+    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain" data-body="list"><span class="keyed-label">topic</span>
+    <div class="keyed-body">
+    <ul>
+    <li>one</li>
+    <li>two</li>
+    </ul>
+    </div>
+    </div>
+    </div>
+    |}]
+;;
+
+(* The id names the outermost node of a colon chain, so the embed spans the
+   whole chain rather than the inner key alone. *)
+let%expect_test "block ref: keyed chain" =
+  render [ "a.md", "![[b#^k]]"; "b.md", "outer: inner: ^k\n- leaf" ] "a.md";
+  [%expect
+    {|
+    <div class="embed" data-embed-depth="1">
+    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain"><span class="keyed-label">outer</span>
+    <div class="keyed-body">
+    <div class="keyed" data-label-kind="paragraph" data-style="plain" data-body="list" data-single-list-item><span class="keyed-label">inner</span>
+    <div class="keyed-body">
+    <ul>
+    <li>leaf</li>
+    </ul>
+    </div>
+    </div>
+    </div>
+    </div>
+    </div>
+    |}]
+;;
