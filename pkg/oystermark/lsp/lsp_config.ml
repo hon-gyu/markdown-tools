@@ -35,7 +35,10 @@ type daily_notes =
 [@@deriving sexp, equal]
 
 type t =
-  { gtd_unresolved_fragment : fragment_behavior
+  { disable : bool
+    (** Turn the server off for this vault: it starts, says so once, and
+      offers nothing.  See {!page-"feature-configuration".disable}. *)
+  ; gtd_unresolved_fragment : fragment_behavior
     (** Fragment behavior for {!Go_to_definition}. *)
   ; diag_unresolved_fragment : fragment_behavior
     (** Fragment behavior for {!Diagnostics}. *)
@@ -61,7 +64,8 @@ let default_daily_notes =
     lenient behavior described in the go-to-definition spec.
     Hover content is capped at 2 000 bytes. *)
 let default =
-  { gtd_unresolved_fragment = Fallback
+  { disable = false
+  ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
   ; daily_notes = default_daily_notes
@@ -90,14 +94,16 @@ module Partial = struct
     }
 
   type t =
-    { gtd_unresolved_fragment : fragment_behavior option
+    { disable : bool option
+    ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
     ; daily_notes : daily_notes
     }
 
   let empty =
-    { gtd_unresolved_fragment = None
+    { disable = None
+    ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
     ; daily_notes = { format = None; folder = None; template = None; link_action = None }
@@ -109,7 +115,8 @@ module Partial = struct
       leaves a client-supplied [format] standing. *)
   let merge ~(lower : t) ~(upper : t) : t =
     let pick u l = Option.first_some u l in
-    { gtd_unresolved_fragment =
+    { disable = pick upper.disable lower.disable
+    ; gtd_unresolved_fragment =
         pick upper.gtd_unresolved_fragment lower.gtd_unresolved_fragment
     ; diag_unresolved_fragment =
         pick upper.diag_unresolved_fragment lower.diag_unresolved_fragment
@@ -127,7 +134,8 @@ end
 (** Fill a {!Partial.t}'s gaps from {!default}.  Outside {!Partial} so that the
     record fields it builds are unambiguously {!t}'s. *)
 let resolve (p : Partial.t) : resolved =
-  { gtd_unresolved_fragment =
+  { disable = Option.value p.disable ~default:default.disable
+  ; gtd_unresolved_fragment =
       Option.value p.gtd_unresolved_fragment ~default:default.gtd_unresolved_fragment
   ; diag_unresolved_fragment =
       Option.value p.diag_unresolved_fragment ~default:default.diag_unresolved_fragment
@@ -249,8 +257,13 @@ let parse_daily_notes (w : Warnings.t) (j : Yojson.Safe.t) : Partial.daily_notes
 let parse (j : Yojson.Safe.t) : Partial.t * string list =
   let w = Warnings.create () in
   let acc = ref Partial.empty in
-  parse_object w ~self:"configuration" ~prefix:"" j ~f:(fun ~key:_ name value ->
+  parse_object w ~self:"configuration" ~prefix:"" j ~f:(fun ~key name value ->
     match name with
+    (* The one setting that is not about a feature but about whether there is
+       a server at all.  See {!page-"feature-configuration".disable}. *)
+    | "disable" ->
+      acc := { !acc with Partial.disable = parse_bool w ~key value };
+      true
     | "dailyNotes" ->
       acc := { !acc with Partial.daily_notes = parse_daily_notes w value };
       true
@@ -310,7 +323,8 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     same thing, and two statements drift.  See
     {!page-"feature-configuration".schema-file}. *)
 let known_keys : string list =
-  [ "dailyNotes.format"
+  [ "disable"
+  ; "dailyNotes.format"
   ; "dailyNotes.folder"
   ; "dailyNotes.template"
   ; "dailyNotes.linkAction"
@@ -348,7 +362,8 @@ let to_json (t : t) : Yojson.Safe.t =
     | Some v -> [ key, `String v ]
   in
   `Assoc
-    [ ( "dailyNotes"
+    [ "disable", `Bool t.disable
+    ; ( "dailyNotes"
       , `Assoc
           ([ "format", `String t.daily_notes.format ]
            @ optional "folder" t.daily_notes.folder
@@ -457,8 +472,8 @@ let%test_module "configuration" =
             "diagnostics": {"unresolvedFragment": "strict"} }|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Strict) (diag_unresolved_fragment Strict)
-         (hover_max_chars 400)
+        ((disable false) (gtd_unresolved_fragment Strict)
+         (diag_unresolved_fragment Strict) (hover_max_chars 400)
          (daily_notes
           ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md))
            (link_action false))))
@@ -471,8 +486,8 @@ let%test_module "configuration" =
       show {|{"dailyNotes": {"linkAction": "no"}}|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes.linkAction: expected a boolean, got "no"
@@ -483,6 +498,26 @@ let%test_module "configuration" =
       let partial, warnings = parse (`Assoc []) in
       printf "%b %d\n" (equal (resolve partial) default) (List.length warnings);
       [%expect {| true 0 |}]
+    ;;
+
+    (* [disable] is a plain boolean like any other setting; what makes it
+       different is what the server does with it, not how it is read.  See
+       {!page-"feature-configuration".disable}. *)
+    let%expect_test "disable" =
+      show {|{"disable": true}|};
+      show {|{"disable": "yes"}|};
+      [%expect
+        {|
+        ((disable true) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
+        ! disable: expected a boolean, got "yes"
+        |}]
     ;;
 
     (** {2 Tolerance}
@@ -497,8 +532,8 @@ let%test_module "configuration" =
             "dailyNotes": {"format": 42, "folder": "  "} }|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got "400px"
@@ -514,8 +549,8 @@ let%test_module "configuration" =
       show {|{"hover": {"maxChars": 0}}|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got 0
@@ -525,16 +560,16 @@ let%test_module "configuration" =
     (* A misspelled key is otherwise the quietest way to have a setting do
        nothing, at either level of nesting. *)
     let%expect_test "unknown keys are named" =
-      show {|{"dailynotes": {}, "hover": {"maxchars": 10}, "disable": ["hover"]}|};
+      show {|{"dailynotes": {}, "hover": {"maxchars": 10}, "disabled": true}|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! unknown key "dailynotes"
         ! unknown key "hover.maxchars"
-        ! unknown key "disable"
+        ! unknown key "disabled"
         |}]
     ;;
 
@@ -543,13 +578,13 @@ let%test_module "configuration" =
       show {|{"dailyNotes": []}|};
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 2000)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes: expected an object, got []
@@ -576,8 +611,8 @@ let%test_module "configuration" =
       print_s [%sexp (resolve (Partial.merge ~lower:client ~upper:file) : t)];
       [%expect
         {|
-        ((gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
-         (hover_max_chars 100)
+        ((disable false) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 100)
          (daily_notes
           ((format YYYY-MM-DD) (folder (journal)) (template ()) (link_action true))))
         |}]

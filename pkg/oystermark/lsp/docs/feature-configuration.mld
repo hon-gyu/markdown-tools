@@ -24,6 +24,7 @@ The same shape in both sources — one schema, one parser.
 {t
   | Key | Type | Default | Meaning |
   |-----|------|---------|---------|
+  | [disable] | bool | [false] | Turn the server off for this vault. See {!section-disable}. |
   | [dailyNotes.format] | string | [YYYY-MM-DD] | Date format naming the note. See {!page-"feature-daily-notes".format}. |
   | [dailyNotes.folder] | string | vault root | Vault-relative folder the daily notes live under. |
   | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |
@@ -122,6 +123,46 @@ An unknown key is reported rather than ignored: a misspelled key is otherwise
 the quietest way to have a setting do nothing. A rejected
 [dailyNotes.format] is reported through the same channel, though it is
 validated later — see {!page-"feature-daily-notes".format}.
+
+{1:disable Disable}
+
+[disable] is the one setting that is not about a feature but about whether
+there is a server at all. With ["disable": true], the server adopts no vault:
+nothing is indexed, and every request is answered the way it is answered before
+a root is known — no diagnostics, no hover, no definition, no completion, no
+lenses, no code actions, no commands.
+
+It exists for the vault that is a vault by accident: a directory of Markdown
+that happens to sit inside a workspace, where wikilink diagnostics are noise
+and indexing is cost. Because it lives in [oysterlsp.json], the directory
+itself carries that verdict, rather than each contributor having to reproduce
+it in their editor. Set in [initializationOptions] instead, it is the
+per-machine version of the same thing, and the file can still override it back
+to [false] — the vault's own description wins, as everywhere else.
+
+The server cannot decline to {e run}: a client spawns the binary and only then
+sends [initialize], which is the first moment this file is read. So what
+[disable] withholds is answers, not the process.
+
+Two consequences follow, both deliberate:
+
+{ul
+  {- It is reported. A server that answers nothing and says nothing looks
+     exactly like a broken one, so the adapter sends one [window/showMessage]
+     at [initialize], of severity [Info] rather than [Warning] — this is what
+     was asked for, not something that went wrong.}
+  {- Nothing else is. Every other setting is irrelevant to a server that does
+     nothing, so the warnings they would have produced — bad values, unknown
+     keys — are suppressed, leaving the one message above. The rest of
+     {!section-tolerance} applies unchanged as soon as [disable] is [false].}
+}
+
+{b Not withheld}: server {e capabilities}. The [initialize] result still
+advertises hover, definition, completion and the rest, because they are
+answered emptily rather than removed. A client may therefore still send
+requests; it will get nothing back. Withdrawing the capabilities themselves
+would be a truer disable and is a possible refinement — it would also make
+{!section-reload} strictly restart-only for this key, which it already is.
 
 {1:reload Reload}
 

@@ -97,6 +97,19 @@ class oystermark_server ~sw =
              (ShowMessageParams.create
                 ~type_:MessageType.Warning
                 ~message:(sprintf "oystermark: %s" message))));
+      (* A disabled server answers every request emptily, which on its own is
+         indistinguishable from a broken one — so it says once why.  Info, not
+         Warning: this is what the configuration asked for.  See
+         {!page-"feature-configuration".disable}. *)
+      if Server.disabled server
+      then
+        notify_back#send_notification
+          (Linol.Lsp.Server_notification.ShowMessage
+             (ShowMessageParams.create
+                ~type_:MessageType.Info
+                ~message:
+                  "oystermark: disabled by configuration (\"disable\": true); no \
+                   features are offered"));
       super#on_req_initialize ~notify_back params
 
     method! on_req_code_lens

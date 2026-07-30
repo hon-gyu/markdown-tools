@@ -27,8 +27,19 @@ val create : ?now:(unit -> Core.Date.t) -> unit -> t
 (** Build the vault from [root] and adopt the configuration: the client's
     [initializationOptions], overridden by [oysterlsp.json] at the root.  The
     options are taken raw so that parsing — and its tolerance for malformed
-    input — lives in {!Lsp_lib.Config}.  See {!page-"feature-configuration"}. *)
+    input — lives in {!Lsp_lib.Config}.  See {!page-"feature-configuration"}.
+
+    A configuration with ["disable": true] adopts no vault: the server holds
+    the settings, {!disabled} becomes true, and every handler goes on
+    answering as it does before a root is known.  See
+    {!page-"feature-configuration".disable}. *)
 val initialize : t -> root:string -> ?init_options:Yojson.Safe.t -> unit -> unit
+
+(** Whether the configuration turned the server off — [false] before
+    {!initialize}.  The adapter reports it once, since a server that answers
+    nothing and says nothing is indistinguishable from a broken one.  See
+    {!page-"feature-configuration".disable}. *)
+val disabled : t -> bool
 
 (** [config_warnings t] is everything the configuration sources asked for and
     could not have: bad values, unknown keys, an unreadable [oysterlsp.json], a
@@ -77,8 +88,9 @@ val uri_of_rel_path : t -> string -> DocumentUri.t
     commands above onto lines, where a lens can render them; the other surfaces
     it adds — one code action on the cursor's line, an action that seeds a note
     with a block of its own, completion of the command names, a diagnostic on
-    an unknown one — are folded into {!code_action}, {!completion} and the
-    diagnostics the sync handlers return. *)
+    an unknown one, a jump from a line to the note it names — are folded into
+    {!code_action}, {!completion}, {!definition} and the diagnostics the sync
+    handlers return. *)
 
 (** Spec: {!page-"feature-command-block".surfaces}.  One lens per recognized
     line; a line whose command cannot run right now keeps its lens, without a
@@ -116,7 +128,11 @@ val did_save : t -> (string * Diagnostic.t list) list
 (** Spec: {!page-"feature-hover"}. *)
 val hover : t -> rel_path:string -> line:int -> character:int -> Hover.t option
 
-(** Spec: {!page-"feature-go-to-definition"}.  At most one location. *)
+(** Spec: {!page-"feature-go-to-definition"}.  At most one location.
+
+    On a command-block line the location is the note that line's command would
+    open, when it already exists — see
+    {!page-"feature-command-block".surfaces}. *)
 val definition
   :  t
   -> rel_path:string

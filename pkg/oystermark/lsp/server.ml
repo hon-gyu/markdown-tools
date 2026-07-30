@@ -71,18 +71,36 @@ let create ?(now : unit -> Date.t = system_today) () : t =
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
   let config, warnings = Lsp_config.load ~root ~init_options in
   t.config <- config;
-  (* The daily-note format is validated here rather than at parse time — it is
-     the one setting whose usability is a property of its {e value} — but it
-     joins the same list, so the user hears about it the same way. *)
-  let daily_notes_warning =
-    match Lsp_config.daily_notes_settings config with
-    | Ok _ -> []
-    | Error e -> [ sprintf "daily notes disabled: %s" e ]
-  in
-  t.config_warnings <- warnings @ daily_notes_warning;
   t.daily_table <- None;
-  t.vault <- Some (build_vault root)
+  match config.disable with
+  (* Leaving the vault unbuilt is the whole of the disabling: every handler
+     already answers emptily without one, so there is no second place where
+     the switch has to be remembered.  It also means the vault is never
+     indexed, which is the cost the switch exists to avoid.  See
+     {!page-"feature-configuration".disable}. *)
+  | true ->
+    (* Warnings about settings that were never going to take effect would be
+       noise from a server that is doing nothing; the adapter says the one
+       thing worth saying instead. *)
+    t.config_warnings <- [];
+    t.vault <- None
+  | false ->
+    (* The daily-note format is validated here rather than at parse time — it
+       is the one setting whose usability is a property of its {e value} — but
+       it joins the same list, so the user hears about it the same way. *)
+    let daily_notes_warning =
+      match Lsp_config.daily_notes_settings config with
+      | Ok _ -> []
+      | Error e -> [ sprintf "daily notes disabled: %s" e ]
+    in
+    t.config_warnings <- warnings @ daily_notes_warning;
+    t.vault <- Some (build_vault root)
 ;;
+
+(** Whether the configuration turned the server off.  The adapter reports it,
+    since a server that answers nothing and says nothing is indistinguishable
+    from a broken one.  See {!page-"feature-configuration".disable}. *)
+let disabled (t : t) : bool = t.config.disable
 
 (** What the configuration sources asked for and could not have.  Empty when
     the configuration is clean; meaningful only after {!initialize}, which is
@@ -262,31 +280,9 @@ let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.
             ()))
 ;;
 
-let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
-  : Location.t list option
-  =
-  match t.vault with
-  | None -> None
-  | Some v ->
-    (match
-       Feature.Go_to_definition.go_to_definition
-         ~read_file:(read_file t)
-         ~index:v.index
-         ~rel_path
-         ~content:(buffer_content t rel_path)
-         ~line
-         ~character
-         ()
-     with
-     | None -> None
-     | Some { path; line; character } ->
-       let pos = Position.create ~line ~character in
-       Some
-         [ Location.create
-             ~uri:(uri_of_rel_path t path)
-             ~range:(Range.create ~start:pos ~end_:pos)
-         ])
-;;
+(* {!definition} answers command-block lines too, so it is defined with the
+   other handlers that need {!resolve_command} — below the command-block
+   section, alongside {!code_action} and {!completion}. *)
 
 let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Location.t list option
@@ -799,12 +795,70 @@ let command_block_completions (t : t) ~(rel_path : string) ~(line : int)
     |> Option.return
 ;;
 
+(** The note a command-block line {e points at}, when that note is already
+    there.  The command's own target, read rather than run.
+
+    A calendar command whose note is missing yields [None]: its lens says
+    [Create ...], and go-to-definition may not create anything — a jump that
+    wrote a file would be a surprising answer to a navigation request.
+    [daily/prev] and [daily/next] never create, so they point wherever they
+    would open.  See {!page-"feature-command-block".surfaces}. *)
+let command_block_definition (t : t) ~(rel_path : string) ~(line : int) : string option =
+  let content = buffer_content t rel_path in
+  match Command_block.entry_at content ~line with
+  | None | Some { command = None; _ } -> None
+  | Some { command = Some c; _ } ->
+    (match (resolve_command t ~rel_path c).target with
+     | None -> None
+     (* [create] is exactly "the note is not there yet". *)
+     | Some (_, true) -> None
+     | Some (path, false) -> Some path)
+;;
+
+(** Spec: {!page-"feature-go-to-definition"}.  A command-block line is tried
+    first: it is literal text inside a fence, so the link layer finds nothing
+    there, and the note the line names is what a definition means on it.  See
+    {!page-"feature-command-block".surfaces}. *)
+let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+  : Location.t list option
+  =
+  match t.vault with
+  | None -> None
+  | Some v ->
+    let location ~path ~line ~character =
+      let pos = Position.create ~line ~character in
+      [ Location.create
+          ~uri:(uri_of_rel_path t path)
+          ~range:(Range.create ~start:pos ~end_:pos)
+      ]
+    in
+    (match command_block_definition t ~rel_path ~line with
+     | Some path -> Some (location ~path ~line:0 ~character:0)
+     | None ->
+       (match
+          Feature.Go_to_definition.go_to_definition
+            ~read_file:(read_file t)
+            ~index:v.index
+            ~rel_path
+            ~content:(buffer_content t rel_path)
+            ~line
+            ~character
+            ()
+        with
+        | None -> None
+        | Some { path; line; character } -> Some (location ~path ~line ~character)))
+;;
+
 (** Handle [workspace/executeCommand].  [None] for an unknown command or
     unusable arguments — an editor is free to send either. *)
 let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
   : open_note option
   =
   match command, arguments with
+  (* Without a vault root there is no path to resolve the argument against —
+     and nothing offered the command in the first place, disabled or not yet
+     initialized. *)
+  | _ when Option.is_none t.vault -> None
   | cmd, Some [ `String path; `Bool create ] when String.equal cmd daily_note_command ->
     let uri = uri_of_rel_path t path in
     let create =
@@ -841,73 +895,83 @@ let code_action
       ()
   : CodeAction.t list
   =
-  let requested (kind : CodeActionKind.t) =
-    match only with
-    | None -> true
-    | Some kinds -> List.mem kinds kind ~equal:Poly.equal
-  in
-  let daily =
-    if requested CodeActionKind.Refactor
-    then (
-      (* On a command-block line the panel's own action is the answer, and the
+  (* The daily-note actions below are the one family that needs no vault, only
+     a clock — so unlike its neighbours this handler has to refuse the
+     rootless case itself, or a disabled server would still fill the menu. *)
+  if Option.is_none t.vault
+  then []
+  else (
+    let requested (kind : CodeActionKind.t) =
+      match only with
+      | None -> true
+      | Some kinds -> List.mem kinds kind ~equal:Poly.equal
+    in
+    let daily =
+      if requested CodeActionKind.Refactor
+      then (
+        (* On a command-block line the panel's own action is the answer, and the
          whole daily-note menu would bury it.  See
          {!page-"feature-command-block".surfaces}. *)
-      match command_block_actions t ~rel_path ~line:start_line with
-      | [] ->
-        daily_note_actions t ~rel_path
-        @ daily_note_link_actions t ~rel_path ~line:start_line ~character:start_character
-        @ insert_command_block_actions t ~rel_path ~line:start_line
-      | actions -> actions)
-    else []
-  in
-  let quick_fixes =
-    match t.vault with
-    | _ when not (requested CodeActionKind.QuickFix) -> []
-    | None -> []
-    | Some v ->
-      let content = disk_content t rel_path in
-      (match
-         Feature.Create_unresolved_note.action_at_range
-           ~index:v.index
-           ~rel_path
-           ~content
-           ~first_byte:
-             (byte_of_position content ~line:start_line ~character:start_character)
-           ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
-       with
-       | None -> []
-       | Some action ->
-         let target_uri = uri_of_rel_path t action.rel_path in
-         let create =
-           `CreateFile
-             (CreateFile.create
-                ~uri:target_uri
-                ~options:
-                  (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
-                ())
-         in
-         let zero = Position.create ~line:0 ~character:0 in
-         let initialize =
-           `TextDocumentEdit
-             (TextDocumentEdit.create
-                ~textDocument:
-                  (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
-                ~edits:
-                  [ `TextEdit
-                      (TextEdit.create
-                         ~range:(Range.create ~start:zero ~end_:zero)
-                         ~newText:("# " ^ action.title ^ "\n"))
-                  ])
-         in
-         [ CodeAction.create
-             ~title:(sprintf "Create note \"%s\"" action.rel_path)
-             ~kind:CodeActionKind.QuickFix
-             ~isPreferred:true
-             ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
-             ()
-         ])
-  in
-  quick_fixes @ daily
+        match command_block_actions t ~rel_path ~line:start_line with
+        | [] ->
+          daily_note_actions t ~rel_path
+          @ daily_note_link_actions
+              t
+              ~rel_path
+              ~line:start_line
+              ~character:start_character
+          @ insert_command_block_actions t ~rel_path ~line:start_line
+        | actions -> actions)
+      else []
+    in
+    let quick_fixes =
+      match t.vault with
+      | _ when not (requested CodeActionKind.QuickFix) -> []
+      | None -> []
+      | Some v ->
+        let content = disk_content t rel_path in
+        (match
+           Feature.Create_unresolved_note.action_at_range
+             ~index:v.index
+             ~rel_path
+             ~content
+             ~first_byte:
+               (byte_of_position content ~line:start_line ~character:start_character)
+             ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
+         with
+         | None -> []
+         | Some action ->
+           let target_uri = uri_of_rel_path t action.rel_path in
+           let create =
+             `CreateFile
+               (CreateFile.create
+                  ~uri:target_uri
+                  ~options:
+                    (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
+                  ())
+           in
+           let zero = Position.create ~line:0 ~character:0 in
+           let initialize =
+             `TextDocumentEdit
+               (TextDocumentEdit.create
+                  ~textDocument:
+                    (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
+                  ~edits:
+                    [ `TextEdit
+                        (TextEdit.create
+                           ~range:(Range.create ~start:zero ~end_:zero)
+                           ~newText:("# " ^ action.title ^ "\n"))
+                    ])
+           in
+           [ CodeAction.create
+               ~title:(sprintf "Create note \"%s\"" action.rel_path)
+               ~kind:CodeActionKind.QuickFix
+               ~isPreferred:true
+               ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
+               ()
+           ])
+    in
+    quick_fixes @ daily)
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)

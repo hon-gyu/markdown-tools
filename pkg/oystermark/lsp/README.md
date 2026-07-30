@@ -155,6 +155,13 @@ documentation come from, so prefer it over memorizing the table.
 }
 ```
 
+`"disable": true` turns the server off for that vault: it still starts — a
+client spawns it, and this file is only read afterwards — but it indexes
+nothing and answers every request emptily, saying so once at startup. It is for
+the directory of Markdown that is a vault only by accident, where wikilink
+diagnostics are noise; the verdict travels with the directory rather than
+living in each contributor's editor settings.
+
 `linkAction` (default `true`) governs the one daily-note action offered in
 every menu — *Insert link to today's daily note* — so it can be withdrawn
 without disabling daily notes.

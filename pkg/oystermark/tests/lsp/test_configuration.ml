@@ -133,6 +133,118 @@ let%expect_test "a rejected daily-note format" =
   [%expect {| ! daily notes disabled: unsupported format token 'w' |}]
 ;;
 
+(** {1 Disable}
+
+    See {!page-"feature-configuration".disable}.  What the switch has to be
+    worth is silence across the board, so this drives every handler rather
+    than the one the rest of the file uses as a proxy. *)
+
+let%expect_test "disable: every surface answers emptily" =
+  with_tmp_vault
+    ~files:
+      (("oysterlsp.json", {|{"disable": true}|})
+       :: ("links.md", "# Links\n\nSee [[idea]] and [[missing]].\n")
+       :: files)
+    (fun vault_root ->
+       let s = start_server ~today ~vault_root () in
+       printf "disabled: %b\n" (Server.disabled s);
+       printf "warnings: %d\n" (List.length (Server.config_warnings s));
+       printf "root: %s\n" (Option.value (Server.vault_root s) ~default:"<none>");
+       let rel_path = "links.md" in
+       let content = "# Links\n\nSee [[idea]] and [[missing]].\n" in
+       printf
+         "did_open diagnostics: %d\n"
+         (List.length (Server.did_open s ~rel_path ~content));
+       printf
+         "did_change diagnostics: %d\n"
+         (List.length (Server.did_change s ~rel_path ~content));
+       printf "did_save documents: %d\n" (List.length (Server.did_save s));
+       (* Column 6 is inside [ [[idea]] ], a link that resolves in this vault —
+          so an answer here would be a real one, not an accident of position. *)
+       let line, character = 2, 6 in
+       printf "hover: %b\n" (Option.is_some (Server.hover s ~rel_path ~line ~character));
+       printf
+         "definition: %b\n"
+         (Option.is_some (Server.definition s ~rel_path ~line ~character));
+       printf
+         "references: %b\n"
+         (Option.is_some (Server.references s ~rel_path ~line ~character));
+       printf
+         "prepare_rename: %b\n"
+         (Option.is_some (Server.prepare_rename s ~rel_path ~line ~character));
+       printf
+         "completion: %b\n"
+         (Option.is_some (Server.completion s ~rel_path ~line ~character));
+       printf
+         "document_symbol: %b\n"
+         (Option.is_some (Server.document_symbol s ~rel_path));
+       printf "code_lens: %b\n" (Option.is_some (Server.code_lens s ~rel_path));
+       printf
+         "inlay_hint: %b\n"
+         (Option.is_some (Server.inlay_hint s ~rel_path ~start_line:0 ~end_line:9));
+       printf
+         "code_action: %d\n"
+         (List.length
+            (Server.code_action
+               s
+               ~rel_path
+               ~start_line:0
+               ~start_character:0
+               ~end_line:0
+               ~end_character:0
+               ()));
+       (* The daily-note command is unreachable through the menus above, but a
+          client that remembers it from a previous session can still send it. *)
+       printf
+         "execute_command: %b\n"
+         (Option.is_some
+            (Server.execute_command
+               s
+               ~command:Server.daily_note_command
+               ~arguments:(Some [ `String "2026-07-26.md"; `Bool true ]))));
+  [%expect {|
+    disabled: true
+    warnings: 0
+    root: <none>
+    did_open diagnostics: 0
+    did_change diagnostics: 0
+    did_save documents: 0
+    hover: false
+    definition: false
+    references: false
+    prepare_rename: false
+    completion: false
+    document_symbol: false
+    code_lens: false
+    inlay_hint: false
+    code_action: 0
+    execute_command: false
+    |}]
+;;
+
+(* The switch is a setting like any other: the file overrides the client, in
+   both directions. *)
+let%expect_test "disable: the file has the last word" =
+  show ~config_file:{|{"disable": false}|} ~init_options:{|{"disable": true}|} ();
+  [%expect {|
+    2026-07-26.md
+    2026-07-25.md
+    2026-07-27.md
+    |}]
+;;
+
+let%expect_test "disable: from the client alone" =
+  show ~init_options:{|{"disable": true}|} ();
+  [%expect {| |}]
+;;
+
+(* Everything else stops mattering, including what would otherwise be
+   reported: warnings from a server that does nothing are noise. *)
+let%expect_test "disable: other settings are neither applied nor complained about" =
+  show ~config_file:{|{"disable": true, "hover": {"maxChars": -1}, "nope": 1}|} ();
+  [%expect {| |}]
+;;
+
 (* The file is read from the vault root, so a server that never saw a root
    never reads one. *)
 let%expect_test "config file in a subfolder is not read" =

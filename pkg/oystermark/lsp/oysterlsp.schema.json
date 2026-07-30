@@ -10,6 +10,11 @@
       "type": "string",
       "description": "Association to this schema, so an editor's JSON language server offers completion and validation here. Not a setting."
     },
+    "disable": {
+      "type": "boolean",
+      "default": false,
+      "description": "Turn the server off for this vault. It still starts — a client spawns it and this file is only read afterwards — but it indexes nothing and answers every request emptily, saying so once at startup. Every other setting in this file is then irrelevant, and warnings about them are suppressed."
+    },
     "dailyNotes": {
       "type": "object",
       "additionalProperties": false,

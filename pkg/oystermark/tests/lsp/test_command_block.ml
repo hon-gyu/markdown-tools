@@ -1,6 +1,6 @@
 (** Spec: {!page-"feature-command-block"}.
     Impl: {!Lsp_lib.Command_block} (finding the lines) and {!Lsp_lib.Server}
-    (the four surfaces built on them).
+    (the surfaces built on them).
 
     {!Lsp_lib.Command_block}'s own tests cover recognition; these check what a
     server answers with, which is where the block meets the vault, the clock
@@ -336,6 +336,87 @@ let%expect_test "no commands, no block" =
          ()
        |> List.iter ~f:(fun (a : CodeAction.t) -> printf "%s\n" a.title));
   [%expect {| |}]
+;;
+
+(** {1 Go to definition}
+
+    See {!page-"feature-command-block".surfaces} and
+    {!page-"feature-go-to-definition".command_block}: the navigation key
+    reaches the note a line names, without running the line. *)
+
+(** Where go-to-definition lands for each line of [rel_path], panel lines
+    included. *)
+let show_definitions
+      ?(files = files)
+      ?(character = 0)
+      ?(lines = [ 0; 2; 3; 4; 5; 6 ])
+      rel_path
+  =
+  with_tmp_vault ~files (fun vault_root ->
+    let s = start ~vault_root in
+    did_open s ~rel_path;
+    List.iter lines ~f:(fun line ->
+      let target =
+        match Server.definition s ~rel_path ~line ~character |> definition_result s with
+        | None -> "-"
+        | Some { path; line; character } -> sprintf "%s:%d:%d" path line character
+      in
+      printf "%d: %s\n" line target))
+;;
+
+(* From the daily note holding the panel: today is this note, previous is the
+   note before it.  Yesterday's does not exist — its lens offers to create it,
+   which a jump may not do — and there is nothing after today. *)
+let%expect_test "each panel line jumps to the note it names" =
+  show_definitions "journal/2026-07-26.md";
+  [%expect
+    {|
+    0: -
+    2: -
+    3: journal/2026-07-26.md:0:0
+    4: -
+    5: journal/2026-07-10.md:0:0
+    6: -
+    |}]
+;;
+
+(* The same panel in an ordinary note: the calendar line still points at the
+   journal, and previous/next have no date to move from. *)
+let%expect_test "the same panel in an ordinary note" =
+  show_definitions "idea.md";
+  [%expect
+    {|
+    0: -
+    2: -
+    3: journal/2026-07-26.md:0:0
+    4: -
+    5: -
+    6: -
+    |}]
+;;
+
+(* A misspelling names no command, so it names no note either — the
+   diagnostic below is what it gets. *)
+let%expect_test "an unknown command line has no definition" =
+  show_definitions
+    ~files:[ "typo.md", "```oysterlsp\ndaily/yesterdya\n```\n" ]
+    ~lines:[ 1 ]
+    "typo.md";
+  [%expect {| 1: - |}]
+;;
+
+(* Links elsewhere in a note that happens to hold a panel are unaffected. *)
+let%expect_test "links outside the block still resolve" =
+  show_definitions
+    ~files:(("linker.md", "# Linker\n\nSee [[idea]].\n\n" ^ panel) :: files)
+    ~character:9
+    ~lines:[ 2; 5 ]
+    "linker.md";
+  [%expect
+    {|
+    2: idea.md:0:0
+    5: journal/2026-07-26.md:0:0
+    |}]
 ;;
 
 (** {1 Completion and diagnostics} *)

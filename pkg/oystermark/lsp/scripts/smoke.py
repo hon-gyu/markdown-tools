@@ -257,6 +257,81 @@ def run(binary, show_document=True):
         shutil.rmtree(root, ignore_errors=True)
 
 
+def run_disabled(binary):
+    """A vault whose `oysterlsp.json` says `"disable": true`.
+
+    The message at initialize is the whole of what an editor can see here —
+    every answer below it is empty by design — and it is sent from `main.ml`,
+    so nothing in `tests/lsp/` can reach it.  See
+    `docs/feature-configuration.mld`, section Disable."""
+    root = tempfile.mkdtemp(prefix="oysterlsp-smoke-off-")
+    with open(os.path.join(root, NOTE), "w") as f:
+        f.write(NOTE_TEXT)
+    with open(os.path.join(root, "oysterlsp.json"), "w") as f:
+        json.dump({"disable": True}, f)
+
+    s = Session(binary, root)
+    try:
+        s.request(
+            "initialize",
+            {
+                "processId": None,
+                "rootUri": "file://" + root,
+                "capabilities": {"window": {"showDocument": {"support": True}}},
+            },
+        )
+        s.notify("initialized", {})
+
+        print("\ninitialize")
+        check(
+            "says it is disabled",
+            any("disabled" in m for m in s.messages),
+            f"said {s.messages}",
+            hint="a server that answers nothing and says nothing is "
+            "indistinguishable from a broken one",
+        )
+
+        print("\nrequests")
+        s.notify(
+            "textDocument/didOpen",
+            {
+                "textDocument": {
+                    "uri": s.uri(NOTE),
+                    "languageId": "markdown",
+                    "version": 1,
+                    "text": NOTE_TEXT,
+                }
+            },
+        )
+        actions = s.request(
+            "textDocument/codeAction",
+            {
+                "textDocument": {"uri": s.uri(NOTE)},
+                "range": {
+                    "start": {"line": 2, "character": 0},
+                    "end": {"line": 2, "character": 0},
+                },
+                "context": {"diagnostics": []},
+            },
+        )
+        check("no code actions", not actions, f"got {[a['title'] for a in actions]}")
+        lenses = s.request(
+            "textDocument/codeLens", {"textDocument": {"uri": s.uri(NOTE)}}
+        )
+        check("no code lenses", not lenses, f"got {len(lenses or [])} lens(es)")
+        hover = s.request(
+            "textDocument/hover",
+            {
+                "textDocument": {"uri": s.uri(NOTE)},
+                "position": {"line": 0, "character": 3},
+            },
+        )
+        check("no hover", hover is None, f"got {hover}")
+    finally:
+        s.close()
+        shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
     binary = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_BINARY
     if not os.path.exists(binary):
@@ -270,6 +345,9 @@ if __name__ == "__main__":
     # command cannot focus, and must say so rather than finish in silence.
     print("\n### client that does not support window/showDocument")
     run(binary, show_document=False)
+    # The vault that asked not to be served: one message, and nothing else.
+    print("\n### vault with \"disable\": true")
+    run_disabled(binary)
     print(
         f"\n{len(failures)} failure(s)"
         + (": " + ", ".join(failures) if failures else "")
