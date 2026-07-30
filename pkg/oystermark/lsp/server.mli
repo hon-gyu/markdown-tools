@@ -77,8 +77,9 @@ val uri_of_rel_path : t -> string -> DocumentUri.t
     commands above onto lines, where a lens can render them; the other surfaces
     it adds — one code action on the cursor's line, an action that seeds a note
     with a block of its own, completion of the command names, a diagnostic on
-    an unknown one — are folded into {!code_action}, {!completion} and the
-    diagnostics the sync handlers return. *)
+    an unknown one, a jump from a line to the note it names — are folded into
+    {!code_action}, {!completion}, {!definition} and the diagnostics the sync
+    handlers return. *)
 
 (** Spec: {!page-"feature-command-block".surfaces}.  One lens per recognized
     line; a line whose command cannot run right now keeps its lens, without a
@@ -116,7 +117,11 @@ val did_save : t -> (string * Diagnostic.t list) list
 (** Spec: {!page-"feature-hover"}. *)
 val hover : t -> rel_path:string -> line:int -> character:int -> Hover.t option
 
-(** Spec: {!page-"feature-go-to-definition"}.  At most one location. *)
+(** Spec: {!page-"feature-go-to-definition"}.  At most one location.
+
+    On a command-block line the location is the note that line's command would
+    open, when it already exists — see
+    {!page-"feature-command-block".surfaces}. *)
 val definition
   :  t
   -> rel_path:string

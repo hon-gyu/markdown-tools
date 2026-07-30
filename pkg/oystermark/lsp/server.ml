@@ -262,31 +262,9 @@ let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.
             ()))
 ;;
 
-let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
-  : Location.t list option
-  =
-  match t.vault with
-  | None -> None
-  | Some v ->
-    (match
-       Feature.Go_to_definition.go_to_definition
-         ~read_file:(read_file t)
-         ~index:v.index
-         ~rel_path
-         ~content:(buffer_content t rel_path)
-         ~line
-         ~character
-         ()
-     with
-     | None -> None
-     | Some { path; line; character } ->
-       let pos = Position.create ~line ~character in
-       Some
-         [ Location.create
-             ~uri:(uri_of_rel_path t path)
-             ~range:(Range.create ~start:pos ~end_:pos)
-         ])
-;;
+(* {!definition} answers command-block lines too, so it is defined with the
+   other handlers that need {!resolve_command} — below the command-block
+   section, alongside {!code_action} and {!completion}. *)
 
 let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Location.t list option
@@ -797,6 +775,60 @@ let command_block_completions (t : t) ~(rel_path : string) ~(line : int)
         ~documentation:(`String (resolve_command t ~rel_path c).label)
         ())
     |> Option.return
+;;
+
+(** The note a command-block line {e points at}, when that note is already
+    there.  The command's own target, read rather than run.
+
+    A calendar command whose note is missing yields [None]: its lens says
+    [Create ...], and go-to-definition may not create anything — a jump that
+    wrote a file would be a surprising answer to a navigation request.
+    [daily/prev] and [daily/next] never create, so they point wherever they
+    would open.  See {!page-"feature-command-block".surfaces}. *)
+let command_block_definition (t : t) ~(rel_path : string) ~(line : int) : string option =
+  let content = buffer_content t rel_path in
+  match Command_block.entry_at content ~line with
+  | None | Some { command = None; _ } -> None
+  | Some { command = Some c; _ } ->
+    (match (resolve_command t ~rel_path c).target with
+     | None -> None
+     (* [create] is exactly "the note is not there yet". *)
+     | Some (_, true) -> None
+     | Some (path, false) -> Some path)
+;;
+
+(** Spec: {!page-"feature-go-to-definition"}.  A command-block line is tried
+    first: it is literal text inside a fence, so the link layer finds nothing
+    there, and the note the line names is what a definition means on it.  See
+    {!page-"feature-command-block".surfaces}. *)
+let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+  : Location.t list option
+  =
+  match t.vault with
+  | None -> None
+  | Some v ->
+    let location ~path ~line ~character =
+      let pos = Position.create ~line ~character in
+      [ Location.create
+          ~uri:(uri_of_rel_path t path)
+          ~range:(Range.create ~start:pos ~end_:pos)
+      ]
+    in
+    (match command_block_definition t ~rel_path ~line with
+     | Some path -> Some (location ~path ~line:0 ~character:0)
+     | None ->
+       (match
+          Feature.Go_to_definition.go_to_definition
+            ~read_file:(read_file t)
+            ~index:v.index
+            ~rel_path
+            ~content:(buffer_content t rel_path)
+            ~line
+            ~character
+            ()
+        with
+        | None -> None
+        | Some { path; line; character } -> Some (location ~path ~line ~character)))
 ;;
 
 (** Handle [workspace/executeCommand].  [None] for an unknown command or

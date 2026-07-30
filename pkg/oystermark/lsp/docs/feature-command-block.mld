@@ -80,7 +80,18 @@ Each recognized line gets all of:
      available set is discoverable without leaving the editor;}
   {- a {b diagnostic} on a line that names no known command.  A misspelling
      would otherwise be inert, and inert looks exactly like unimplemented.}
+  {- {b go-to-definition}, jumping to the top of the note the line names, so
+     the panel answers the editor's ordinary navigation key rather than only
+     its own two surfaces.  The target is the command's, resolved exactly as
+     the lens resolves it: [daily/prev] in a note that is not a daily one has
+     no definition either.}
 }
+
+Go-to-definition is a {e read}: a calendar command whose note does not exist
+yet has no definition, even though its lens offers to create it. A jump that
+wrote a file would be a surprising answer to a navigation key — the lens and
+the code action are where creation stays. [daily/prev] and [daily/next] never
+create, so wherever they open is where they jump.
 
 A command that is understood but not currently applicable — [daily/prev] in a
 note that is not a daily note, or one with nothing before it — keeps its lens,
@@ -135,6 +146,6 @@ pipeline hook, no interaction with {!Oystermark.Config}.
 {1:test Test}
 
 Recognition, the command catalogue, and the text of a fresh block:
-{!Lsp_lib.Command_block}'s inline tests. The lenses, actions, completions and
-diagnostics a server answers with, and what the insert action writes into which
-note: [tests/lsp/test_command_block.ml].
+{!Lsp_lib.Command_block}'s inline tests. The lenses, actions, completions,
+diagnostics and definitions a server answers with, and what the insert action
+writes into which note: [tests/lsp/test_command_block.ml].

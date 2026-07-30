@@ -104,6 +104,22 @@ target file, the result falls back to line 0, character 0.
   {- {b Line past end of content}: clamped to end of content.}
 }
 
+{1:command_block Command-block lines}
+
+A line inside a fenced [oysterlsp] block is not a link — fenced content is
+literal text — but it names a note all the same, and the editor's navigation
+key is the obvious way to reach it. Such a line resolves to the top (line 0,
+character 0) of the note its command would open, when that note already
+exists.
+
+The target is the command's own, resolved exactly as its lens resolves it, so
+a line with nothing to run has nothing to jump to. A calendar command whose
+note is still missing also has none: this feature never creates a file. See
+{!page-"feature-command-block".surfaces}.
+
+Command-block lines are tried before {!section-link_detection}, which finds
+nothing inside a fence anyway.
+
 {1 Multi-target ambiguity}
 
 When {!Oystermark.Vault.Resolve.resolve} returns multiple candidates,
