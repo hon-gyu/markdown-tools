@@ -71,18 +71,36 @@ let create ?(now : unit -> Date.t = system_today) () : t =
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
   let config, warnings = Lsp_config.load ~root ~init_options in
   t.config <- config;
-  (* The daily-note format is validated here rather than at parse time — it is
-     the one setting whose usability is a property of its {e value} — but it
-     joins the same list, so the user hears about it the same way. *)
-  let daily_notes_warning =
-    match Lsp_config.daily_notes_settings config with
-    | Ok _ -> []
-    | Error e -> [ sprintf "daily notes disabled: %s" e ]
-  in
-  t.config_warnings <- warnings @ daily_notes_warning;
   t.daily_table <- None;
-  t.vault <- Some (build_vault root)
+  match config.disable with
+  (* Leaving the vault unbuilt is the whole of the disabling: every handler
+     already answers emptily without one, so there is no second place where
+     the switch has to be remembered.  It also means the vault is never
+     indexed, which is the cost the switch exists to avoid.  See
+     {!page-"feature-configuration".disable}. *)
+  | true ->
+    (* Warnings about settings that were never going to take effect would be
+       noise from a server that is doing nothing; the adapter says the one
+       thing worth saying instead. *)
+    t.config_warnings <- [];
+    t.vault <- None
+  | false ->
+    (* The daily-note format is validated here rather than at parse time — it
+       is the one setting whose usability is a property of its {e value} — but
+       it joins the same list, so the user hears about it the same way. *)
+    let daily_notes_warning =
+      match Lsp_config.daily_notes_settings config with
+      | Ok _ -> []
+      | Error e -> [ sprintf "daily notes disabled: %s" e ]
+    in
+    t.config_warnings <- warnings @ daily_notes_warning;
+    t.vault <- Some (build_vault root)
 ;;
+
+(** Whether the configuration turned the server off.  The adapter reports it,
+    since a server that answers nothing and says nothing is indistinguishable
+    from a broken one.  See {!page-"feature-configuration".disable}. *)
+let disabled (t : t) : bool = t.config.disable
 
 (** What the configuration sources asked for and could not have.  Empty when
     the configuration is clean; meaningful only after {!initialize}, which is
@@ -837,6 +855,10 @@ let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list
   : open_note option
   =
   match command, arguments with
+  (* Without a vault root there is no path to resolve the argument against —
+     and nothing offered the command in the first place, disabled or not yet
+     initialized. *)
+  | _ when Option.is_none t.vault -> None
   | cmd, Some [ `String path; `Bool create ] when String.equal cmd daily_note_command ->
     let uri = uri_of_rel_path t path in
     let create =
@@ -873,73 +895,83 @@ let code_action
       ()
   : CodeAction.t list
   =
-  let requested (kind : CodeActionKind.t) =
-    match only with
-    | None -> true
-    | Some kinds -> List.mem kinds kind ~equal:Poly.equal
-  in
-  let daily =
-    if requested CodeActionKind.Refactor
-    then (
-      (* On a command-block line the panel's own action is the answer, and the
+  (* The daily-note actions below are the one family that needs no vault, only
+     a clock — so unlike its neighbours this handler has to refuse the
+     rootless case itself, or a disabled server would still fill the menu. *)
+  if Option.is_none t.vault
+  then []
+  else (
+    let requested (kind : CodeActionKind.t) =
+      match only with
+      | None -> true
+      | Some kinds -> List.mem kinds kind ~equal:Poly.equal
+    in
+    let daily =
+      if requested CodeActionKind.Refactor
+      then (
+        (* On a command-block line the panel's own action is the answer, and the
          whole daily-note menu would bury it.  See
          {!page-"feature-command-block".surfaces}. *)
-      match command_block_actions t ~rel_path ~line:start_line with
-      | [] ->
-        daily_note_actions t ~rel_path
-        @ daily_note_link_actions t ~rel_path ~line:start_line ~character:start_character
-        @ insert_command_block_actions t ~rel_path ~line:start_line
-      | actions -> actions)
-    else []
-  in
-  let quick_fixes =
-    match t.vault with
-    | _ when not (requested CodeActionKind.QuickFix) -> []
-    | None -> []
-    | Some v ->
-      let content = disk_content t rel_path in
-      (match
-         Feature.Create_unresolved_note.action_at_range
-           ~index:v.index
-           ~rel_path
-           ~content
-           ~first_byte:
-             (byte_of_position content ~line:start_line ~character:start_character)
-           ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
-       with
-       | None -> []
-       | Some action ->
-         let target_uri = uri_of_rel_path t action.rel_path in
-         let create =
-           `CreateFile
-             (CreateFile.create
-                ~uri:target_uri
-                ~options:
-                  (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
-                ())
-         in
-         let zero = Position.create ~line:0 ~character:0 in
-         let initialize =
-           `TextDocumentEdit
-             (TextDocumentEdit.create
-                ~textDocument:
-                  (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
-                ~edits:
-                  [ `TextEdit
-                      (TextEdit.create
-                         ~range:(Range.create ~start:zero ~end_:zero)
-                         ~newText:("# " ^ action.title ^ "\n"))
-                  ])
-         in
-         [ CodeAction.create
-             ~title:(sprintf "Create note \"%s\"" action.rel_path)
-             ~kind:CodeActionKind.QuickFix
-             ~isPreferred:true
-             ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
-             ()
-         ])
-  in
-  quick_fixes @ daily
+        match command_block_actions t ~rel_path ~line:start_line with
+        | [] ->
+          daily_note_actions t ~rel_path
+          @ daily_note_link_actions
+              t
+              ~rel_path
+              ~line:start_line
+              ~character:start_character
+          @ insert_command_block_actions t ~rel_path ~line:start_line
+        | actions -> actions)
+      else []
+    in
+    let quick_fixes =
+      match t.vault with
+      | _ when not (requested CodeActionKind.QuickFix) -> []
+      | None -> []
+      | Some v ->
+        let content = disk_content t rel_path in
+        (match
+           Feature.Create_unresolved_note.action_at_range
+             ~index:v.index
+             ~rel_path
+             ~content
+             ~first_byte:
+               (byte_of_position content ~line:start_line ~character:start_character)
+             ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
+         with
+         | None -> []
+         | Some action ->
+           let target_uri = uri_of_rel_path t action.rel_path in
+           let create =
+             `CreateFile
+               (CreateFile.create
+                  ~uri:target_uri
+                  ~options:
+                    (CreateFileOptions.create ~ignoreIfExists:false ~overwrite:false ())
+                  ())
+           in
+           let zero = Position.create ~line:0 ~character:0 in
+           let initialize =
+             `TextDocumentEdit
+               (TextDocumentEdit.create
+                  ~textDocument:
+                    (OptionalVersionedTextDocumentIdentifier.create ~uri:target_uri ())
+                  ~edits:
+                    [ `TextEdit
+                        (TextEdit.create
+                           ~range:(Range.create ~start:zero ~end_:zero)
+                           ~newText:("# " ^ action.title ^ "\n"))
+                    ])
+           in
+           [ CodeAction.create
+               ~title:(sprintf "Create note \"%s\"" action.rel_path)
+               ~kind:CodeActionKind.QuickFix
+               ~isPreferred:true
+               ~edit:(WorkspaceEdit.create ~documentChanges:[ create; initialize ] ())
+               ()
+           ])
+    in
+    quick_fixes @ daily)
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
