@@ -140,8 +140,20 @@ let resolve_file ~(source : string) (files : Index.file_entry list) (target_str 
       | _ -> Some f)
 ;;
 
-(** Resolve a heading query (list of heading texts) against document headings.
-    Finds a subsequence where levels strictly increase (backtracking). *)
+(** Does query component [q] name heading [h]?
+
+    Two spellings reach the same heading: the heading {e text} as written
+    ([ [[note#Section One]] ]) and its {e identifier} — the derived slug, or the
+    explicit [{#id}] when the heading carries one ([ [[note#section-one]] ]).
+    Completion inserts the identifier form, so a link it wrote must resolve.
+    See {!page-"feature-go-to-definition".heading_lookup}. *)
+let heading_matches (h : Index.heading_entry) (q : string) : bool =
+  String.equal h.text q || String.equal h.slug (Parse.Common.heading_id_of_text q)
+;;
+
+(** Resolve a heading query (list of heading texts or ids) against document
+    headings.  Finds a subsequence where levels strictly increase
+    (backtracking). *)
 let resolve_headings (headings : Index.heading_entry list) (query : string list)
   : Index.heading_entry option
   =
@@ -157,7 +169,7 @@ let resolve_headings (headings : Index.heading_entry list) (query : string list)
     else (
       let q = List.nth_exn query qi in
       let h = headings_arr.(hi) in
-      if String.equal h.text q && h.level > prev_level
+      if heading_matches h q && h.level > prev_level
       then
         if
           (* This heading matches query[qi] *)
@@ -359,5 +371,49 @@ let%expect_test "ranking multiple subsequence matches" =
     notes/probe.md [[deep/a/s1]] -> deep/a/s1.md
     probe-root.md  [[s1]] -> s1.md
     probe-root.md  [[s3]] -> notes/s3.md
+    |}]
+;;
+
+(* A heading fragment is accepted in either spelling — the heading text, or the
+   identifier (derived slug, or the explicit [{#id}] of [Custom], whose slug is
+   [pinned]).  See {!page-"feature-go-to-definition".heading_lookup}. *)
+let%expect_test "heading fragment: text and identifier spellings" =
+  let headings : Index.heading_entry list =
+    [ { text = "Alpha 2"; level = 1; slug = "alpha-2"; loc = None }
+    ; { text = "Beta Two"; level = 2; slug = "beta-two"; loc = None }
+    ; { text = "Custom"; level = 1; slug = "pinned"; loc = None }
+    ]
+  in
+  let show query =
+    printf
+      "%-24s -> %s\n"
+      (String.concat ~sep:"#" query)
+      (match resolve_headings headings query with
+       | Some h -> h.slug
+       | None -> "<unresolved>")
+  in
+  List.iter
+    ~f:show
+    [ [ "Alpha 2" ]
+    ; [ "alpha-2" ]
+    ; [ "ALPHA 2" ]
+    ; [ "Custom" ]
+    ; [ "pinned" ]
+    ; [ "custom" ]
+    ; [ "Alpha 2"; "beta-two" ]
+    ; [ "alpha-2"; "Beta Two" ]
+    ; [ "nope" ]
+    ];
+  [%expect
+    {|
+    Alpha 2                  -> alpha-2
+    alpha-2                  -> alpha-2
+    ALPHA 2                  -> alpha-2
+    Custom                   -> pinned
+    pinned                   -> pinned
+    custom                   -> <unresolved>
+    Alpha 2#beta-two         -> beta-two
+    alpha-2#Beta Two         -> beta-two
+    nope                     -> <unresolved>
     |}]
 ;;
