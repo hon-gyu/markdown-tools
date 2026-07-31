@@ -48,6 +48,11 @@ type t =
       is truncated at the previous newline and a notice reporting how
       much is shown (in lines and percent) is appended.
       See {!page-"feature-hover".truncation}. *)
+  ; inlay_link_direction : bool
+    (** Whether to show a direction arrow after each link whose target is in
+      the same note.  Separate from the reference counts of
+      {!page-"feature-inlay-hints"}: the two share a request and nothing
+      else.  See {!page-"feature-inlay-hints-link-direction"}. *)
   ; daily_notes : daily_notes (** See {!page-"feature-daily-notes"}. *)
   }
 [@@deriving sexp, equal]
@@ -68,6 +73,7 @@ let default =
   ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
+  ; inlay_link_direction = true
   ; daily_notes = default_daily_notes
   }
 ;;
@@ -98,6 +104,7 @@ module Partial = struct
     ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
+    ; inlay_link_direction : bool option
     ; daily_notes : daily_notes
     }
 
@@ -106,6 +113,7 @@ module Partial = struct
     ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
+    ; inlay_link_direction = None
     ; daily_notes = { format = None; folder = None; template = None; link_action = None }
     }
   ;;
@@ -121,6 +129,7 @@ module Partial = struct
     ; diag_unresolved_fragment =
         pick upper.diag_unresolved_fragment lower.diag_unresolved_fragment
     ; hover_max_chars = pick upper.hover_max_chars lower.hover_max_chars
+    ; inlay_link_direction = pick upper.inlay_link_direction lower.inlay_link_direction
     ; daily_notes =
         { format = pick upper.daily_notes.format lower.daily_notes.format
         ; folder = pick upper.daily_notes.folder lower.daily_notes.folder
@@ -140,6 +149,8 @@ let resolve (p : Partial.t) : resolved =
   ; diag_unresolved_fragment =
       Option.value p.diag_unresolved_fragment ~default:default.diag_unresolved_fragment
   ; hover_max_chars = Option.value p.hover_max_chars ~default:default.hover_max_chars
+  ; inlay_link_direction =
+      Option.value p.inlay_link_direction ~default:default.inlay_link_direction
   ; daily_notes =
       { format = Option.value p.daily_notes.format ~default:default_daily_notes.format
       ; folder = p.daily_notes.folder
@@ -275,6 +286,19 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
           true
         | _ -> false);
       true
+    | "inlayHints" ->
+      parse_object
+        w
+        ~self:"inlayHints"
+        ~prefix:"inlayHints."
+        value
+        ~f:(fun ~key name value ->
+          match name with
+          | "linkDirection" ->
+            acc := { !acc with Partial.inlay_link_direction = parse_bool w ~key value };
+            true
+          | _ -> false);
+      true
     | "goToDefinition" ->
       parse_object
         w
@@ -329,6 +353,7 @@ let known_keys : string list =
   ; "dailyNotes.template"
   ; "dailyNotes.linkAction"
   ; "hover.maxChars"
+  ; "inlayHints.linkDirection"
   ; "goToDefinition.unresolvedFragment"
   ; "diagnostics.unresolvedFragment"
   ]
@@ -370,6 +395,7 @@ let to_json (t : t) : Yojson.Safe.t =
            @ optional "template" t.daily_notes.template
            @ [ "linkAction", `Bool t.daily_notes.link_action ]) )
     ; "hover", `Assoc [ "maxChars", `Int t.hover_max_chars ]
+    ; "inlayHints", `Assoc [ "linkDirection", `Bool t.inlay_link_direction ]
     ; ( "goToDefinition"
       , `Assoc
           [ "unresolvedFragment", json_of_fragment_behavior t.gtd_unresolved_fragment ] )
@@ -474,6 +500,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Strict)
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md))
            (link_action false))))
@@ -488,6 +515,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes.linkAction: expected a boolean, got "no"
@@ -510,10 +538,12 @@ let%test_module "configuration" =
         {|
         ((disable true) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! disable: expected a boolean, got "yes"
@@ -534,6 +564,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got "400px"
@@ -551,6 +582,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got 0
@@ -565,6 +597,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! unknown key "dailynotes"
@@ -580,11 +613,13 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes: expected an object, got []
@@ -613,6 +648,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
+         (inlay_link_direction true)
          (daily_notes
           ((format YYYY-MM-DD) (folder (journal)) (template ()) (link_action true))))
         |}]

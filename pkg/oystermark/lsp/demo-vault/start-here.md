@@ -21,8 +21,9 @@ and work down the list.
   - [[diagnostics]]
 - Document outline: headings, caret ids and attribute ids, as a tree
   - [[anchors]]
-- Inlay hints: reference counts per heading, and per file at line 0
-  - [[anchors]]
+- Inlay hints: reference counts per heading and per file, and the direction
+  and distance of an intra-note link's target
+  - [[inlay-hints]]
 - Rename: the file moves and inbound links are rewritten
   - [[rename-me]]
 - Daily notes: open today's, or jump between existing ones

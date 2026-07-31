@@ -29,6 +29,11 @@ The same anchors, no wikilink syntax involved: [note](notes/anchors.md),
 [this section](<#Markdown links>) — a destination with a space needs the angle
 brackets, or it is not a link at all.
 
+Both carry an inlay arrow saying which way their target is and how many lines
+away — `↑` back up this note, `↓` further down. Only intra-note links get one:
+everything under [[#Wikilinks]] points at [[anchors]] and stays bare.
+[[inlay-hints]] is the note about that.
+
 ## Unresolved
 
 [[no-such-note]] is a diagnostic, and the code action on it creates the note.
@@ -47,3 +52,6 @@ ids, attribute ids.
 ## Also here
 
 [[rename-me]], [[command-panel]], [[journal-index]].
+
+These two links are what the counts in [[inlay-hints]] count:
+[[inlay-hints#Reference counts]] and [[inlay-hints#Link direction]].

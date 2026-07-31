@@ -1,7 +1,11 @@
-(** Inlay hints: show reference counts next to headings and at top of file.
+(** Inlay hints: reference counts next to headings and at top of file, plus
+    direction arrows on intra-note links.
 
-    Spec: {!page-"feature-inlay-hints"}.
-    Uses {!Find_references} for counting over pre-resolved vault docs. *)
+    Spec: {!page-"feature-inlay-hints"} for the counts,
+    {!page-"feature-inlay-hints-link-direction"} for the arrows — two
+    independently switchable features sharing one response, and nothing else.
+    Uses {!Find_references} for counting over pre-resolved vault docs and
+    {!Link_direction} for the arrows. *)
 
 open Core
 
@@ -49,10 +53,15 @@ let headings_in_range
 (** Compute inlay hints for [rel_path] within the given line range.
 
     [docs] is the list of pre-resolved vault documents (with
-    {!Oystermark.Vault.Resolve.resolved_key} metadata attached).
+    {!Oystermark.Vault.Resolve.resolved_key} metadata attached); [index] is
+    the vault index the link arrows resolve against, and omitting it leaves
+    them out — a caller that has no index has no directions to report.
 
-    See {!page-"feature-inlay-hints"}. *)
+    See {!page-"feature-inlay-hints"} and
+    {!page-"feature-inlay-hints-link-direction"}. *)
 let inlay_hints
+      ?(config : Lsp_config.t = Lsp_config.default)
+      ?(index : Oystermark.Vault.Index.t option)
       ~(docs : (string * Cmarkit.Doc.t) list)
       ~(rel_path : string)
       ~(content : string)
@@ -84,7 +93,24 @@ let inlay_hints
     match format_count count with
     | None -> ()
     | Some label -> hints := { line; character = end_char; label } :: !hints);
-  let result = List.rev !hints in
+  (* Link-direction arrows.  Computed from [content] rather than from [docs]:
+     they are about where things are in {e this} note, which is what [content]
+     is, while [docs] is what the vault says about every note.
+     See {!page-"feature-inlay-hints-link-direction"}. *)
+  let direction_hints =
+    match config.inlay_link_direction, index with
+    | false, _ | _, None -> []
+    | true, Some index ->
+      Link_direction.hints ~index ~rel_path ~content ~range_start_line ~range_end_line ()
+      |> List.map ~f:(fun (h : Link_direction.hint) ->
+        { line = h.line; character = h.character; label = h.label })
+  in
+  (* One response, so one order: by position, whichever feature produced it. *)
+  let result =
+    List.rev !hints @ direction_hints
+    |> List.stable_sort ~compare:(fun a b ->
+      [%compare: int * int] (a.line, a.character) (b.line, b.character))
+  in
   Trace_core.add_data_to_span _sp [ "num_hints", `Int (List.length result) ];
   result
 ;;

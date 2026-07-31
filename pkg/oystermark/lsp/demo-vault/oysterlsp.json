@@ -6,6 +6,7 @@
     "linkAction": true
   },
   "hover": { "maxChars": 2000 },
+  "inlayHints": { "linkDirection": true },
   "goToDefinition": { "unresolvedFragment": "fallback" },
   "diagnostics": { "unresolvedFragment": "fallback" }
 }

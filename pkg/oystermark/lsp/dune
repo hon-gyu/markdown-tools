@@ -8,6 +8,7 @@
   daily_notes
   command_block
   link_collect
+  link_direction
   go_to_definition
   completion
   diagnostics

@@ -1,0 +1,133 @@
+{0 Inlay hints (link direction)}
+
+Next to every link whose target lies in the {e same note}, show which way
+the target is and how far: [{v [[#setup]]↓8 v}].
+
+A note that links inward a lot — a map-of-content, a long note that
+cross-references its own sections — reads as a list of identical
+[ [[#…]] ] tokens.  The one thing a reader wants from such a list, and
+cannot get without following each link, is where each target sits
+relative to the link.  That is a number the index already knows.
+
+This is a separate feature from {!page-"feature-inlay-hints"}, which
+counts inbound references at headings and at the top of the file.  The
+two share the [textDocument/inlayHint] response and nothing else, and
+each has its own switch: a reader who wants direction arrows on links is
+not thereby asking for [3 refs] on every heading.
+
+{1 Activation}
+
+Requested with the rest of the inlay hints, over the client's visible
+range.  Off switches the whole feature:
+
+{t
+  | Key                        | Type      | Default |
+  |----------------------------|-----------|---------|
+  | [inlayHints.linkDirection] | [boolean] | [true]  |
+}
+
+{1:eligible Which links get a hint}
+
+Exactly those whose target resolves to a position {e within the current
+note}:
+
+{ul
+  {- [ [[#Heading]] ], [ [[#^blockid]] ], [ [[#id]] ] — the self-reference
+     forms, resolving to [Curr_heading], [Curr_block], [Curr_attr].}
+  {- the same fragments written through the note's own name
+     ([ [[this-note#Heading]] ] from inside [this-note.md]).}
+  {- markdown links spelled [(#fragment)], which resolve identically.
+     See {!page-"feature-go-to-definition".resolution}.}
+}
+
+Everything else is silent — no hint, not an empty one:
+
+{ul
+  {- {b cross-note links}: there is no direction to show.}
+  {- {b unresolved links}, and links to a note whose fragment did not
+     resolve: nothing to point at.  Reporting them is
+     {!page-"feature-diagnostics"}'s job.}
+  {- {b whole-note self-links} ([ [[this-note]] ] with no fragment): the
+     target is the note itself rather than a place in it.}
+}
+
+Embeds ([![[#section]]]) are links for this purpose and get a hint.
+
+{1:placement Placement}
+
+The hint sits {e immediately after} the link's last character — after
+[\]\]] for a wikilink, after the closing [)] for a markdown link — with
+[paddingLeft].  Not at the end of the line.
+
+This is what makes a line with two links legible.  End-of-line placement
+would have to merge them into one label ([↓12 ↑3]) and leave the reader
+to map arrows onto links by document order, silently and wrongly the
+moment the line wraps.  Adjacent placement is self-labelling: [n] links
+produce [n] hints, each beside its own.
+
+{[
+  See [[#alpha]]↓12 and [[#bar]]↑3 here.
+]}
+
+Two links to the {e same} target on one line each still get a hint.
+Suppressing the second would make a hint depend on its neighbours, which
+is the end-of-line problem returning by another door.
+
+{1:label Label}
+
+Let [Δ] be [target_line - hint_line], both 0-based, where [hint_line] is
+the line the hint is placed on.
+
+{t
+  | Case                                | Label   |
+  |-------------------------------------|---------|
+  | [Δ > 0] (target below)              | [↓{Δ}]  |
+  | [Δ < 0] (target above)              | [↑{-Δ}] |
+  | [Δ = 0], target starts after the link | [→]   |
+  | [Δ = 0], target starts before the link | [←]   |
+  | [Δ = 0], target spans the link      | none    |
+}
+
+The arrow carries the sign, so the number is always the absolute
+distance in lines: [↑45], never [↑-45].
+
+Left and right are only reachable through inline attribute anchors
+([ [key]{#kt} ]) — headings and block anchors own their line, so a
+same-line target cannot be one.  There the line delta is [0] and the
+number is dropped: the arrow alone says it.  The final row is the
+degenerate case of a link that sits inside its own target's span; it
+would point at itself, so it says nothing.
+
+{1 Hint shape}
+
+{t
+  | Field       | Value                              |
+  |-------------|------------------------------------|
+  | position    | first position after the link      |
+  | label       | see {!label}                       |
+  | kind        | [InlayHintKind.Parameter]          |
+  | paddingLeft | [true]                             |
+}
+
+Positions are UTF-16 (see {!page-"feature-utf16-positions"}), so a link
+after non-ASCII text on the same line still gets its hint in the right
+place.
+
+{1 Edge cases}
+
+{ul
+  {- {b Link spanning lines}: [Δ] is measured from the line the hint
+     lands on — the last line of the link — so the arrow means what it
+     says at the place it appears.}
+  {- {b Range}: a hint is emitted when {e the link} falls in the
+     requested range.  The target may be anywhere in the note, on screen
+     or not.}
+  {- {b Unsaved edits}: inlay hints are a disk-reading handler, so an
+     arrow is computed against the file as last saved.  A dirty buffer
+     can therefore be off by the number of lines the edit added above
+     the target — the known staleness of the whole disk group, not a
+     separate defect here, and it resolves on save.  See
+     {!page-"feature-document-sync"}.  Direction arrows are the disk
+     group's most position-sensitive member, so if that split is ever
+     revisited this is the feature that should motivate it.}
+}

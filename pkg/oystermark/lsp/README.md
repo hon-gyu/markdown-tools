@@ -77,6 +77,7 @@ logic of its own. Spec: [feature-attribute-anchors.mld](docs/feature-attribute-a
 | Hover | Preview of the target note or section. | [hover](docs/feature-hover.mld) |
 | Document outline | Headings and struct keys as a symbol tree. | [document-outline](docs/feature-document-outline.mld) |
 | Inlay hints | Reference counts next to headings and at the top of the file. | [inlay-hints](docs/feature-inlay-hints.mld) |
+| Inlay hints (link direction) | `[[#setup]]↓8` — which way an intra-note link's target is, and how far. | [inlay-hints-link-direction](docs/feature-inlay-hints-link-direction.mld) |
 | Rename | Renames a note and rewrites the links pointing at it. | [rename](docs/feature-rename.mld) |
 | Code action | Creates the note behind an unresolved link. | [codeaction](docs/feature-codeaction-create-unresolved-link.mld) |
 | Daily notes | Open or create today's / yesterday's / tomorrow's note, and jump to the previous or next existing one. | [daily-notes](docs/feature-daily-notes.mld) |

@@ -1016,6 +1016,8 @@ let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int
   | None -> None
   | Some v ->
     Feature.Inlay_hints.inlay_hints
+      ~config:t.config
+      ~index:v.index
       ~docs:v.docs
       ~rel_path
       ~content:(disk_content t rel_path)

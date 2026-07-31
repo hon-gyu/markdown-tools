@@ -18,6 +18,7 @@
   {- {!page-"feature-codeaction-create-unresolved-link"}}
   {- {!page-"feature-daily-notes"}}
   {- {!page-"feature-inlay-hints"}}
+  {- {!page-"feature-inlay-hints-link-direction"}}
   {- {!page-"feature-completion"}}
   {- {!page-"feature-command-block"}}
   {- {!page-"feature-configuration"}}

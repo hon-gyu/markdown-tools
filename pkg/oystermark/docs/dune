@@ -62,6 +62,7 @@
   feature-hover
   feature-index
   feature-inlay-hints
+  feature-inlay-hints-link-direction
   feature-rename
   feature-utf16-positions
   cmarkit-label-resolution

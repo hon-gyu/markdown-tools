@@ -61,6 +61,17 @@
         }
       }
     },
+    "inlayHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "linkDirection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to show a direction arrow and line distance after each link whose target is in the same note, e.g. '[[#setup]]↓8'. Independent of the inbound-reference counts shown at headings."
+        }
+      }
+    },
     "goToDefinition": {
       "type": "object",
       "additionalProperties": false,
