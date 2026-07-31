@@ -1,5 +1,0 @@
-(executable
- (name modgraph)
- (libraries compiler-libs.common core core.top str)
- (preprocess
-  (pps ppx_jane)))
