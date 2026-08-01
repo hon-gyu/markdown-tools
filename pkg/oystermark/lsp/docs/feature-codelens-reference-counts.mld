@@ -1,0 +1,117 @@
+{0 Code lens (reference counts)}
+
+Above each heading something links to, a lens reading [3 references];
+above the note, one reading [12 backlinks].
+
+This is how every other language server renders this count.  VS Code writes
+[3 references] over a TypeScript symbol, rust-analyzer and the Java server
+do the same — a lens on its own line, with the noun spelled out.  A bare
+[3] squeezed after a heading has to be decoded first.
+
+These counts were inlay hints before ([3 refs] after the heading text).
+That rendering is gone: it is this one, or nothing.  Inlay hints are now
+only {!page-"feature-inlay-hints-link-direction"}.
+
+{1 Activation}
+
+The server advertises [codeLensProvider] already, for
+{!page-"feature-command-block"}.  Counts are added to that response:
+
+{t
+  | Key                              | Type      | Default                        |
+  |----------------------------------|-----------|--------------------------------|
+  | [codeLens.references]            | [boolean] | [true]                         |
+  | [codeLens.showReferencesCommand] | [string]  | ["editor.action.showReferences"] |
+}
+
+Clients gate code lens on their own account, and typically off: VS Code
+ships [typescript.referencesCodeLens.enabled] as [false], and Zed's
+[code_lens] setting is off until switched to ["on"].  A lens costs a
+whole line of vertical space, which is why nobody makes the user pay it
+by default.
+
+{1 Placement}
+
+{t
+  | Count            | Lens sits above       | Title          |
+  |------------------|-----------------------|----------------|
+  | whole note       | line 0                | [12 backlinks] |
+  | one heading      | that heading's line   | [3 references] |
+}
+
+The range is empty ([line, 0] to [line, 0]): a lens is drawn above its
+range's line, and nothing about it depends on the range's width.
+
+A count of zero produces no lens.  Most headings in a vault are pointed
+at by nothing, and a column of [0 references] would be the loudest thing
+on the page.
+
+{1:wording Wording}
+
+{t
+  | Count | Note           | Heading        |
+  |-------|----------------|----------------|
+  | 1     | [1 backlink]   | [1 reference]  |
+  | n     | [{n} backlinks]| [{n} references] |
+}
+
+"References" for a heading is what the editors this borrows from say.
+"Backlinks" for the note is the word for the same thing in a vault, and
+the two being different is useful: it says which of the two counts you
+are looking at without reading the line under it.
+
+{1:click Clicking}
+
+Clicking the lens opens the references it counted.  The lens carries:
+
+{t
+  | Field       | Value                                        |
+  |-------------|----------------------------------------------|
+  | [title]     | the count                                    |
+  | [command]   | [codeLens.showReferencesCommand]             |
+  | [arguments] | [\[uri; position; locations\]]                |
+}
+
+[locations] are the references themselves, from the same scan that
+produced the number — so the list a click opens can never disagree with
+the count above it.
+
+{2 Why the command name is a setting}
+
+There is no LSP request for "show me these locations".  There is a
+convention: VS Code defines [editor.action.showReferences] taking
+[(uri, position, locations)], and other editors implement the same names
+— Zed matches [editor.action.showReferences],
+[editor.action.goToLocations] and [editor.action.peekLocations], reading
+the locations out of the third argument.  A convention is exactly the
+kind of thing that belongs in configuration rather than in a constant:
+the server says {e what} it wants shown, the client's name for it is the
+user's to state.
+
+An unrecognised name costs nothing: the client either ignores it (the
+lens is then a label, which is what it was before this was wired) or
+forwards it as [workspace/executeCommand], which this server answers
+[None] to, since the command is not one of its own.  Setting the key to
+[""] asks for the label deliberately.
+
+A [Command] is required either way — an LSP lens shows its title through
+one, so there is no such thing as a lens with a title and no command.
+
+The keyboard route is unaffected and needs none of this: find references
+on the heading.  See {!page-"feature-find-references"}.
+
+{1 Edge cases}
+
+{ul
+  {- {b Command blocks}: a note with a command panel gets both kinds of
+     lens.  The command lenses come first in the response — they are the
+     note's controls, and a count should not push them down.}
+  {- {b Frontmatter}: the whole-note lens sits above line 0, which is the
+     opening [---] when there is frontmatter.  A lens is drawn above its
+     line, so it lands at the very top of the note — which is where the
+     count of the whole note belongs, and is the one thing the inlay-hint
+     rendering could never get right.}
+  {- {b Unsaved edits}: counts come from the indexed vault and the lines
+     from the buffer, as everywhere else in the disk group.  See
+     {!page-"feature-document-sync"}.}
+}

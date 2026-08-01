@@ -32,7 +32,7 @@ brackets, or it is not a link at all.
 Both carry an inlay arrow saying which way their target is and how many lines
 away — `↑` back up this note, `↓` further down. Only intra-note links get one:
 everything under [[#Wikilinks]] points at [[anchors]] and stays bare.
-[[inlay-hints]] is the note about that.
+[[hints-and-lenses]] is the note about that.
 
 ## Unresolved
 
@@ -53,5 +53,6 @@ ids, attribute ids.
 
 [[rename-me]], [[command-panel]], [[journal-index]].
 
-These two links are what the counts in [[inlay-hints]] count:
-[[inlay-hints#Reference counts]] and [[inlay-hints#Link direction]].
+These two links are what the lenses in [[hints-and-lenses]] count:
+[[hints-and-lenses#Reference counts, as lenses]] and
+[[hints-and-lenses#Link direction, as hints]].

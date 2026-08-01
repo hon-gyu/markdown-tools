@@ -20,6 +20,7 @@ module Completion = Completion
 module Diagnostics = Diagnostics
 module Hover = Hover
 module Find_references = Find_references
+module Reference_counts = Reference_counts
 module Rename = Rename
 module Document_outline = Document_outline
 module Create_unresolved_note = Create_unresolved_note

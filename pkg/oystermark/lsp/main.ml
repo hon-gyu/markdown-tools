@@ -34,7 +34,8 @@ class oystermark_server ~sw =
 
     method! config_code_lens_options : CodeLensOptions.t option =
       (* Lenses come fully formed, so no [resolveProvider].  See
-         {!page-"feature-command-block"}. *)
+         {!page-"feature-command-block"} for the command lenses and
+         {!page-"feature-codelens-reference-counts"} for the counts. *)
       Some (CodeLensOptions.create ~resolveProvider:false ())
 
     method! config_completion : CompletionOptions.t option =

@@ -50,6 +50,7 @@
   design-index
   feature-attribute-anchors
   feature-codeaction-create-unresolved-link
+  feature-codelens-reference-counts
   feature-command-block
   feature-completion
   feature-configuration
@@ -61,7 +62,6 @@
   feature-go-to-definition
   feature-hover
   feature-index
-  feature-inlay-hints
   feature-inlay-hints-link-direction
   feature-rename
   feature-utf16-positions

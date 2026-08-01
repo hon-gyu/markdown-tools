@@ -72,6 +72,22 @@
         }
       }
     },
+    "codeLens": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "references": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to show a '3 references' lens above each heading something links to, and a '12 backlinks' lens above the note. Note that clients gate code lens themselves — Zed's 'code_lens' setting is off by default."
+        },
+        "showReferencesCommand": {
+          "type": "string",
+          "default": "editor.action.showReferences",
+          "description": "The client-side command a reference lens carries, invoked with [uri, position, locations]. There is no standard LSP command for 'show me these locations' — this name is VS Code's convention, which Zed also implements — so it is a setting rather than a constant. Set it to \"\" to make the lens a label with nothing behind it."
+        }
+      }
+    },
     "goToDefinition": {
       "type": "object",
       "additionalProperties": false,
