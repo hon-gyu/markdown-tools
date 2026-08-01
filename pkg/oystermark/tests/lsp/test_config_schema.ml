@@ -1,4 +1,4 @@
-(** Spec: {!page-"feature-configuration".schema-file}.
+(** Spec: {!page-"feature-configuration".schema_file}.
     Impl: [lsp/oysterlsp.schema.json] and {!Lsp_lib.Config}.
 
     The published schema is a second statement of what the parser accepts, and

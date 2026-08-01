@@ -11,7 +11,7 @@
     disk-reading handlers index a live position into content that may be one
     save behind.  For {!rename} and {!code_action} — the two that return edits
     a client applies back to the buffer — that is unsound, not merely stale.
-    See {!page-"feature-document-sync".mixed-frame}.
+    See {!page-"feature-document-sync".mixed_frame}.
 
     Spec: {!page-"feature-document-sync"}. *)
 
@@ -157,7 +157,7 @@ val prepare_rename : t -> rel_path:string -> line:int -> character:int -> Range.
     along with its links.
 
     Ranges are computed against disk content — unsound if [rel_path] has
-    unsaved edits.  See {!page-"feature-document-sync".mixed-frame}. *)
+    unsaved edits.  See {!page-"feature-document-sync".mixed_frame}. *)
 val rename
   :  t
   -> rel_path:string
@@ -178,7 +178,7 @@ val document_symbol : t -> rel_path:string -> DocumentSymbol.t list option
 
     The requested range is resolved against disk content — unsound if
     [rel_path] has unsaved edits.  See
-    {!page-"feature-document-sync".mixed-frame}. *)
+    {!page-"feature-document-sync".mixed_frame}. *)
 val code_action
   :  t
   -> ?only:CodeActionKind.t list
@@ -198,8 +198,9 @@ val completion
   -> character:int
   -> CompletionItem.t list option
 
-(** Spec: {!page-"feature-inlay-hints"}.  [start_line] and [end_line] are the
-    requested LSP range's lines, treated as inclusive of [end_line]. *)
+(** Spec: {!page-"feature-inlay-hints-link-direction"}.  [start_line] and
+    [end_line] are the requested LSP range's lines, treated as inclusive of
+    [end_line]. *)
 val inlay_hint
   :  t
   -> rel_path:string

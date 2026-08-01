@@ -9,11 +9,12 @@ cross-references its own sections — reads as a list of identical
 cannot get without following each link, is where each target sits
 relative to the link.  That is a number the index already knows.
 
-This is a separate feature from {!page-"feature-inlay-hints"}, which
-counts inbound references at headings and at the top of the file.  The
-two share the [textDocument/inlayHint] response and nothing else, and
-each has its own switch: a reader who wants direction arrows on links is
-not thereby asking for [3 refs] on every heading.
+This is a separate feature from
+{!page-"feature-codelens-reference-counts"}, which counts inbound
+references at headings and at the top of the file.  The two answer
+different requests and share nothing but the sense of being ambient
+annotation, and each has its own switch: a reader who wants direction
+arrows on links is not thereby asking for [3 refs] on every heading.
 
 {1 Activation}
 

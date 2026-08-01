@@ -22,7 +22,7 @@ Held by {!Lsp_lib.Server}:
 
 {b This section describes what the server does today.  The
 buffer-vs-disk story is not yet settled — see
-{{!section-"open-questions"}Open questions} below.}
+{{!section-"open_questions"}Open questions} below.}
 
 Handlers split into two groups by which content they answer against:
 
@@ -89,7 +89,7 @@ Remove the entry from [open_docs].  No rebuild.
      up on the next didOpen or didSave.}
 }
 
-{1:mixed-frame Hazard: mixed position frames}
+{1:mixed_frame Hazard: mixed position frames}
 
 {b The split above is not clean, and the seam is worth naming
 explicitly.}
@@ -127,7 +127,7 @@ ranges — against [open_docs] content whenever the file is open, even
 while vault-wide {e scanning} continues to read from disk. The broad
 fix is the first open question below.
 
-{1:open-questions Open questions}
+{1:open_questions Open questions}
 
 {ul
   {- {b Should the vault-wide handlers honor unsaved buffer content
@@ -136,7 +136,7 @@ fix is the first open question below.
      than rebuilding the vault from disk.  The current split is
      simpler but can surprise users who expect find-references to
      reflect what they see on screen — and, per
-     {{!section-"mixed-frame"}the hazard above}, it is what makes
+     {{!section-"mixed_frame"}the hazard above}, it is what makes
      rename and code actions unsound on a dirty buffer.  Not yet
      decided.}
   {- {b Should diagnostics recompute on didChange at all?}  Keeping

@@ -380,7 +380,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     (* Not a setting: the association a JSON language server reads to offer
        completion and validation over this very file.  Reporting it as unknown
        would penalize the one line that makes the file self-documenting.  See
-       {!page-"feature-configuration".schema-file}. *)
+       {!page-"feature-configuration".schema_file}. *)
     | "$schema" -> true
     | _ -> false);
   !acc, Warnings.to_list w
@@ -391,7 +391,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     Every dotted key {!parse} accepts, [$schema] aside.  It exists to be
     checked against — the published JSON Schema is a second statement of the
     same thing, and two statements drift.  See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let known_keys : string list =
   [ "disable"
   ; "dailyNotes.format"
@@ -411,7 +411,7 @@ let known_keys : string list =
     [--print-default-config] writes, and the [$id] the schema file itself
     carries.  A raw URL, not a [github.com/blob] one — that serves HTML, which
     a JSON language server cannot read.  See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let schema_url =
   "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json"
 ;;

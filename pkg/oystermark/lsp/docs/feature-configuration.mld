@@ -44,7 +44,7 @@ A complete example:
   }
 ]}
 
-{1:schema-file Discovering the schema}
+{1:schema_file Discovering the schema}
 
 The table above is the specification; [lsp/oysterlsp.schema.json] is the same
 thing in a form editors can act on. Naming it from the file itself is enough —

@@ -360,7 +360,7 @@ class oystermark_server ~sw =
     documents itself in any editor with a JSON language server. The point is a
     file to edit rather than a file to keep: defaults written down are frozen,
     and a key left out is a key that follows this server as it changes. See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let print_default_config () : unit =
   let fields =
     match Lsp_lib.Config.to_json Lsp_lib.Config.default with
