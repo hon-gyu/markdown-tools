@@ -25,6 +25,7 @@
   core
   core_unix.time_float_unix
   yojson
+  base64
   linol.lsp
   trace.core)
  (inline_tests)

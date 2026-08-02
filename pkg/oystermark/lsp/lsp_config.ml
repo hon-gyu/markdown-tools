@@ -48,6 +48,16 @@ type t =
       is truncated at the previous newline and a notice reporting how
       much is shown (in lines and percent) is appended.
       See {!page-"feature-hover".truncation}. *)
+  ; hover_image_preview : bool
+    (** Whether an image hover embeds the image itself as a [data:] URI after
+      its description.  Off by default: whether that becomes a picture is
+      the client's markdown renderer's business, not ours, so this is a
+      statement about the client.  See {!page-"feature-hover".preview}. *)
+  ; hover_image_max_bytes : int
+    (** Largest image, measured on the file before base64 inflates it by a
+      third, that {!hover_image_preview} will embed.  A larger one keeps
+      its description and says why the preview is missing.
+      See {!page-"feature-hover".preview}. *)
   ; inlay_link_direction : bool
     (** Whether to show a direction arrow after each link whose target is in
       the same note — the whole of what inlay hints are, now that reference
@@ -77,12 +87,14 @@ let default_daily_notes =
 
 (** Default configuration: both features use {!Fallback}, matching the
     lenient behavior described in the go-to-definition spec.
-    Hover content is capped at 2 000 bytes. *)
+    Hover content is capped at 2 000 bytes, and image previews are off. *)
 let default =
   { disable = false
   ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
+  ; hover_image_preview = false
+  ; hover_image_max_bytes = 256 * 1024
   ; inlay_link_direction = true
   ; code_lens_references = true
   ; code_lens_show_references_command = "editor.action.showReferences"
@@ -116,6 +128,8 @@ module Partial = struct
     ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
+    ; hover_image_preview : bool option
+    ; hover_image_max_bytes : int option
     ; inlay_link_direction : bool option
     ; code_lens_references : bool option
     ; code_lens_show_references_command : string option
@@ -127,6 +141,8 @@ module Partial = struct
     ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
+    ; hover_image_preview = None
+    ; hover_image_max_bytes = None
     ; inlay_link_direction = None
     ; code_lens_references = None
     ; code_lens_show_references_command = None
@@ -145,6 +161,8 @@ module Partial = struct
     ; diag_unresolved_fragment =
         pick upper.diag_unresolved_fragment lower.diag_unresolved_fragment
     ; hover_max_chars = pick upper.hover_max_chars lower.hover_max_chars
+    ; hover_image_preview = pick upper.hover_image_preview lower.hover_image_preview
+    ; hover_image_max_bytes = pick upper.hover_image_max_bytes lower.hover_image_max_bytes
     ; inlay_link_direction = pick upper.inlay_link_direction lower.inlay_link_direction
     ; code_lens_references = pick upper.code_lens_references lower.code_lens_references
     ; code_lens_show_references_command =
@@ -170,6 +188,10 @@ let resolve (p : Partial.t) : resolved =
   ; diag_unresolved_fragment =
       Option.value p.diag_unresolved_fragment ~default:default.diag_unresolved_fragment
   ; hover_max_chars = Option.value p.hover_max_chars ~default:default.hover_max_chars
+  ; hover_image_preview =
+      Option.value p.hover_image_preview ~default:default.hover_image_preview
+  ; hover_image_max_bytes =
+      Option.value p.hover_image_max_bytes ~default:default.hover_image_max_bytes
   ; inlay_link_direction =
       Option.value p.inlay_link_direction ~default:default.inlay_link_direction
   ; code_lens_references =
@@ -311,6 +333,13 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
         | "maxChars" ->
           acc := { !acc with Partial.hover_max_chars = parse_positive_int w ~key value };
           true
+        | "imagePreview" ->
+          acc := { !acc with Partial.hover_image_preview = parse_bool w ~key value };
+          true
+        | "imageMaxBytes" ->
+          acc
+          := { !acc with Partial.hover_image_max_bytes = parse_positive_int w ~key value };
+          true
         | _ -> false);
       true
     | "inlayHints" ->
@@ -399,6 +428,8 @@ let known_keys : string list =
   ; "dailyNotes.template"
   ; "dailyNotes.linkAction"
   ; "hover.maxChars"
+  ; "hover.imagePreview"
+  ; "hover.imageMaxBytes"
   ; "inlayHints.linkDirection"
   ; "codeLens.references"
   ; "codeLens.showReferencesCommand"
@@ -442,7 +473,12 @@ let to_json (t : t) : Yojson.Safe.t =
            @ optional "folder" t.daily_notes.folder
            @ optional "template" t.daily_notes.template
            @ [ "linkAction", `Bool t.daily_notes.link_action ]) )
-    ; "hover", `Assoc [ "maxChars", `Int t.hover_max_chars ]
+    ; ( "hover"
+      , `Assoc
+          [ "maxChars", `Int t.hover_max_chars
+          ; "imagePreview", `Bool t.hover_image_preview
+          ; "imageMaxBytes", `Int t.hover_image_max_bytes
+          ] )
     ; "inlayHints", `Assoc [ "linkDirection", `Bool t.inlay_link_direction ]
     ; ( "codeLens"
       , `Assoc
@@ -553,6 +589,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Strict)
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -569,6 +606,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -593,12 +631,14 @@ let%test_module "configuration" =
         {|
         ((disable true) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -621,6 +661,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -640,6 +681,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -656,6 +698,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -673,6 +716,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -680,6 +724,7 @@ let%test_module "configuration" =
         ! configuration: expected an object, got "nonsense"
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
@@ -710,6 +755,7 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes

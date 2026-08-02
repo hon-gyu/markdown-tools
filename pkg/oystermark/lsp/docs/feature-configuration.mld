@@ -30,6 +30,8 @@ The same shape in both sources — one schema, one parser.
   | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |
   | [dailyNotes.linkAction] | bool | [true] | Whether to offer [Insert link to today's daily note]. See {!page-"feature-daily-notes".link}. |
   | [hover.maxChars] | positive int | [2000] | Bytes of note content a hover may include, excluding the path header. See {!page-"feature-hover".truncation}. |
+  | [hover.imagePreview] | bool | [false] | Whether an image hover embeds the image as a [data:] URI. See {!page-"feature-hover".preview}. |
+  | [hover.imageMaxBytes] | positive int | [262144] | Largest image [hover.imagePreview] will embed. See {!page-"feature-hover".preview}. |
   | [goToDefinition.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Where a link with an unfindable fragment goes. See {!page-"feature-go-to-definition"}. |
   | [diagnostics.unresolvedFragment] | [fallback] \| [strict] | [fallback] | Whether an unfindable fragment is reported. See {!page-"feature-diagnostics"}. |
 }

@@ -57,7 +57,18 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 2000,
-          "description": "Bytes of note content a hover may include, excluding the path header. Content past the limit is truncated at the previous newline, followed by a notice reporting how much is shown, e.g. '*(truncated: showing 42 of 80 lines, 52%)*'."
+          "description": "Bytes of note content a hover may include, excluding the path header. Content past the limit is truncated at the previous newline, followed by a notice reporting how much is shown, e.g. '*(truncated: showing 42 of 80 lines, 52%)*'. Does not apply to image hovers."
+        },
+        "imagePreview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether hovering an image link embeds the image itself as a data: URI, after the description line naming its format, dimensions and size. Off by default because rendering it is the client's markdown renderer's business: VS Code shows the picture, a client that lays hover markdown out as text (Neovim's built-in handler, most terminal clients) shows nothing. The description is shown either way."
+        },
+        "imageMaxBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 262144,
+          "description": "Largest image imagePreview will embed, measured on the file before base64 inflates it by a third. The encoded image travels inline in the JSON-RPC response the editor is blocking a hover on. A larger file keeps its description and says why the preview is missing."
         }
       }
     },

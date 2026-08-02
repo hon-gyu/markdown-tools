@@ -74,6 +74,7 @@
   ocamlgraph
   yaml
   yojson
+  base64
   ppx_jane
   ppx_string
   ppx_blob
