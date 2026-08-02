@@ -53,12 +53,14 @@
   feature-codelens-reference-counts
   feature-command-block
   feature-completion
+  feature-completion-markdown-links
   feature-configuration
   feature-daily-notes
   feature-diagnostics
   feature-document-outline
   feature-document-sync
   feature-find-references
+  feature-footnotes
   feature-go-to-definition
   feature-hover
   feature-index

@@ -1,0 +1,215 @@
+{0 Completion in Markdown links}
+
+Suggest vault paths and fragments as the user types inside the destination of
+a Markdown link or image — [\[label\](<cursor>)] — the counterpart of
+{!page-"feature-completion"}, which covers wikilink brackets only.
+
+Both link syntaxes resolve through {!Oystermark.Vault.Resolve.resolve} and both
+are diagnosed ({!page-"feature-diagnostics"}) and followed
+({!page-"feature-go-to-definition"}). Completion was the one place the two
+diverged, and the divergence was an omission rather than a decision: a vault
+that preferred Markdown links got no help writing the destination it would
+later be told was broken.
+
+Impl: {!Lsp_lib.Completion}, the same handler that serves
+{!page-"feature-completion"} — one trigger detector added beside the wikilink
+one, feeding the fragment suggestions that were already there.
+
+{1 Activation}
+
+The request is [textDocument/completion]. The [completionProvider] trigger
+character set gains [(] and keeps [\[] and [#].
+
+[(] is a poor trigger in isolation — it fires on ordinary prose — so the
+handler answers with an empty list unless {!trigger_context} matches. The cost
+of the extra trigger is one no-op round trip per typed parenthesis; the
+alternative, waiting for an explicit invocation, is worse for the feature that
+exists to spare typing.
+
+{1:trigger_context Trigger context}
+
+Completion activates when the cursor is inside the destination of an inline
+link or image that is still open:
+
+{ul
+  {- [\[label\](<cursor>)] — the destination}
+  {- [\[label\](note#<cursor>)] — the fragment}
+  {- [!\[alt\](<cursor>)] — image destination, same behavior}
+}
+
+Detection is textual and single-line, matching {!Lsp_lib.Completion} for
+wikilinks:
+
+{ol
+  {- scan back from the cursor for the nearest [(] on the line;}
+  {- it must be immediately preceded by [\]] — otherwise this is an ordinary
+     parenthesis and there are no completions;}
+  {- the text between that [(] and the cursor is the {e prefix}. A [)] means
+     the destination is already closed, and there are no completions;}
+  {- whitespace in the prefix ends the destination — {b unless} the prefix
+     opens with [<], the angle-bracket form {!destination_escaping} writes,
+     where the destination runs to the [>]. Without this exception the
+     feature would abandon a destination the moment it inserted one, and
+     [\[a\](<my note.md>#<cursor>)] — a fragment in exactly the file the
+     escaping exists to serve — would never complete;}
+  {- the [!] before the [\[] of the label, if present, marks {e image
+     context}.}
+}
+
+The label's own brackets are not required to be well-formed: [\[\](<cursor>)]
+completes. The label text is not consulted.
+
+{b Precedence.} Wikilink detection runs first. Inside
+[\[\[note (draft)#<cursor>\]\]] the cursor is within wikilink brackets and the
+[(] is part of a note name, so the wikilink handler answers and this one is
+not consulted.
+
+{1 Completion modes}
+
+{2:path_completion Path completion}
+
+When the prefix contains no [#], suggest vault paths.
+
+Unlike {!page-"feature-completion".note_name_completion}, the suggestion is a
+{e path with its extension}, not a shortest unambiguous name.
+
+Not because a shorter name would fail to resolve — it would. Both syntaxes go
+through {!Oystermark.Vault.Resolve.resolve}, which matches a bare unique
+basename by subsequence like any wikilink, and appends [.md] to a target
+containing no [.] at all. The reasons are that the appending rule tests for a
+dot {e anywhere}, so a real path like [notes/v1.2/draft] is left unresolvable
+by exactly the shortening a name-based suggestion would do; and that a
+Markdown destination is read as a path by every other tool that will ever see
+this file. What is offered is {e a} valid destination, the least surprising
+one — not the only one that works.
+
+{ul
+  {- {b Markdown notes}: every [.md] file in the index. [label] is the
+     vault-relative path {e with} its [.md] suffix, [detail] is the note's
+     title (its first H1, when it has one), [kind] is
+     [CompletionItemKind.File].}
+  {- {b Assets}: every non-[.md] file the index walked. Same shape, no
+     [detail].}
+}
+
+In image context, assets whose extension is one of the recognized image
+extensions (see {!Lsp_lib.Link_collect.is_image_target}) sort first; notes are
+still offered, because an image-syntax embed of a note is a transclusion and a
+legitimate thing to write. Outside image context the order is reversed. Within
+each group, order is alphabetical by label.
+
+{2:destination_escaping Destination escaping}
+
+A path containing a space is not a well-formed Markdown destination. Such an
+item wraps the path in angle brackets — [<my note.md>] — which is the form
+CommonMark defines and the parser accepts: [Match.link_destination] keeps the
+brackets out of the destination it reports, so the resolver never sees them.
+
+All three encodings would in fact resolve. Backslash escapes are removed from
+the destination before it reaches us, and
+{!Oystermark.Vault.Link_ref.percent_decode} runs on every Markdown
+destination, so [my\ note.md] and [my%20note.md] resolve as readily as the
+angle-bracketed form. The choice between them is therefore about {e reading},
+not validity: angle brackets leave the path legible in the source, and this
+text is read by people.
+
+Paths containing [<], [>], or an unbalanced parenthesis are offered with those
+characters backslash-escaped. A path that cannot be written safely at all is
+still offered, unescaped, rather than hidden — the user can see what is wrong
+where a silent omission would look like a missing file.
+
+{2:fragment_completion Fragment completion}
+
+When the prefix contains [#], the text before [#] is the destination path and
+the text after it is the fragment prefix. An empty destination
+([\[label\](#<cursor>)]) means the current file.
+
+Suggestions are exactly those of
+{!page-"feature-completion".fragment_completion} — headings, caret block ids,
+and djot attribute ids, sharing one namespace — with one difference: a heading
+item's [insertText] is the slug, and the slug is used {e as written by the
+parser}, unescaped. Fragments are identifiers; they do not contain spaces.
+
+If the destination does not resolve, no fragment suggestions are returned.
+
+{1 Completion item shape}
+
+{t
+  | Field      | Path mode                     | Fragment mode         |
+  |------------|-------------------------------|-----------------------|
+  | label      | vault-relative path with extension | heading text or [^id] |
+  | detail     | note title, for [.md] files   | —                     |
+  | filterText | the path                      | slug or block id      |
+  | textEdit   | the path, escaped per {!destination_escaping}, replacing the whole prefix | slug or [^blockid], replacing the fragment prefix |
+  | kind       | File                          | Reference             |
+}
+
+{2:replace_range The replace range}
+
+The item carries a {b [textEdit]} with an explicit range covering the prefix —
+everything between the opening [(] (or the [#], in fragment mode) and the
+cursor — rather than an [insertText] left to the client to place.
+
+This is not a refinement. A client given [insertText] chooses what to replace
+by its own word rules, and VS Code's word boundary excludes [/]: accepting
+[notes/deep.md] against a typed [notes/] yields [notes/notes/deep.md]. Paths
+make that the ordinary case rather than a corner one.
+
+{b The wikilink handler had the same defect}, and it falls back to a full
+relative path whenever a basename is ambiguous — precisely when the path
+contains a [/]. Both are fixed: {!Lsp_lib.Completion.complete} returns one
+[replace_from] offset for the whole response, whichever syntax asked, and
+{!Lsp_lib.Server.completion} turns it into the range every item carries.
+
+{2 Volume}
+
+A vault with an asset folder can offer thousands of paths on a single [(].
+Suggestions are capped, and the response is marked [isIncomplete] when the cap
+bites, so the client re-asks as the user narrows rather than being handed the
+vault. The cap is a constant in the implementation, not a setting: it exists to
+keep a keystroke cheap, and a user has no way to know what value would.
+
+{1:testing Testing}
+
+{ul
+  {- Trigger detection: a table over cursor positions covering each form
+     above, the [(] not preceded by [\]] case, a closed destination, an
+     already-spaced destination, and the wikilink-precedence case.}
+  {- Path mode: a fixture vault with a nested note, an asset, and a name
+     containing a space, asserting the offered set, the angle-bracket
+     insertion, and the replace range on a prefix containing a [/].}
+  {- Image context: asserting the ordering flip, not a filtered set.}
+  {- Fragment mode: the same expectations as the wikilink fragment tests,
+     driven through Markdown syntax.}
+  {- Round-trip: for every offered item, inserting it and re-parsing yields a
+     link that {!Oystermark.Vault.Resolve.resolve} resolves to the file the
+     item came from. This is the obligation the escaping rules exist to meet,
+     and it is the one worth stating as a property.}
+}
+
+All of the above are inline expect tests in {!Lsp_lib.Completion}. The wire
+shape — a [CompletionList] rather than a bare array, and a [textEdit] rather
+than an [insertText] — is checked by [scripts/smoke.py] against the built
+binary, since in process the result is an OCaml value that cannot be
+malformed.
+
+{1 Limitations}
+
+{ul
+  {- {b Inline links only}. Reference links ([\[label\]\[ref\]]) and their
+     definitions are not completed; they are a separate namespace, and the
+     vault has no reference-definition index.}
+  {- {b Single-line detection}. A destination split across lines is not
+     recognized, matching the wikilink handler.}
+  {- {b No title completion}. The optional ["title"] after the destination
+     is out of scope.}
+  {- {b External URLs} are never suggested; there is nothing to suggest them
+     from.}
+  {- {b The empty destination is a resolved link.} [\[label\]()] — the state
+     this feature triggers in — is given the target [().md] by
+     {!Oystermark.Vault.Link_ref.of_cmark_reference}, following Obsidian, so
+     diagnostics report a half-typed link as unresolved rather than ignoring
+     it. Completion is unaffected; the noise belongs to
+     {!page-"feature-diagnostics"} and should be settled there.}
+  {- Positions and edits follow {!page-"feature-utf16-positions"}.}
+}

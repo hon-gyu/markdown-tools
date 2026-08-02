@@ -118,11 +118,19 @@ let diagnostic_positions (diags : Diagnostic.t list) : (string * int * int) list
     message, d.range.start.line, d.range.start.character)
 ;;
 
-(** [(label, insertText)] per completion item. *)
-let completion_items (result : CompletionItem.t list option) : (string * string) list =
-  Option.value result ~default:[]
-  |> List.map ~f:(fun (i : CompletionItem.t) ->
-    i.label, Option.value_exn i.insertText ~message:"completion item without insertText")
+(** [(label, newText)] per completion item.  Items carry a [textEdit] rather
+    than an [insertText]: see
+    {!page-"feature-completion-markdown-links".replace_range}. *)
+let completion_items (result : CompletionList.t option) : (string * string) list =
+  match result with
+  | None -> []
+  | Some list ->
+    List.map list.items ~f:(fun (i : CompletionItem.t) ->
+      ( i.label
+      , match i.textEdit with
+        | Some (`TextEdit e) -> e.newText
+        | Some (`InsertReplaceEdit e) -> e.newText
+        | None -> failwith "completion item without a textEdit" ))
 ;;
 
 (** [(line, character, label)] per inlay hint. *)

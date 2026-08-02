@@ -1,0 +1,182 @@
+{0 Footnotes}
+
+Treat footnote labels as first-class anchors within a document: complete them,
+jump between reference and definition, list every reference, rename a label, and
+report the two ways a footnote can be wrong.
+
+{v
+Kantorovich relaxed the problem[^kant], and the relaxation is tight[^kant].
+
+[^kant]: Kantorovich, 1942.
+v}
+
+A footnote label is an identifier with a definition and a set of references —
+the same shape as a heading slug or a block id, which the server already
+handles — but it is {e document-scoped}: [\[^kant\]] in one note has nothing to
+do with [\[^kant\]] in another. Every rule below follows from that.
+
+{1 Parsing}
+
+Footnotes are a Cmarkit extension, enabled by [~strict:false], which
+{!Oystermark.Parse.of_string} already passes. No parser change is needed. The
+AST already carries:
+
+{ul
+  {- {b definitions} as [Cmarkit.Block.Ext_footnote_definition] nodes, whose
+     label is [Cmarkit.Block.Footnote.label] and whose content is
+     [Cmarkit.Block.Footnote.block];}
+  {- {b references} as inline links satisfying
+     [Cmarkit.Inline.is_footnote_reference], i.e. a label key starting with
+     [^].}
+}
+
+Both carry [Cmarkit.Meta.textloc] under [~locs:true], which is what every
+feature here needs. A shared collector — the footnote analogue of
+{!Lsp_lib.Link_collect} — walks a document once and returns definitions and
+references with their byte ranges; the features below are views over it.
+
+{b Namespace.} Footnote labels do {e not} join the fragment namespace shared by
+heading slugs, caret block ids, and attribute ids
+({!page-"feature-diagnostics".duplicate_ids}). They are addressed by a
+different syntax, they are not link targets, and a note may legitimately have
+both a footnote [\[^kant\]] and a block id [^kant].
+
+{1 Completion}
+
+{2 Trigger}
+
+Completion activates when the cursor sits inside an unclosed [\[^] on the
+current line: the text between it and the cursor is the prefix. The
+[completionProvider] trigger characters already include [\[]; [^] is added.
+
+{b Precedence.} Wikilink detection runs first, so [\[\[note#^<cursor>\]\]] is
+block-id fragment completion ({!page-"feature-completion".fragment_completion})
+and not this. The two are distinguished by whether an enclosing [\[\[] was
+found, not by the [^] — a caret means "block id" inside wikilink brackets and
+"footnote" outside them, and nothing else disambiguates them.
+
+A [\[^] that begins a line and is followed by [\]:] is a {e definition}, not a
+reference. Completing there would suggest the label being defined; no
+completions are offered on a definition line.
+
+{2 Items}
+
+One item per footnote definition in the current document.
+
+{t
+  | Field      | Value |
+  |------------|-------|
+  | label      | the label including [^], e.g. [^kant] |
+  | detail     | the first line of the footnote's content, truncated to 60 characters with an ellipsis |
+  | filterText | the label without [^] |
+  | insertText | the label without [^], since the user typed it |
+  | kind       | [CompletionItemKind.Reference] |
+}
+
+[detail] is what makes this worth having: a document with [\[^1\]] through
+[\[^9\]] is exactly the document where the label does not tell you which
+footnote you want.
+
+Order is by first appearance in the document — reading order, which for
+numbered footnotes is also numeric order, and which ["1", "10", "2"]
+alphabetical order would scramble.
+
+An {e undefined} label already referenced elsewhere in the document is also
+offered, with [detail] ["undefined"]. Referring twice to a footnote you have
+not written yet is an ordinary intermediate state, and completing the second
+reference keeps the two spellings identical.
+
+{1 Find references}
+
+{!page-"feature-find-references"} gains a footnote activation mode, in addition
+to its link and heading/block-id modes.
+
+{ul
+  {- {b Cursor on a footnote reference}: every reference to that label in this
+     document, the cursor's own included, plus the definition when one exists.}
+  {- {b Cursor on a footnote definition label}: every reference to it.}
+}
+
+Results are LSP [Location]s in the current document only, each covering the
+full byte range of the reference (brackets included) or of the definition
+label. They are sorted by range start.
+
+Including the definition among a reference's results is a deliberate departure
+from the link mode, which returns referrers only: a footnote has exactly one
+definition and it is the thing you most want to reach. Reaching it is also what
+{!go_to_definition} is for, and both being available is not a conflict.
+
+{1:go_to_definition Go to definition}
+
+{!page-"feature-go-to-definition"} gains one case: a footnote reference
+navigates to its definition in the same document. An undefined label navigates
+nowhere and is already diagnosed.
+
+The reverse is not go-to-definition: on a definition, [textDocument/references]
+is the request that answers "where is this used".
+
+{1 Diagnostics}
+
+{!page-"feature-diagnostics"} gains two document-scoped checks, both at
+severity [Warning] with source ["oystermark"]:
+
+{t
+  | Message | Condition | Range |
+  |---------|-----------|-------|
+  | [undefined footnote: ^kant] | a reference whose label has no definition | the reference |
+  | [duplicate footnote definition: ^kant] | a label defined more than once | every definition of it |
+}
+
+Every occurrence of a duplicate is reported, matching the treatment of
+duplicate anchor ids.
+
+An {e unused} definition — defined, never referenced — is {b not} reported. It
+renders as an unreferenced note at the foot of the document, which is a
+stylistic matter, and warning about it would fire constantly while a document
+is being written.
+
+{1 Rename}
+
+{!page-"feature-rename"} gains footnote labels: renaming from a reference or a
+definition rewrites the definition and every reference in the document, and
+nothing outside it.
+
+The new name is validated as a label: non-empty, and free of [\[], [\]], and
+whitespace. An invalid new name fails the rename with a message rather than
+producing a document whose footnotes have silently stopped parsing.
+
+{1 Testing}
+
+{ul
+  {- Collection: an expect test over a document with a definition, two
+     references, a multi-paragraph footnote body, and a label reused as a block
+     id, asserting the collected ranges.}
+  {- Trigger precedence: a table over cursor positions covering
+     [\[^<cursor>\]], [\[\[note#^<cursor>\]\]], a definition line, and a [^]
+     in prose.}
+  {- Completion: offered set and ordering for a document with numeric labels
+     ordered [1], [10], [2] in the source, plus the undefined-label case.}
+  {- References: from a reference, from the definition, and with the cursor on
+     a footnote in a document that has two.}
+  {- Diagnostics: undefined, duplicate (all occurrences), and unused (no
+     diagnostic).}
+  {- Rename: {b property} — for a generated valid label, renaming and
+     re-parsing yields a document whose footnote structure is isomorphic to the
+     original, with every occurrence of the old label replaced.}
+}
+
+{1 Limitations}
+
+{ul
+  {- {b Document-scoped throughout}. No vault-wide footnote index; a label is
+     never resolved across files. This is the semantics, not a shortcut.}
+  {- {b Inline footnotes} are not supported — Cmarkit's extension has
+     definitions only.}
+  {- {b No definition-creating quick fix} for an undefined label. It is a
+     natural companion to
+     {!page-"feature-codeaction-create-unresolved-link"} and is deliberately
+     left out of this spec, which is already five features wide.}
+  {- {b Not ordered.} Nothing renumbers footnotes or checks that numeric
+     labels appear in order; the renderer assigns display numbers.}
+  {- Positions and edits follow {!page-"feature-utf16-positions"}.}
+}

@@ -40,7 +40,7 @@ class oystermark_server ~sw =
 
     method! config_completion : CompletionOptions.t option =
       (* [[[] opens a wikilink; [#] starts a fragment. See {!page-"feature-completion"}. *)
-      Some (CompletionOptions.create ~triggerCharacters:[ "["; "#" ] ())
+      Some (CompletionOptions.create ~triggerCharacters:[ "["; "#"; "(" ] ())
 
     method! config_modify_capabilities (c : ServerCapabilities.t) : ServerCapabilities.t =
       (* Advertise UTF-16 position encoding (LSP mandatory baseline); all
@@ -238,7 +238,7 @@ class oystermark_server ~sw =
         ~rel_path:(self#rel_path uri)
         ~line:pos.line
         ~character:pos.character
-      |> Option.map ~f:(fun items -> `List items)
+      |> Option.map ~f:(fun list -> `CompletionList list)
 
     method! on_req_inlay_hint
       ~notify_back:_

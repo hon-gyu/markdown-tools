@@ -190,13 +190,17 @@ val code_action
   -> unit
   -> CodeAction.t list
 
-(** Spec: {!page-"feature-completion"}. *)
+(** Spec: {!page-"feature-completion"} and
+    {!page-"feature-completion-markdown-links"}.  Items carry a [textEdit]
+    rather than an [insertText]: the range they replace is the prefix already
+    typed, which a client may not guess.  See
+    {!page-"feature-completion-markdown-links".replace_range}. *)
 val completion
   :  t
   -> rel_path:string
   -> line:int
   -> character:int
-  -> CompletionItem.t list option
+  -> CompletionList.t option
 
 (** Spec: {!page-"feature-inlay-hints-link-direction"}.  [start_line] and
     [end_line] are the requested LSP range's lines, treated as inclusive of

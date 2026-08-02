@@ -1,7 +1,9 @@
 (** Completion: suggest note names, headings, block ids, and attribute ids as
-    the user types inside wikilink brackets.
+    the user types inside wikilink brackets, and vault paths and fragments
+    inside the destination of a Markdown link or image.
 
-    Spec: {!page-"feature-completion"}; attribute ids per
+    Spec: {!page-"feature-completion"} and
+    {!page-"feature-completion-markdown-links"}; attribute ids per
     {!page-"feature-attribute-anchors"}. *)
 
 open Core
@@ -15,7 +17,8 @@ type kind =
 [@@deriving sexp, equal, compare]
 
 (** A completion suggestion.  Fields mirror the LSP [CompletionItem] subset used
-    here; [main.ml] converts to the wire type.
+    here; {!Server.completion} converts to the wire type, where [insert_text]
+    becomes the [textEdit]'s [newText].
     See {!page-"feature-completion".completion_item_shape}. *)
 type item =
   { label : string
@@ -26,27 +29,125 @@ type item =
   }
 [@@deriving sexp, equal, compare]
 
+(** A completion response: the suggestions, the span they replace, and whether
+    the list was cut short.
+
+    [replace_from] is a byte offset into the document; the replaced span runs
+    from there to the cursor.  Every item replaces the same span — the prefix
+    the user has typed — so the range is a property of the request rather than
+    of an item.  Handing the client an explicit range is what keeps a path with
+    a [/] in it from being pasted on top of itself; see
+    {!page-"feature-completion-markdown-links".replace_range}. *)
+type completions =
+  { items : item list
+  ; replace_from : int
+  ; incomplete : bool
+  }
+[@@deriving sexp, equal, compare]
+
 (** {2 Trigger detection} *)
 
-(** The wikilink prefix under the cursor: the text after the innermost pair of
-    opening square brackets (including an embed) and before the cursor. [None]
-    if the cursor is not inside an open wikilink, or a
-    [\]] closes it first.  See {!page-"feature-completion".trigger_context}. *)
-let wikilink_prefix ~(content : string) ~(line : int) ~(character : int) : string option =
-  let offset = Lsp_util.byte_offset_of_position content ~line ~character in
+(** The line containing byte [offset], as [(text_before_offset, line_start)]. *)
+let line_before ~(content : string) ~(offset : int) : string * int =
   let head = String.prefix content offset in
   let line_start =
     match String.rfindi head ~f:(fun _ c -> Char.equal c '\n') with
     | Some i -> i + 1
     | None -> 0
   in
-  let before = String.subo head ~pos:line_start in
+  String.subo head ~pos:line_start, line_start
+;;
+
+(** The wikilink prefix under the cursor and the byte offset it starts at: the
+    text after the innermost pair of opening square brackets (including an
+    embed) and before the cursor.  [None] if the cursor is not inside an open
+    wikilink, or a [\]] closes it first.
+    See {!page-"feature-completion".trigger_context}. *)
+let wikilink_prefix ~(content : string) ~(line : int) ~(character : int)
+  : (string * int) option
+  =
+  let offset = Lsp_util.byte_offset_of_position content ~line ~character in
+  let before, line_start = line_before ~content ~offset in
   match List.last (String.substr_index_all before ~may_overlap:false ~pattern:"[[") with
   | None -> None
   | Some i ->
     let prefix = String.subo before ~pos:(i + 2) in
     (* A [\]] between the [[[] and the cursor means the link is already closed. *)
-    if String.contains prefix ']' then None else Some prefix
+    if String.contains prefix ']' then None else Some (prefix, line_start + i + 2)
+;;
+
+(** Where in a Markdown destination the cursor sits, and what the answer must
+    replace.  Byte offsets are absolute in the document.
+    See {!page-"feature-completion-markdown-links".trigger_context}. *)
+type md_dest =
+  | Path of
+      { dest_start : int
+        (** Just after the [(] — so the replacement covers an opening [<] and
+          an angle-bracketed suggestion can supply its own. *)
+      ; image : bool (** The label was introduced by [!]. *)
+      }
+  | Fragment of
+      { note_part : string (** The destination the fragment belongs to. *)
+      ; frag_start : int (** Just after the [#]. *)
+      }
+
+(** Detection is textual and single-line, matching {!wikilink_prefix}.
+    [None] when the cursor is not inside an open destination.
+
+    The angle-bracket form is where the two shapes differ: whitespace is legal
+    inside the brackets, and the [>] ends the {e path} without ending the
+    destination — [\[a\](<my note.md>#|)] is a fragment position, and has to be
+    one, or the feature would abandon a spaced path the moment it wrote one.
+    See {!page-"feature-completion-markdown-links".trigger_context}. *)
+let markdown_dest ~(content : string) ~(line : int) ~(character : int) : md_dest option =
+  let offset = Lsp_util.byte_offset_of_position content ~line ~character in
+  let before, line_start = line_before ~content ~offset in
+  match String.rindex before '(' with
+  | None -> None
+  (* An ordinary parenthesis: only [\]\(] opens a destination. *)
+  | Some i when i = 0 || not (Char.equal before.[i - 1] ']') -> None
+  | Some i ->
+    let dest_start = line_start + i + 1 in
+    let raw = String.subo before ~pos:(i + 1) in
+    (* The label's own brackets need not be well-formed; only the [!]
+       immediately before its [\[] is consulted. *)
+    let image =
+      match String.rindex (String.prefix before i) '[' with
+      | Some j -> j > 0 && Char.equal before.[j - 1] '!'
+      | None -> false
+    in
+    (* [path_start] is where the path text begins, past any [<]; [extra] is
+       what separates the path from a [#] (the [>], when there is one). *)
+    let split ~path_start ~extra text =
+      match String.lsplit2 text ~on:'#' with
+      | None -> Some (Path { dest_start; image })
+      | Some (note_part, fragment) ->
+        if String.exists fragment ~f:Char.is_whitespace
+        then None
+        else
+          Some
+            (Fragment
+               { note_part
+               ; frag_start = path_start + String.length note_part + extra + 1
+               })
+    in
+    if String.contains raw ')'
+    then None
+    else if not (String.is_prefix raw ~prefix:"<")
+    then
+      if String.exists raw ~f:Char.is_whitespace
+      then None
+      else split ~path_start:dest_start ~extra:0 raw
+    else (
+      let inside = String.subo raw ~pos:1 in
+      match String.lsplit2 inside ~on:'>' with
+      (* Still between the brackets: whitespace is fine here. *)
+      | None -> split ~path_start:(dest_start + 1) ~extra:0 inside
+      (* Past the closing [>]: only a fragment may follow. *)
+      | Some (path, after) ->
+        if not (String.is_prefix after ~prefix:"#")
+        then None
+        else split ~path_start:(dest_start + 1) ~extra:1 (path ^ after))
 ;;
 
 (** {2 Note-name mode} *)
@@ -84,6 +185,102 @@ let note_name_items (index : Oystermark.Vault.Index.t) : item list =
     ; kind = File
     })
   |> List.sort ~compare:(fun a b -> String.compare a.label b.label)
+;;
+
+(** {2 Path mode}
+
+    Markdown destinations only.  See
+    {!page-"feature-completion-markdown-links".path_completion}. *)
+
+(** Whether [path] can be written as a bare CommonMark destination. *)
+let needs_angles (path : string) : bool =
+  String.exists path ~f:(fun c -> Char.is_whitespace c || Char.is_print c |> not)
+;;
+
+let parens_balanced (path : string) : bool =
+  let rec loop i depth =
+    if depth < 0
+    then false
+    else if i >= String.length path
+    then depth = 0
+    else (
+      match path.[i] with
+      | '(' -> loop (i + 1) (depth + 1)
+      | ')' -> loop (i + 1) (depth - 1)
+      | _ -> loop (i + 1) depth)
+  in
+  loop 0 0
+;;
+
+(** [path] as a Markdown destination.
+
+    A path containing whitespace goes in angle brackets, the form CommonMark
+    defines and the parser strips before the resolver ever sees it.  Otherwise
+    only what would end the destination early is backslash-escaped: [<] and
+    [>], and parentheses when they do not balance.  Balanced parentheses are
+    legal unescaped and are left legible.
+
+    Every escape here is undone by the parser — angle brackets by
+    [Match.link_destination], backslashes by its unescaping — so the
+    destination reaching {!Oystermark.Vault.Resolve.resolve} is [path] itself.
+    See {!page-"feature-completion-markdown-links".destination_escaping}. *)
+let escape_destination (path : string) : string =
+  let escape chars s =
+    String.concat_map s ~f:(fun c ->
+      if List.mem chars c ~equal:Char.equal then sprintf "\\%c" c else String.of_char c)
+  in
+  if needs_angles path
+  then "<" ^ escape [ '\\'; '<'; '>' ] path ^ ">"
+  else
+    escape
+      ('\\' :: '<' :: '>' :: (if parens_balanced path then [] else [ '('; ')' ]))
+      path
+;;
+
+(** Most paths a single [(] may offer before the response is cut short and
+    marked incomplete.  A constant rather than a setting: it exists to keep a
+    keystroke cheap, and a user has no way to know what value would.
+    See {!page-"feature-completion-markdown-links".volume}. *)
+let max_path_items = 500
+
+(** Every file in the index as a destination: the vault-relative path, with its
+    extension, escaped so that inserting it yields a link that resolves back to
+    the same file.
+
+    In image context images sort first and notes after — an image-syntax embed
+    of a note is a transclusion, and a legitimate thing to write — and outside
+    it the two groups swap.  Returns the items and whether the list was cut
+    short at {!max_path_items}. *)
+let path_items ~(image : bool) (index : Oystermark.Vault.Index.t) : item list * bool =
+  let title (f : Oystermark.Vault.Index.file_entry) =
+    List.find_map f.headings ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
+      if h.level = 1 then Some h.text else None)
+  in
+  let items =
+    List.map index.files ~f:(fun (f : Oystermark.Vault.Index.file_entry) ->
+      let is_md = String.is_suffix f.rel_path ~suffix:".md" in
+      let group =
+        (* [0] sorts first. *)
+        match Link_collect.is_image_target f.rel_path, image with
+        | true, true | false, false -> 0
+        | _ -> 1
+      in
+      ( group
+      , { label = f.rel_path
+        ; detail = (if is_md then title f else None)
+        ; filter_text = Some f.rel_path
+        ; insert_text = Some (escape_destination f.rel_path)
+        ; kind = File
+        } ))
+    |> List.sort ~compare:(fun (ga, a) (gb, b) ->
+      match Int.compare ga gb with
+      | 0 -> String.compare a.label b.label
+      | n -> n)
+    |> List.map ~f:snd
+  in
+  match List.split_n items max_path_items with
+  | kept, [] -> kept, false
+  | kept, _ -> kept, true
 ;;
 
 (** {2 Fragment mode} *)
@@ -154,9 +351,15 @@ let fragment_items (entry : Oystermark.Vault.Index.file_entry) : item list =
 
 (** {2 End-to-end} *)
 
-(** Completion items for the cursor at [(line, character)] in [content] at
-    [rel_path] within [index].  Empty when the cursor is not inside a wikilink
-    or the fragment's note is unresolved.  See {!page-"feature-completion"}. *)
+(** Completion for the cursor at [(line, character)] in [content] at [rel_path]
+    within [index].  No items when the cursor is inside neither a wikilink nor
+    a Markdown destination, or when the fragment's note is unresolved.
+
+    Wikilink detection runs first: inside [\[\[note (draft)#] the cursor is
+    within wikilink brackets and the [(] is part of a note name, so the [(]
+    before it does not open a destination.  See
+    {!page-"feature-completion"} and
+    {!page-"feature-completion-markdown-links"}. *)
 let complete
       ~(index : Oystermark.Vault.Index.t)
       ~(rel_path : string)
@@ -164,19 +367,44 @@ let complete
       ~(line : int)
       ~(character : int)
       ()
-  : item list
+  : completions
   =
   Trace_core.with_span ~__FILE__ ~__LINE__ "completion.complete"
   @@ fun _sp ->
-  match wikilink_prefix ~content ~line ~character with
-  | None -> []
-  | Some prefix ->
-    (match String.lsplit2 prefix ~on:'#' with
-     | None -> note_name_items index
-     | Some (note_part, _fragment_prefix) ->
-       (match target_entry ~index ~rel_path ~content note_part with
-        | None -> []
-        | Some entry -> fragment_items entry))
+  let cursor = Lsp_util.byte_offset_of_position content ~line ~character in
+  let nothing = { items = []; replace_from = cursor; incomplete = false } in
+  let only items ~replace_from = { items; replace_from; incomplete = false } in
+  (* The fragment prefix starts one byte past the [#] that ends [note_part]. *)
+  let fragment_start ~prefix_start ~note_part =
+    prefix_start + String.length note_part + 1
+  in
+  let fragments ~note_part ~replace_from =
+    match target_entry ~index ~rel_path ~content note_part with
+    | None -> nothing
+    | Some entry -> only (fragment_items entry) ~replace_from
+  in
+  let result =
+    match wikilink_prefix ~content ~line ~character with
+    | Some (prefix, prefix_start) ->
+      (match String.lsplit2 prefix ~on:'#' with
+       | None -> only (note_name_items index) ~replace_from:prefix_start
+       | Some (note_part, _fragment_prefix) ->
+         fragments ~note_part ~replace_from:(fragment_start ~prefix_start ~note_part))
+    | None ->
+      (match markdown_dest ~content ~line ~character with
+       | None -> nothing
+       | Some (Path { dest_start; image }) ->
+         let items, incomplete = path_items ~image index in
+         { items; replace_from = dest_start; incomplete }
+       | Some (Fragment { note_part; frag_start }) ->
+         fragments ~note_part ~replace_from:frag_start)
+  in
+  Trace_core.add_data_to_span
+    _sp
+    [ "num_items", `Int (List.length result.items)
+    ; "incomplete", `Bool result.incomplete
+    ];
+  result
 ;;
 
 (** {1:test Test} *)
@@ -207,9 +435,22 @@ let%test_module "completion" =
 
     let index = make_index files
 
+    (** Items, then the span they replace — the prefix already typed — since
+        that range is as much a part of the answer as the items are.  Silent
+        when there is nothing to offer.  See
+        {!page-"feature-completion-markdown-links".replace_range}. *)
     let show ~rel_path ~content ~line ~character =
-      let items = complete ~index ~rel_path ~content ~line ~character () in
-      List.iter items ~f:(fun i -> print_s [%sexp (i : item)])
+      let { items; replace_from; incomplete } =
+        complete ~index ~rel_path ~content ~line ~character ()
+      in
+      List.iter items ~f:(fun i -> print_s [%sexp (i : item)]);
+      if not (List.is_empty items)
+      then (
+        let cursor = Lsp_util.byte_offset_of_position content ~line ~character in
+        printf
+          "replaces %S%s\n"
+          (String.sub content ~pos:replace_from ~len:(cursor - replace_from))
+          (if incomplete then " (incomplete)" else ""))
     ;;
 
     let%expect_test "note-name mode: ambiguous basename disambiguated by path" =
@@ -223,6 +464,7 @@ let%test_module "completion" =
          (insert_text (note-b)) (kind File))
         ((label sub/note-a) (detail (sub/note-a.md)) (filter_text (sub/note-a))
          (insert_text (sub/note-a)) (kind File))
+        replaces ""
         |}]
     ;;
 
@@ -238,6 +480,7 @@ let%test_module "completion" =
          (kind Reference))
         ((label #kt) (detail (attribute)) (filter_text (kt)) (insert_text (kt))
          (kind Reference))
+        replaces ""
         |}]
     ;;
 
@@ -250,6 +493,7 @@ let%test_module "completion" =
          (kind Reference))
         ((label Sec) (detail ()) (filter_text (sec)) (insert_text (sec))
          (kind Reference))
+        replaces ""
         |}]
     ;;
 
@@ -265,6 +509,7 @@ let%test_module "completion" =
          (kind Reference))
         ((label #kt) (detail (attribute)) (filter_text (kt)) (insert_text (kt))
          (kind Reference))
+        replaces ""
         |}]
     ;;
 
@@ -281,6 +526,265 @@ let%test_module "completion" =
     let%expect_test "closed wikilink before cursor: no items" =
       show ~rel_path:"note-b.md" ~content:"[[note-a]] " ~line:0 ~character:11;
       [%expect {| |}]
+    ;;
+  end)
+;;
+
+let%test_module "markdown links" =
+  (module struct
+    (** Spec: {!page-"feature-completion-markdown-links"}. *)
+
+    let files =
+      [ "note-a.md", "# Alpha\n\n## Section One\n\nBody ^block1\n"
+      ; "sub/note-b.md", "# Beta\n\nText.\n"
+      ; "untitled.md", "No heading here.\n"
+      ; "assets/diagram.png", ""
+      ; "assets/paper.pdf", ""
+      ; "my note.md", "# Spaced\n"
+      ]
+    ;;
+
+    let index =
+      let md_docs =
+        List.filter_map files ~f:(fun (rel_path, content) ->
+          if String.is_suffix rel_path ~suffix:".md"
+          then Some (rel_path, Oystermark.Parse.of_string content)
+          else None)
+      in
+      let other_files =
+        List.filter_map files ~f:(fun (p, _) ->
+          if String.is_suffix p ~suffix:".md" then None else Some p)
+      in
+      Oystermark.Vault.build_index ~md_docs ~other_files ~dirs:[]
+    ;;
+
+    (** Labels and what would be inserted, then the replaced span. *)
+    let show ?(rel_path = "note-a.md") content =
+      let line, character =
+        let lines = String.split_lines content in
+        List.length lines - 1, String.length (List.last_exn lines)
+      in
+      let { items; replace_from; incomplete } =
+        complete ~index ~rel_path ~content ~line ~character ()
+      in
+      List.iter items ~f:(fun i ->
+        let insert = Option.value i.insert_text ~default:i.label in
+        printf
+          "%s -> %s%s\n"
+          i.label
+          insert
+          (match i.detail with
+           | Some d -> sprintf "   (%s)" d
+           | None -> ""));
+      if not (List.is_empty items)
+      then (
+        let cursor = Lsp_util.byte_offset_of_position content ~line ~character in
+        printf
+          "replaces %S%s\n"
+          (String.sub content ~pos:replace_from ~len:(cursor - replace_from))
+          (if incomplete then " (incomplete)" else ""))
+    ;;
+
+    (** {2 Path mode} *)
+
+    (* Notes carry their title; assets do not.  Outside image context notes and
+       non-image files sort ahead of images. *)
+    let%expect_test "every file is offered as a path, with its extension" =
+      show "See [label](";
+      [%expect
+        {|
+        assets/paper.pdf -> assets/paper.pdf
+        my note.md -> <my note.md>   (Spaced)
+        note-a.md -> note-a.md   (Alpha)
+        sub/note-b.md -> sub/note-b.md   (Beta)
+        untitled.md -> untitled.md
+        assets/diagram.png -> assets/diagram.png
+        replaces ""
+        |}]
+    ;;
+
+    (* The ordering flips; nothing is filtered out, because an image-syntax
+       embed of a note is a transclusion and a legitimate thing to write. *)
+    let%expect_test "image context sorts images first" =
+      show "See ![alt](";
+      [%expect
+        {|
+        assets/diagram.png -> assets/diagram.png
+        assets/paper.pdf -> assets/paper.pdf
+        my note.md -> <my note.md>   (Spaced)
+        note-a.md -> note-a.md   (Alpha)
+        sub/note-b.md -> sub/note-b.md   (Beta)
+        untitled.md -> untitled.md
+        replaces ""
+        |}]
+    ;;
+
+    (* The whole typed prefix is replaced, [/] and all: this is the range a
+       client left to its own word rules would get wrong.  See
+       {!page-"feature-completion-markdown-links".replace_range}. *)
+    let%expect_test "the replaced span covers a typed path prefix" =
+      show "See [label](sub/no";
+      [%expect
+        {|
+        assets/paper.pdf -> assets/paper.pdf
+        my note.md -> <my note.md>   (Spaced)
+        note-a.md -> note-a.md   (Alpha)
+        sub/note-b.md -> sub/note-b.md   (Beta)
+        untitled.md -> untitled.md
+        assets/diagram.png -> assets/diagram.png
+        replaces "sub/no"
+        |}]
+    ;;
+
+    (* An empty label is enough; the label text is never consulted. *)
+    let%expect_test "the label need not be well-formed" =
+      show "[](note";
+      [%expect
+        {|
+        assets/paper.pdf -> assets/paper.pdf
+        my note.md -> <my note.md>   (Spaced)
+        note-a.md -> note-a.md   (Alpha)
+        sub/note-b.md -> sub/note-b.md   (Beta)
+        untitled.md -> untitled.md
+        assets/diagram.png -> assets/diagram.png
+        replaces "note"
+        |}]
+    ;;
+
+    (** {2 Angle brackets} *)
+
+    (* The replacement covers the [<] the user typed, so the suggestion's own
+       brackets do not double it. *)
+    let%expect_test "an opened angle bracket is part of the replaced span" =
+      show "See [label](<my no";
+      [%expect
+        {|
+        assets/paper.pdf -> assets/paper.pdf
+        my note.md -> <my note.md>   (Spaced)
+        note-a.md -> note-a.md   (Alpha)
+        sub/note-b.md -> sub/note-b.md   (Beta)
+        untitled.md -> untitled.md
+        assets/diagram.png -> assets/diagram.png
+        replaces "<my no"
+        |}]
+    ;;
+
+    (* Whitespace ends a bare destination but not an angle-bracketed one —
+       without which a spaced path could never be completed again, fragment
+       included. *)
+    let%expect_test "whitespace: fatal bare, harmless inside brackets" =
+      show "See [label](my no";
+      [%expect {| |}];
+      show "See [label](<my note.md>#";
+      [%expect
+        {|
+        Spaced -> spaced
+        replaces ""
+        |}]
+    ;;
+
+    let%expect_test "a closed destination offers nothing" =
+      show "See [label](note-a.md) ";
+      [%expect {| |}];
+      show "See [label](<my note.md> ";
+      [%expect {| |}]
+    ;;
+
+    (** {2 Fragment mode} *)
+
+    let%expect_test "fragments of the destination note" =
+      show "See [label](note-a.md#";
+      [%expect
+        {|
+        Alpha -> alpha
+        Section One -> section-one
+        ^block1 -> ^block1
+        replaces ""
+        |}]
+    ;;
+
+    let%expect_test "an empty destination means the current file" =
+      show ~rel_path:"note-a.md" "# Alpha\n\n## Section One\n\nSee [label](#sec";
+      [%expect
+        {|
+        Alpha -> alpha
+        Section One -> section-one
+        replaces "sec"
+        |}]
+    ;;
+
+    let%expect_test "an unresolved destination offers no fragments" =
+      show "See [label](missing.md#";
+      [%expect {| |}]
+    ;;
+
+    (** {2 Not a destination} *)
+
+    let%expect_test "a parenthesis not preceded by a bracket" =
+      show "ordinary prose (as it happens";
+      [%expect {| |}]
+    ;;
+
+    (* Wikilink detection runs first: the [(] here is part of a note name. *)
+    let%expect_test "wikilink precedence" =
+      show "See [[note (draft)#";
+      [%expect {| |}]
+    ;;
+
+    (** {2 Escaping}
+
+        See {!page-"feature-completion-markdown-links".destination_escaping}. *)
+
+    let%expect_test "what each kind of path is written as" =
+      List.iter
+        [ "plain.md"
+        ; "my note.md"
+        ; "a(b)c.md"
+        ; "a(b.md"
+        ; "less<than>.md"
+        ; "with space (and parens).md"
+        ]
+        ~f:(fun p -> printf "%s -> %s\n" p (escape_destination p));
+      [%expect
+        {|
+        plain.md -> plain.md
+        my note.md -> <my note.md>
+        a(b)c.md -> a(b)c.md
+        a(b.md -> a\(b.md
+        less<than>.md -> less\<than\>.md
+        with space (and parens).md -> <with space (and parens).md>
+        |}]
+    ;;
+
+    (* The obligation the escaping exists to meet: what is offered, once
+       inserted, is a link that resolves to the file it came from.  Driven
+       through the real parser and resolver rather than a restatement of the
+       escaping rules.  See {!page-"feature-completion-markdown-links".testing}. *)
+    let%expect_test "round trip: every offered path resolves back to its file" =
+      let items, _ = path_items ~image:false index in
+      List.iter items ~f:(fun i ->
+        let dest = Option.value_exn i.insert_text in
+        let doc = Lsp_util.parse_doc (sprintf "[label](%s)" dest) in
+        let resolved =
+          match Link_collect.collect_links doc with
+          | [ ll ] ->
+            (match Oystermark.Vault.Resolve.resolve ll.link_ref "note-a.md" index with
+             | Note { path } | File { path } -> path
+             | other -> Sexp.to_string [%sexp (other : Oystermark.Vault.Resolve.target)])
+          | links -> sprintf "<%d links>" (List.length links)
+        in
+        if String.equal resolved i.label
+        then printf "%s ok\n" i.label
+        else printf "%s -> %s MISMATCH\n" i.label resolved);
+      [%expect
+        {|
+        assets/paper.pdf ok
+        my note.md ok
+        note-a.md ok
+        sub/note-b.md ok
+        untitled.md ok
+        assets/diagram.png ok
+        |}]
     ;;
   end)
 ;;

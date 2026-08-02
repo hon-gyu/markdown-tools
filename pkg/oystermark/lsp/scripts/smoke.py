@@ -153,6 +153,15 @@ def run(binary, show_document=True):
         print("\ncapabilities")
         check("codeActionProvider", caps.get("codeActionProvider") is not None)
         check("codeLensProvider", caps.get("codeLensProvider") is not None)
+        triggers = (caps.get("completionProvider") or {}).get(
+            "triggerCharacters", []
+        )
+        check(
+            "completionProvider triggers on the Markdown destination",
+            "(" in triggers,
+            f"got {triggers}",
+            hint="without it, completion inside [label]( never fires",
+        )
         commands = (caps.get("executeCommandProvider") or {}).get("commands", [])
         check(
             "executeCommandProvider lists the daily-note command",
@@ -233,6 +242,49 @@ def run(binary, show_document=True):
                     f"said {messages}",
                 )
 
+        # Completion answers a CompletionList, not a bare array, and its items
+        # carry a textEdit rather than an insertText.  Both are shapes only the
+        # wire can show: in process the result is an OCaml value that cannot be
+        # malformed.  See `docs/feature-completion-markdown-links.mld`.
+        print("\ntextDocument/completion")
+        typed = NOTE_TEXT + "\nSee [label](no"
+        s.notify(
+            "textDocument/didChange",
+            {
+                "textDocument": {"uri": s.uri(NOTE), "version": 2},
+                "contentChanges": [{"text": typed}],
+            },
+        )
+        completion = s.request(
+            "textDocument/completion",
+            {
+                "textDocument": {"uri": s.uri(NOTE)},
+                "position": {"line": 4, "character": 14},
+            },
+        )
+        items = (
+            completion.get("items", []) if isinstance(completion, dict) else completion
+        ) or []
+        check(
+            "the vault's own note is offered as a path",
+            any(i["label"] == NOTE for i in items),
+            f"got {[i['label'] for i in items]}",
+        )
+        edits = [i.get("textEdit") for i in items]
+        check(
+            "items carry a textEdit with a range",
+            bool(edits) and all(e and "range" in e for e in edits),
+            hint="an insertText lets the client choose what to replace, and "
+            "VS Code's word rules split on /",
+        )
+        if edits and edits[0]:
+            start = edits[0]["range"]["start"]
+            check(
+                "the range starts at the destination, not the cursor",
+                (start["line"], start["character"]) == (4, 12),
+                f"got {start}",
+            )
+
         # Code lenses carry the same commands; a client that renders them is
         # the whole point of the command block.
         print("\ntextDocument/codeLens")
@@ -240,7 +292,7 @@ def run(binary, show_document=True):
         s.notify(
             "textDocument/didChange",
             {
-                "textDocument": {"uri": s.uri(NOTE), "version": 2},
+                "textDocument": {"uri": s.uri(NOTE), "version": 3},
                 "contentChanges": [{"text": NOTE_TEXT + "\n" + panel}],
             },
         )

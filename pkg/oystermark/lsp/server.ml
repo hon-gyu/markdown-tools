@@ -1040,7 +1040,7 @@ let code_action
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
-  : CompletionItem.t list option
+  : CompletionList.t option
   =
   match t.vault with
   | None -> None
@@ -1049,29 +1049,41 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
      sense: the content there is a command name.  See
      {!page-"feature-command-block".surfaces}. *)
     (match command_block_completions t ~rel_path ~line with
-     | Some items -> Some items
+     | Some items -> Some (CompletionList.create ~isIncomplete:false ~items ())
      | None ->
-       Feature.Completion.complete
-         ~index:v.index
-         ~rel_path
-         ~content:(buffer_content t rel_path)
-         ~line
-         ~character
-         ()
-       |> List.map ~f:(fun (i : Feature.Completion.item) ->
+       let content = buffer_content t rel_path in
+       let { Feature.Completion.items; replace_from; incomplete } =
+         Feature.Completion.complete ~index:v.index ~rel_path ~content ~line ~character ()
+       in
+       (* One range for the whole response: every item replaces the prefix the
+          user has typed.  Left to [insertText], a client picks the replaced
+          span by its own word rules, and VS Code's exclude [/] — which is how
+          accepting [notes/deep.md] after typing [notes/] yields
+          [notes/notes/deep.md].  See
+          {!page-"feature-completion-markdown-links".replace_range}. *)
+       let range =
+         let start_line, start_character =
+           Lsp_util.position_of_byte_offset content replace_from
+         in
+         Range.create
+           ~start:(Position.create ~line:start_line ~character:start_character)
+           ~end_:(Position.create ~line ~character)
+       in
+       List.map items ~f:(fun (i : Feature.Completion.item) ->
          let kind =
            match i.kind with
            | Feature.Completion.File -> CompletionItemKind.File
            | Feature.Completion.Reference -> CompletionItemKind.Reference
          in
+         let new_text = Option.value i.insert_text ~default:i.label in
          CompletionItem.create
            ~label:i.label
            ?detail:i.detail
            ?filterText:i.filter_text
-           ?insertText:i.insert_text
+           ~textEdit:(`TextEdit (TextEdit.create ~range ~newText:new_text))
            ~kind
            ())
-       |> Option.return)
+       |> fun items -> Some (CompletionList.create ~isIncomplete:incomplete ~items ()))
 ;;
 
 let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)

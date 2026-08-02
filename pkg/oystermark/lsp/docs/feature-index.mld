@@ -22,6 +22,7 @@
   {- {!page-"feature-inlay-hints-link-direction"}}
   {- {!page-"feature-codelens-reference-counts"}}
   {- {!page-"feature-completion"}}
+  {- {!page-"feature-completion-markdown-links"}}
   {- {!page-"feature-command-block"}}
   {- {!page-"feature-configuration"}}
   {- {!page-"feature-utf16-positions"}}
@@ -35,14 +36,6 @@ testing obligations. Moving one up to {b Active} means the code and its tests
 exist and reference the spec.
 
 {ul
-  {- {!page-"feature-completion-markdown-links"} — completion inside
-     [\[label\](…)], where only [\[\[…\]\]] is served today.}
-  {- {!page-"feature-codeaction-create-missing-heading"} — the fragment case
-     {!page-"feature-codeaction-create-unresolved-link"} excludes.}
-  {- {!page-"feature-aliases"} — frontmatter [aliases] as alternative names for
-     a note, in resolution and completion. Mostly core work.}
   {- {!page-"feature-footnotes"} — completion, navigation, references, rename,
      and diagnostics for footnote labels, document-scoped.}
-  {- {!page-"feature-completion-callouts"} — callout types, at any nesting
-     depth, from built-ins, vault CSS, and vault usage.}
 }
