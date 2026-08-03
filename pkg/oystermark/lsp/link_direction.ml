@@ -287,24 +287,38 @@ let%test_module "hints" =
       [%expect {| |}]
     ;;
 
-    (* Markdown links and embeds resolve the same way, so they hint the same
-       way; the note's own name is just the long spelling of [#]. *)
-    let%expect_test "every intra-note spelling" =
+    (* Every spelling of an intra-note link against every anchor kind.  Markdown
+       links and embeds resolve the same way as wikilinks, and the note's own
+       name is just the long spelling of [#], so within a line — one anchor
+       kind, its four spellings — the four hints must carry the same arrow.  A
+       spelling that resolves differently for one anchor kind shows up as the
+       odd label out.
+
+       Lines: 0 heading, 1 block id, 2 inline attribute; targets on 4, 6, 8. *)
+    let%expect_test "spelling x anchor kind" =
       show
         ~rel_path:"forms.md"
         [ ( "forms.md"
-          , "Wiki [[#Target]]\n\
-             Long [[forms#Target]]\n\
-             Markdown [t](#Target)\n\
-             Embed ![[#Target]]\n\n\
-             # Target\n" )
+          , "[[#Target]] [[forms#Target]] [t](#Target) ![[#Target]]\n\
+             [[#^para]] [[forms#^para]] [b](#^para) ![[#^para]]\n\
+             [[#kt]] [[forms#kt]] [a](#kt) ![[#kt]]\n\n\
+             # Target\n\n\
+             Body ^para\n\n\
+             The [key]{#kt} term.\n" )
         ];
-      [%expect
-        {|
-        (0,16) ↓5
-        (1,21) ↓4
-        (2,21) ↓3
-        (3,18) ↓2
+      [%expect {|
+        (0,11) ↓4
+        (0,28) ↓4
+        (0,41) ↓4
+        (0,54) ↓4
+        (1,10) ↓5
+        (1,26) ↓5
+        (1,38) ↓5
+        (1,50) ↓5
+        (2,7) ↓6
+        (2,20) ↓6
+        (2,29) ↓6
+        (2,38) ↓6
         |}]
     ;;
 
