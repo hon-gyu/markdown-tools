@@ -76,9 +76,10 @@ let of_string
       ~colon_symbols:true
       ~extended_ordered_list_styles:true
       ~table_captions:true
-      ~multiline_atx_headings:true
       ~smart_punctuation:true
       (* Djot extensions end *)
+      (* A heading is exactly its own line, as in CommonMark. *)
+      ~multiline_atx_headings:false
       body
   in
   let body_doc = Mapper.map_doc (mk_mapper ()) cmarkit_doc in
