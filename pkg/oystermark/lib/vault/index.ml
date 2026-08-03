@@ -157,16 +157,26 @@ let extract_attr_ids (doc : Cmarkit.Doc.t) : attr_entry list =
   List.rev (Cmarkit.Folder.fold_doc folder [] doc)
 ;;
 
+(** Directories that hold tooling state rather than notes, skipped by name.
+    The list is what a vault is expected to contain beside its notes; a
+    directory whose name merely begins with a [.] is a directory the author
+    chose to name that way, and its notes are notes. *)
+let ignored_dirs = [ ".git"; ".obsidian"; ".oyster"; ".trash" ]
+
+let is_ignored_dir (name : string) : bool =
+  List.mem ignored_dirs name ~equal:String.equal
+;;
+
 (** Recursively list all entries (files and directories), returning relative
-    paths.  Directories have a trailing [/].  Hidden entries are excluded. *)
+    paths.  Directories have a trailing [/].  {!ignored_dirs} and hidden files
+    are excluded. *)
 let rec list_entries_recursive ~(root : string) ~(rel_prefix : string) : string list =
   let (entries : string list) =
     try Sys_unix.ls_dir root with
     | _ -> []
   in
   List.concat_map entries ~f:(fun name ->
-    let is_hidden (name : string) : bool = String.is_prefix name ~prefix:"." in
-    if is_hidden name
+    if is_ignored_dir name
     then []
     else (
       let full_path = Filename.concat root name in
@@ -176,7 +186,9 @@ let rec list_entries_recursive ~(root : string) ~(rel_prefix : string) : string 
       match Sys_unix.is_directory full_path with
       | `Yes ->
         (rel_path ^ "/") :: list_entries_recursive ~root:full_path ~rel_prefix:rel_path
-      | _ -> [ rel_path ]))
+      (* A dot-file is not a note: [.DS_Store] and its like are what the vault
+         is stored with, not what it is made of. *)
+      | _ -> if String.is_prefix name ~prefix:"." then [] else [ rel_path ]))
 ;;
 
 let%expect_test "extract_headings" =
