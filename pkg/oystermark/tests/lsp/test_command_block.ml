@@ -426,8 +426,8 @@ let%expect_test "completion inside the block offers the catalogue" =
     let s = start ~vault_root in
     match Server.completion s ~rel_path:"idea.md" ~line:4 ~character:0 with
     | None -> print_endline "none"
-    | Some items ->
-      List.iter items ~f:(fun (i : CompletionItem.t) ->
+    | Some list ->
+      List.iter list.items ~f:(fun (i : CompletionItem.t) ->
         printf "%-16s %s\n" i.label (Option.value i.detail ~default:"")));
   [%expect
     {|

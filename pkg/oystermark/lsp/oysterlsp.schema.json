@@ -57,7 +57,45 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "default": 2000,
-          "description": "Bytes of note content a hover may include, excluding the path header. Content past the limit is truncated at the previous newline, followed by a notice reporting how much is shown, e.g. '*(truncated: showing 42 of 80 lines, 52%)*'."
+          "description": "Bytes of note content a hover may include, excluding the path header. Content past the limit is truncated at the previous newline, followed by a notice reporting how much is shown, e.g. '*(truncated: showing 42 of 80 lines, 52%)*'. Does not apply to image hovers."
+        },
+        "imagePreview": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether hovering an image link embeds the image itself as a data: URI, after the description line naming its format, dimensions and size. Off by default because rendering it is the client's markdown renderer's business: VS Code shows the picture, a client that lays hover markdown out as text (Neovim's built-in handler, most terminal clients) shows nothing. The description is shown either way."
+        },
+        "imageMaxBytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "default": 262144,
+          "description": "Largest image imagePreview will embed, measured on the file before base64 inflates it by a third. The encoded image travels inline in the JSON-RPC response the editor is blocking a hover on. A larger file keeps its description and says why the preview is missing."
+        }
+      }
+    },
+    "inlayHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "linkDirection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to show a direction arrow and line distance after each link whose target is in the same note, e.g. '[[#setup]]↓8'. Independent of the inbound-reference counts shown at headings."
+        }
+      }
+    },
+    "codeLens": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "references": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to show a '3 references' lens above each heading something links to, and a '12 backlinks' lens above the note. Note that clients gate code lens themselves — Zed's 'code_lens' setting is off by default."
+        },
+        "showReferencesCommand": {
+          "type": "string",
+          "default": "editor.action.showReferences",
+          "description": "The client-side command a reference lens carries, invoked with [uri, position, locations]. There is no standard LSP command for 'show me these locations' — this name is VS Code's convention, which Zed also implements — so it is a setting rather than a constant. Set it to \"\" to make the lens a label with nothing behind it."
         }
       }
     },

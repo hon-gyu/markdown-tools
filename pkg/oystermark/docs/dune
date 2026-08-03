@@ -50,18 +50,21 @@
   design-index
   feature-attribute-anchors
   feature-codeaction-create-unresolved-link
+  feature-codelens-reference-counts
   feature-command-block
   feature-completion
+  feature-completion-markdown-links
   feature-configuration
   feature-daily-notes
   feature-diagnostics
   feature-document-outline
   feature-document-sync
   feature-find-references
+  feature-footnotes
   feature-go-to-definition
   feature-hover
   feature-index
-  feature-inlay-hints
+  feature-inlay-hints-link-direction
   feature-rename
   feature-utf16-positions
   cmarkit-label-resolution

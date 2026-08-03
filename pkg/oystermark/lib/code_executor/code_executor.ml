@@ -1,7 +1,13 @@
 (** Execute fenced code blocks from OysterMark documents and splice results back. *)
 
 open Core
+
+(* [Common] is both included (so its types are usable unqualified through this
+   module) and aliased. The alias gives its types a public path: without one,
+   they are only reachable through the wrapped-away [Code_executor__Common],
+   and odoc reports fields typed by them as hidden. *)
 include Common
+module Common = Common
 module Cache = Cache
 module Uv = Uv
 module Jupyter = Jupyter

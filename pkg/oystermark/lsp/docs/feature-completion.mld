@@ -82,9 +82,17 @@ returned.
   | label      | shortest unambiguous name | heading text or [^id]    |
   | detail     | full relative path       | —                        |
   | filterText | note name                | slug or block ID         |
-  | insertText | note name                | slug or [^blockid]       |
+  | textEdit   | note name                | slug or [^blockid]       |
   | kind       | File                     | Reference                |
 }
+
+The suggestion is delivered as a {b [textEdit]} whose range covers the prefix
+already typed — from the [\[\[] (or the [#]) to the cursor — rather than as an
+[insertText] the client places by its own word rules. Those rules split on [/],
+so a name that fell back to a relative path would otherwise be pasted on top of
+what it was completing. The reasoning is
+{!page-"feature-completion-markdown-links".replace_range}, which needs the same
+range for the same reason; both modes are served by one implementation.
 
 {1 Edge cases}
 
@@ -94,6 +102,8 @@ returned.
   {- {b Ambiguous note name in fragment mode}: resolve using vault
      resolution rules (same as go-to-definition); suggest fragments
      from the first candidate.}
-  {- {b Markdown links}: completion inside [()] is not provided (wikilink
-     brackets only).}
+  {- {b Markdown links}: completion inside [()] is
+     {!page-"feature-completion-markdown-links"}, a separate spec served by the
+     same handler. Wikilink detection runs first, so a [(] inside
+     [\[\[note (draft)\]\]] is part of a note name rather than a destination.}
 }

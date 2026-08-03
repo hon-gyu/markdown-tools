@@ -6,6 +6,8 @@
     "linkAction": true
   },
   "hover": { "maxChars": 2000 },
+  "inlayHints": { "linkDirection": true },
+  "codeLens": { "references": true, "showReferencesCommand": "editor.action.showReferences" },
   "goToDefinition": { "unresolvedFragment": "fallback" },
   "diagnostics": { "unresolvedFragment": "fallback" }
 }

@@ -691,15 +691,80 @@ let lens_of_entry
          ())
 ;;
 
-(** Spec: {!page-"feature-command-block".surfaces}.  [None] outside a vault, so
-    a client learns nothing is coming rather than seeing an empty list. *)
+(** A reference count as a lens above its line: [3 references] over a heading,
+    [12 backlinks] over the note, carrying the references themselves so that
+    clicking the lens opens them.  The locations come from the same scan that
+    produced the number, so the list can never disagree with the count above
+    it.  See {!page-"feature-codelens-reference-counts"}. *)
+let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens.t list =
+  if not t.config.code_lens_references
+  then []
+  else (
+    match t.vault with
+    | None -> []
+    | Some v ->
+      Reference_counts.entries
+        ~docs:v.docs
+        ~rel_path
+        ~content
+        ~range_start_line:0
+        ~range_end_line:Int.max_value
+      |> List.map ~f:(fun (e : Reference_counts.entry) ->
+        let at = Position.create ~line:e.line ~character:0 in
+        let locations =
+          List.map e.refs ~f:(fun (r : Feature.Find_references.reference) ->
+            Location.create
+              ~uri:(uri_of_rel_path t r.rel_path)
+              ~range:
+                (range_of_bytes
+                   (disk_content t r.rel_path)
+                   ~first_byte:r.first_byte
+                   ~last_byte:r.last_byte)
+            |> Location.yojson_of_t)
+        in
+        let title = Reference_counts.lens_title e in
+        (* The command name is the client's, not the protocol's: there is no
+           standard "show me these locations", only a convention VS Code named
+           and others implement.  Configured, therefore — and [""] means the
+           lens is a label, which is also what an unaware client makes of a
+           name it does not know.  A [Command] is still required: a lens shows
+           its title through one.  See
+           {!page-"feature-codelens-reference-counts".click}. *)
+        let command = t.config.code_lens_show_references_command in
+        CodeLens.create
+          ~range:(Range.create ~start:at ~end_:at)
+          ~command:
+            (Command.create
+               ~title
+               ~command
+               ?arguments:
+                 (if String.is_empty command
+                  then None
+                  else
+                    Some
+                      [ DocumentUri.yojson_of_t (uri_of_rel_path t rel_path)
+                      ; Position.yojson_of_t at
+                      ; `List locations
+                      ])
+               ())
+          ()))
+;;
+
+(** Spec: {!page-"feature-command-block".surfaces} for the command-block
+    lenses, {!page-"feature-codelens-reference-counts"} for the counts.  [None]
+    outside a vault, so a client learns nothing is coming rather than seeing an
+    empty list.
+
+    Command lenses come first: they are the note's control panel, and a count
+    is an annotation that should not push it down the response. *)
 let code_lens (t : t) ~(rel_path : string) : CodeLens.t list option =
   match t.vault with
   | None -> None
   | Some _ ->
     let content = buffer_content t rel_path in
-    Command_block.entries content
-    |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content)
+    (Command_block.entries content
+     |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content))
+    @ reference_lenses t ~rel_path ~content
     |> Option.return
 ;;
 
@@ -975,7 +1040,7 @@ let code_action
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
-  : CompletionItem.t list option
+  : CompletionList.t option
   =
   match t.vault with
   | None -> None
@@ -984,29 +1049,41 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
      sense: the content there is a command name.  See
      {!page-"feature-command-block".surfaces}. *)
     (match command_block_completions t ~rel_path ~line with
-     | Some items -> Some items
+     | Some items -> Some (CompletionList.create ~isIncomplete:false ~items ())
      | None ->
-       Feature.Completion.complete
-         ~index:v.index
-         ~rel_path
-         ~content:(buffer_content t rel_path)
-         ~line
-         ~character
-         ()
-       |> List.map ~f:(fun (i : Feature.Completion.item) ->
+       let content = buffer_content t rel_path in
+       let { Feature.Completion.items; replace_from; incomplete } =
+         Feature.Completion.complete ~index:v.index ~rel_path ~content ~line ~character ()
+       in
+       (* One range for the whole response: every item replaces the prefix the
+          user has typed.  Left to [insertText], a client picks the replaced
+          span by its own word rules, and VS Code's exclude [/] — which is how
+          accepting [notes/deep.md] after typing [notes/] yields
+          [notes/notes/deep.md].  See
+          {!page-"feature-completion-markdown-links".replace_range}. *)
+       let range =
+         let start_line, start_character =
+           Lsp_util.position_of_byte_offset content replace_from
+         in
+         Range.create
+           ~start:(Position.create ~line:start_line ~character:start_character)
+           ~end_:(Position.create ~line ~character)
+       in
+       List.map items ~f:(fun (i : Feature.Completion.item) ->
          let kind =
            match i.kind with
            | Feature.Completion.File -> CompletionItemKind.File
            | Feature.Completion.Reference -> CompletionItemKind.Reference
          in
+         let new_text = Option.value i.insert_text ~default:i.label in
          CompletionItem.create
            ~label:i.label
            ?detail:i.detail
            ?filterText:i.filter_text
-           ?insertText:i.insert_text
+           ~textEdit:(`TextEdit (TextEdit.create ~range ~newText:new_text))
            ~kind
            ())
-       |> Option.return)
+       |> fun items -> Some (CompletionList.create ~isIncomplete:incomplete ~items ()))
 ;;
 
 let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
@@ -1016,7 +1093,8 @@ let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int
   | None -> None
   | Some v ->
     Feature.Inlay_hints.inlay_hints
-      ~docs:v.docs
+      ~config:t.config
+      ~index:v.index
       ~rel_path
       ~content:(disk_content t rel_path)
       ~range_start_line:start_line

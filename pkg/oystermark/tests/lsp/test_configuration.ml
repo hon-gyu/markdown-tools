@@ -202,7 +202,8 @@ let%expect_test "disable: every surface answers emptily" =
                s
                ~command:Server.daily_note_command
                ~arguments:(Some [ `String "2026-07-26.md"; `Bool true ]))));
-  [%expect {|
+  [%expect
+    {|
     disabled: true
     warnings: 0
     root: <none>
@@ -226,7 +227,8 @@ let%expect_test "disable: every surface answers emptily" =
    both directions. *)
 let%expect_test "disable: the file has the last word" =
   show ~config_file:{|{"disable": false}|} ~init_options:{|{"disable": true}|} ();
-  [%expect {|
+  [%expect
+    {|
     2026-07-26.md
     2026-07-25.md
     2026-07-27.md

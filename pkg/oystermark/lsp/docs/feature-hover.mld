@@ -46,8 +46,104 @@ by [*(empty)*].
      then the paragraph that carries the block ID.}
   {- {b Self-referencing fragments} ([[[#Heading]]], [[[#^blockid]]]):
      same as above but sourced from the current file.}
+  {- {b Resolved image} ([[![[pic.png]]]], [[![](pic.png)]]): path header,
+     then a description or a preview.  See {!section-images}.}
+  {- {b Resolved non-text file} (a PDF, say): path header, then a
+     description.  See {!section-binary}.}
   {- {b Unresolved link}: no hover result (return [None]).}
 }
+
+{2:images Images}
+
+A link whose target has an image extension ([.png], [.jpg], [.jpeg],
+[.gif], [.svg], [.webp]) is never shown as text: its bytes are not text,
+and a hover full of them is both unreadable and invalid UTF-8 in the
+response.
+
+The default is a {b description}: the path header, then a line naming
+the format, the pixel dimensions when they can be read from the file's
+header, and the file size.
+
+{[
+*Path*:assets/diagram.png
+
+PNG · 1024×768 · 84 KB
+]}
+
+Dimensions come from the container header — [IHDR] for PNG, the logical
+screen descriptor for GIF, the first [SOFn] frame header for JPEG — read
+from the leading bytes rather than by decoding the image.  A format whose
+dimensions are not read (SVG, WebP), or a file too damaged to parse, omits
+that field rather than guessing:
+
+{[
+*Path*:assets/logo.svg
+
+SVG · 12 KB
+]}
+
+{3:preview Preview}
+
+With {!Lsp_lib.Config.t.hover_image_preview} set, the description line is
+followed by the image itself, embedded as a [data:] URI so that the hover
+needs nothing from the filesystem at render time:
+
+{[
+*Path*:assets/diagram.png
+
+PNG · 1024×768 · 84 KB
+
+![assets/diagram.png](data:image/png;base64,iVBORw0KGgo…)
+]}
+
+It is {b off by default}, for two reasons.
+
+Rendering is the client's, not ours: [contents] is a Markdown string, and
+whether an image in it becomes a picture is entirely up to what the client
+renders that string with.  VS Code does render [data:] image URIs in
+hovers; an editor that lays the markdown out as text — Neovim's built-in
+hover handler, and most terminal clients — shows nothing at all, or the
+literal markup.  The setting is therefore a statement about the {e client},
+which is why it is a setting rather than a default.
+
+The second reason is size.  Base64 inflates by a third, and the result
+travels inline in a synchronous JSON-RPC response that the editor is
+blocking a hover on.  So the preview is capped by
+{!Lsp_lib.Config.t.hover_image_max_bytes} — measured on the file, before
+encoding — and a file over the cap falls back to the description alone,
+with a note saying why:
+
+{[
+*Path*:assets/photo.jpg
+
+JPEG · 4032×3024 · 6 MB
+
+*(preview omitted: 6 MB exceeds the 256 KB limit)*
+]}
+
+The description is never omitted: it is short, it is the part that is
+readable everywhere, and it is what makes the fallback legible.
+{!Lsp_lib.Config.t.hover_max_chars} does not apply to an image hover —
+truncating a data URI would produce a broken image rather than a shorter
+one, and the description is already bounded.
+
+{2:binary Non-text files}
+
+A link may resolve to a file that is neither markdown nor an image — a
+PDF, an archive, a binary blob.  Reading its bytes into the hover has the
+same two problems as an image and none of the compensations, so a file
+whose leading bytes contain a NUL is described rather than shown:
+
+{[
+*Path*:refs/paper.pdf
+
+Binary file · 2 MB
+]}
+
+The NUL test is deliberately crude: it is what [grep] and [git] use, it
+costs one scan of the first few kilobytes, and it errs towards showing
+text — a file it misjudges as text is truncated as usual rather than
+lost.
 
 {2 Truncation}
 
@@ -89,4 +185,10 @@ happen, so the reader is never told [0%] or [100%].
   {- {b Heading / block not found in target file}: fall back to the full
      file content (subject to truncation), consistent with the
      go-to-definition fallback.}
+  {- {b Image with a fragment} ([[![[pic.png#frag]]]]): the fragment is
+     ignored — there is nothing in an image for it to name — and the
+     image is described as usual.}
+  {- {b Empty image file}: described like any other, at [0 B], with no
+     preview and no dimensions.  {b Not} [*(empty)*], which is about a
+     note with nothing written in it.}
 }

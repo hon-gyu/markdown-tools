@@ -48,6 +48,31 @@ type t =
       is truncated at the previous newline and a notice reporting how
       much is shown (in lines and percent) is appended.
       See {!page-"feature-hover".truncation}. *)
+  ; hover_image_preview : bool
+    (** Whether an image hover embeds the image itself as a [data:] URI after
+      its description.  Off by default: whether that becomes a picture is
+      the client's markdown renderer's business, not ours, so this is a
+      statement about the client.  See {!page-"feature-hover".preview}. *)
+  ; hover_image_max_bytes : int
+    (** Largest image, measured on the file before base64 inflates it by a
+      third, that {!hover_image_preview} will embed.  A larger one keeps
+      its description and says why the preview is missing.
+      See {!page-"feature-hover".preview}. *)
+  ; inlay_link_direction : bool
+    (** Whether to show a direction arrow after each link whose target is in
+      the same note — the whole of what inlay hints are, now that reference
+      counts are lenses.  See
+      {!page-"feature-inlay-hints-link-direction"}. *)
+  ; code_lens_references : bool
+    (** Whether to put a [3 references] / [12 backlinks] lens above the lines
+      the count is about.  See {!page-"feature-codelens-reference-counts"}. *)
+  ; code_lens_show_references_command : string
+    (** The client-side command a reference lens carries, invoked with
+      [\[uri; position; locations\]].  The default is the name VS Code
+      defines and Zed implements; a client that spells it differently can
+      say so here, and [""] leaves the lens a label with nothing behind it.
+      There is no standard name for this — it is a convention, so it is a
+      setting.  See {!page-"feature-codelens-reference-counts".click}. *)
   ; daily_notes : daily_notes (** See {!page-"feature-daily-notes"}. *)
   }
 [@@deriving sexp, equal]
@@ -62,12 +87,17 @@ let default_daily_notes =
 
 (** Default configuration: both features use {!Fallback}, matching the
     lenient behavior described in the go-to-definition spec.
-    Hover content is capped at 2 000 bytes. *)
+    Hover content is capped at 2 000 bytes, and image previews are off. *)
 let default =
   { disable = false
   ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
+  ; hover_image_preview = false
+  ; hover_image_max_bytes = 256 * 1024
+  ; inlay_link_direction = true
+  ; code_lens_references = true
+  ; code_lens_show_references_command = "editor.action.showReferences"
   ; daily_notes = default_daily_notes
   }
 ;;
@@ -98,6 +128,11 @@ module Partial = struct
     ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
+    ; hover_image_preview : bool option
+    ; hover_image_max_bytes : int option
+    ; inlay_link_direction : bool option
+    ; code_lens_references : bool option
+    ; code_lens_show_references_command : string option
     ; daily_notes : daily_notes
     }
 
@@ -106,6 +141,11 @@ module Partial = struct
     ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
+    ; hover_image_preview = None
+    ; hover_image_max_bytes = None
+    ; inlay_link_direction = None
+    ; code_lens_references = None
+    ; code_lens_show_references_command = None
     ; daily_notes = { format = None; folder = None; template = None; link_action = None }
     }
   ;;
@@ -121,6 +161,14 @@ module Partial = struct
     ; diag_unresolved_fragment =
         pick upper.diag_unresolved_fragment lower.diag_unresolved_fragment
     ; hover_max_chars = pick upper.hover_max_chars lower.hover_max_chars
+    ; hover_image_preview = pick upper.hover_image_preview lower.hover_image_preview
+    ; hover_image_max_bytes = pick upper.hover_image_max_bytes lower.hover_image_max_bytes
+    ; inlay_link_direction = pick upper.inlay_link_direction lower.inlay_link_direction
+    ; code_lens_references = pick upper.code_lens_references lower.code_lens_references
+    ; code_lens_show_references_command =
+        pick
+          upper.code_lens_show_references_command
+          lower.code_lens_show_references_command
     ; daily_notes =
         { format = pick upper.daily_notes.format lower.daily_notes.format
         ; folder = pick upper.daily_notes.folder lower.daily_notes.folder
@@ -140,6 +188,18 @@ let resolve (p : Partial.t) : resolved =
   ; diag_unresolved_fragment =
       Option.value p.diag_unresolved_fragment ~default:default.diag_unresolved_fragment
   ; hover_max_chars = Option.value p.hover_max_chars ~default:default.hover_max_chars
+  ; hover_image_preview =
+      Option.value p.hover_image_preview ~default:default.hover_image_preview
+  ; hover_image_max_bytes =
+      Option.value p.hover_image_max_bytes ~default:default.hover_image_max_bytes
+  ; inlay_link_direction =
+      Option.value p.inlay_link_direction ~default:default.inlay_link_direction
+  ; code_lens_references =
+      Option.value p.code_lens_references ~default:default.code_lens_references
+  ; code_lens_show_references_command =
+      Option.value
+        p.code_lens_show_references_command
+        ~default:default.code_lens_show_references_command
   ; daily_notes =
       { format = Option.value p.daily_notes.format ~default:default_daily_notes.format
       ; folder = p.daily_notes.folder
@@ -273,6 +333,45 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
         | "maxChars" ->
           acc := { !acc with Partial.hover_max_chars = parse_positive_int w ~key value };
           true
+        | "imagePreview" ->
+          acc := { !acc with Partial.hover_image_preview = parse_bool w ~key value };
+          true
+        | "imageMaxBytes" ->
+          acc
+          := { !acc with Partial.hover_image_max_bytes = parse_positive_int w ~key value };
+          true
+        | _ -> false);
+      true
+    | "inlayHints" ->
+      parse_object
+        w
+        ~self:"inlayHints"
+        ~prefix:"inlayHints."
+        value
+        ~f:(fun ~key name value ->
+          match name with
+          | "linkDirection" ->
+            acc := { !acc with Partial.inlay_link_direction = parse_bool w ~key value };
+            true
+          | _ -> false);
+      true
+    | "codeLens" ->
+      parse_object w ~self:"codeLens" ~prefix:"codeLens." value ~f:(fun ~key name value ->
+        match name with
+        | "references" ->
+          acc := { !acc with Partial.code_lens_references = parse_bool w ~key value };
+          true
+        (* [""] is meaningful here — a lens with no command behind it — so it
+           is read rather than rejected as an empty string would be
+           elsewhere. *)
+        | "showReferencesCommand" ->
+          (match value with
+           | `String s ->
+             acc := { !acc with Partial.code_lens_show_references_command = Some s };
+             true
+           | got ->
+             Warnings.bad_value w ~key ~expected:"a string" got;
+             true)
         | _ -> false);
       true
     | "goToDefinition" ->
@@ -310,7 +409,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     (* Not a setting: the association a JSON language server reads to offer
        completion and validation over this very file.  Reporting it as unknown
        would penalize the one line that makes the file self-documenting.  See
-       {!page-"feature-configuration".schema-file}. *)
+       {!page-"feature-configuration".schema_file}. *)
     | "$schema" -> true
     | _ -> false);
   !acc, Warnings.to_list w
@@ -321,7 +420,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     Every dotted key {!parse} accepts, [$schema] aside.  It exists to be
     checked against — the published JSON Schema is a second statement of the
     same thing, and two statements drift.  See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let known_keys : string list =
   [ "disable"
   ; "dailyNotes.format"
@@ -329,6 +428,11 @@ let known_keys : string list =
   ; "dailyNotes.template"
   ; "dailyNotes.linkAction"
   ; "hover.maxChars"
+  ; "hover.imagePreview"
+  ; "hover.imageMaxBytes"
+  ; "inlayHints.linkDirection"
+  ; "codeLens.references"
+  ; "codeLens.showReferencesCommand"
   ; "goToDefinition.unresolvedFragment"
   ; "diagnostics.unresolvedFragment"
   ]
@@ -338,7 +442,7 @@ let known_keys : string list =
     [--print-default-config] writes, and the [$id] the schema file itself
     carries.  A raw URL, not a [github.com/blob] one — that serves HTML, which
     a JSON language server cannot read.  See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let schema_url =
   "https://raw.githubusercontent.com/hon-gyu/oyster/main/pkg/oystermark/lsp/oysterlsp.schema.json"
 ;;
@@ -369,7 +473,18 @@ let to_json (t : t) : Yojson.Safe.t =
            @ optional "folder" t.daily_notes.folder
            @ optional "template" t.daily_notes.template
            @ [ "linkAction", `Bool t.daily_notes.link_action ]) )
-    ; "hover", `Assoc [ "maxChars", `Int t.hover_max_chars ]
+    ; ( "hover"
+      , `Assoc
+          [ "maxChars", `Int t.hover_max_chars
+          ; "imagePreview", `Bool t.hover_image_preview
+          ; "imageMaxBytes", `Int t.hover_image_max_bytes
+          ] )
+    ; "inlayHints", `Assoc [ "linkDirection", `Bool t.inlay_link_direction ]
+    ; ( "codeLens"
+      , `Assoc
+          [ "references", `Bool t.code_lens_references
+          ; "showReferencesCommand", `String t.code_lens_show_references_command
+          ] )
     ; ( "goToDefinition"
       , `Assoc
           [ "unresolvedFragment", json_of_fragment_behavior t.gtd_unresolved_fragment ] )
@@ -474,6 +589,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Strict)
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md))
            (link_action false))))
@@ -488,6 +606,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes.linkAction: expected a boolean, got "no"
@@ -510,10 +631,16 @@ let%test_module "configuration" =
         {|
         ((disable true) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! disable: expected a boolean, got "yes"
@@ -534,6 +661,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got "400px"
@@ -551,6 +681,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! hover.maxChars: expected a positive integer, got 0
@@ -565,6 +698,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! unknown key "dailynotes"
@@ -580,11 +716,17 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! dailyNotes: expected an object, got []
@@ -613,6 +755,9 @@ let%test_module "configuration" =
         {|
         ((disable false) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder (journal)) (template ()) (link_action true))))
         |}]

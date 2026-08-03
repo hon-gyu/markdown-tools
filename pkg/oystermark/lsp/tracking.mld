@@ -54,9 +54,18 @@ Subsections are encouraged if needed.
 - Test: {!module-Test_lsp.Test_create_unresolved_note}
 
 {1 inlay-hints}
-- Spec: {!page-"feature-inlay-hints"}
-- Implementation: {!module-Lsp_lib.Inlay_hints.implementation}
-- Test: {!module-Lsp_lib.Inlay_hints.test}
+- Spec: {!page-"feature-inlay-hints-link-direction"}
+- Implementation: {!module-Lsp_lib.Link_direction.implementation} (the arrows),
+  {!module-Lsp_lib.Inlay_hints.implementation} (the response)
+- Test: {!module-Lsp_lib.Link_direction.test},
+  {!module-Test_lsp.Test_inlay_hints}
+
+{1 codelens-reference-counts}
+- Spec: {!page-"feature-codelens-reference-counts"}
+- Implementation: {!module-Lsp_lib.Reference_counts.implementation} (which
+  lines, and what the number is called), [Server.reference_lenses] (the lens)
+- Test: {!module-Lsp_lib.Reference_counts.test},
+  {!module-Test_lsp.Test_reference_lens}
 
 {1 index}
 - Spec: {!page-"feature-index"}

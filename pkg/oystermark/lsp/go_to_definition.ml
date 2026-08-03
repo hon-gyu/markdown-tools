@@ -160,6 +160,9 @@ let%test_module "go_to_definition" =
            > An aside.\n\n\
            Wikilinks [[#Mu]] and [[#kt]] and [[#aside]].\n\n\
            Markdown links [h](#Mu) and [k](#kt) and [a](#aside).\n" )
+        (* Heading whose slug differs from its text, linked in both spellings. *)
+      ; "note-n.md", "Self [[#nu-two]] and [[#Nu Two]].\n\n# Nu Two\n\nBody.\n"
+      ; "note-o.md", "# Xi\n\nSee [[note-n#nu-two]].\n"
       ]
     ;;
 
@@ -259,6 +262,27 @@ let%test_module "go_to_definition" =
       let content = List.Assoc.find_exn files ~equal:String.equal "note-e.md" in
       show ~rel_path:"note-e.md" ~content ~line:2 ~character:12;
       [%expect {| (((path note-e.md) (line 0) (character 0))) |}]
+    ;;
+
+    (* A heading fragment written as the slug ([[[#nu-two]]]) must land on the
+       heading, not fall back to the top of the file — the spelling completion
+       inserts and hover accepts.
+       See {!page-"feature-go-to-definition".heading_lookup}. *)
+    let%expect_test "heading fragment spelled as slug" =
+      let content = List.Assoc.find_exn files ~equal:String.equal "note-n.md" in
+      (* [[#nu-two]] *)
+      show ~rel_path:"note-n.md" ~content ~line:0 ~character:9;
+      (* [[#Nu Two]] *)
+      show ~rel_path:"note-n.md" ~content ~line:0 ~character:23;
+      let content = List.Assoc.find_exn files ~equal:String.equal "note-o.md" in
+      (* [[note-n#nu-two]] *)
+      show ~rel_path:"note-o.md" ~content ~line:2 ~character:8;
+      [%expect
+        {|
+        (((path note-n.md) (line 2) (character 0)))
+        (((path note-n.md) (line 2) (character 0)))
+        (((path note-n.md) (line 2) (character 0)))
+        |}]
     ;;
 
     (** {3 Intra-note anchor matrix}

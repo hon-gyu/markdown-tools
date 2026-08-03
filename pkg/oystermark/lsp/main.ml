@@ -34,12 +34,13 @@ class oystermark_server ~sw =
 
     method! config_code_lens_options : CodeLensOptions.t option =
       (* Lenses come fully formed, so no [resolveProvider].  See
-         {!page-"feature-command-block"}. *)
+         {!page-"feature-command-block"} for the command lenses and
+         {!page-"feature-codelens-reference-counts"} for the counts. *)
       Some (CodeLensOptions.create ~resolveProvider:false ())
 
     method! config_completion : CompletionOptions.t option =
       (* [[[] opens a wikilink; [#] starts a fragment. See {!page-"feature-completion"}. *)
-      Some (CompletionOptions.create ~triggerCharacters:[ "["; "#" ] ())
+      Some (CompletionOptions.create ~triggerCharacters:[ "["; "#"; "(" ] ())
 
     method! config_modify_capabilities (c : ServerCapabilities.t) : ServerCapabilities.t =
       (* Advertise UTF-16 position encoding (LSP mandatory baseline); all
@@ -237,7 +238,7 @@ class oystermark_server ~sw =
         ~rel_path:(self#rel_path uri)
         ~line:pos.line
         ~character:pos.character
-      |> Option.map ~f:(fun items -> `List items)
+      |> Option.map ~f:(fun list -> `CompletionList list)
 
     method! on_req_inlay_hint
       ~notify_back:_
@@ -359,7 +360,7 @@ class oystermark_server ~sw =
     documents itself in any editor with a JSON language server. The point is a
     file to edit rather than a file to keep: defaults written down are frozen,
     and a key left out is a key that follows this server as it changes. See
-    {!page-"feature-configuration".schema-file}. *)
+    {!page-"feature-configuration".schema_file}. *)
 let print_default_config () : unit =
   let fields =
     match Lsp_lib.Config.to_json Lsp_lib.Config.default with

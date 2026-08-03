@@ -1,5 +1,9 @@
-(** Spec: {!page-"feature-inlay-hints"}.
-    Impl: {!Lsp_lib.Inlay_hints}. *)
+(** Spec: {!page-"feature-inlay-hints-link-direction"}.
+    Impl: {!Lsp_lib.Inlay_hints} (the response), {!Lsp_lib.Link_direction}
+    (the arrows).
+
+    Reference counts used to be part of this response and are now lenses; see
+    {!module-Test_lsp.Test_reference_lens}. *)
 
 open Core
 open Lsp_helper
@@ -26,86 +30,114 @@ let files =
   ; "subdir/nested.md", "# Nested\n\nLink to [[note-a]] from subdirectory.\n"
   ; "empty.md", ""
   ; "note-c.md", "# Gamma\n\nSee [[empty]].\n"
+    (* A note that links into itself: the case the direction arrows exist for.
+       See {!page-"feature-inlay-hints-link-direction"}. *)
+  ; ( "moc.md"
+    , "- [[#alpha-two]]\n\
+       - [[#baz]]\n\n\
+       # Alpha two\n\n\
+       Body ^para\n\n\
+       # Baz\n\n\
+       Back to [[#alpha-two]] and [[#^para]].\n" )
   ]
 ;;
 
-let _index, docs = Lsp_lib.Find_references.For_test.make_vault files
+let index, docs = Lsp_lib.Find_references.For_test.make_vault files
 
 (* Unit tests
    ========== *)
 
-let%expect_test "unit: hints for note-a (has incoming refs)" =
-  let content = List.Assoc.find_exn files ~equal:String.equal "note-a.md" in
-  let hints =
-    Lsp_lib.Inlay_hints.inlay_hints
-      ~docs
-      ~rel_path:"note-a.md"
-      ~content
-      ~range_start_line:0
-      ~range_end_line:20
-      ()
-  in
-  List.iter hints ~f:(fun h -> printf "(%d,%d) %s\n" h.line h.character h.label);
+let show ?config ~rel_path ~range_start_line ~range_end_line () =
+  let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
+  Lsp_lib.Inlay_hints.inlay_hints
+    ?config
+    ~index
+    ~rel_path
+    ~content
+    ~range_start_line
+    ~range_end_line
+    ()
+  |> List.iter ~f:(fun (h : Lsp_lib.Inlay_hints.hint) ->
+    printf "(%d,%d) %s\n" h.line h.character h.label)
+;;
+
+let%expect_test "unit: arrows on a note that links into itself" =
+  show ~rel_path:"moc.md" ~range_start_line:0 ~range_end_line:20 ();
   [%expect
     {|
-    (0,0) 5 refs
-    (2,14) 1 ref
+    (0,16) ↓3
+    (1,10) ↓6
+    (9,22) ↑6
+    (9,37) ↑4
     |}]
 ;;
 
-let%expect_test "unit: hints for note-b (no incoming refs)" =
-  let content = List.Assoc.find_exn files ~equal:String.equal "note-b.md" in
-  let hints =
-    Lsp_lib.Inlay_hints.inlay_hints
-      ~docs
-      ~rel_path:"note-b.md"
-      ~content
-      ~range_start_line:0
-      ~range_end_line:20
-      ()
-  in
-  printf "%d hints\n" (List.length hints);
-  [%expect {| 0 hints |}]
+(* Counts are lenses now, so a note pointed at from all over the vault but
+   linking nowhere inside itself has no hints at all.
+   See {!page-"feature-codelens-reference-counts"}. *)
+let%expect_test "unit: inbound references produce no hints" =
+  show ~rel_path:"note-a.md" ~range_start_line:0 ~range_end_line:20 ();
+  [%expect {| |}]
 ;;
 
 let%expect_test "unit: partial range" =
-  let content = List.Assoc.find_exn files ~equal:String.equal "note-a.md" in
-  let hints =
-    Lsp_lib.Inlay_hints.inlay_hints
-      ~docs
-      ~rel_path:"note-a.md"
-      ~content
-      ~range_start_line:2
-      ~range_end_line:5
-      ()
-  in
-  List.iter hints ~f:(fun h -> printf "(%d,%d) %s\n" h.line h.character h.label);
-  [%expect {| (2,14) 1 ref |}]
+  show ~rel_path:"moc.md" ~range_start_line:0 ~range_end_line:1 ();
+  [%expect {| (0,16) ↓3 |}]
+;;
+
+let%expect_test "unit: linkDirection off" =
+  show
+    ~config:{ Lsp_lib.Config.default with inlay_link_direction = false }
+    ~rel_path:"moc.md"
+    ~range_start_line:0
+    ~range_end_line:20
+    ();
+  [%expect {| |}]
 ;;
 
 (* Server tests
    ============ *)
 
-let%expect_test "server: inlay hints for note-a" =
+(* A note nothing links inward gets an empty response, however many links
+   point at it from elsewhere. *)
+let%expect_test "server: a note with no intra-note links" =
   let s = start_server ~vault_root () in
   did_open s ~rel_path:"note-a.md";
-  Server.inlay_hint s ~rel_path:"note-a.md" ~start_line:0 ~end_line:20
-  |> inlay_hint_positions
-  |> List.iter ~f:(fun (line, char, label) -> printf "(%d,%d) %s\n" line char label);
-  [%expect
-    {|
-    (0,0) 5 refs
-    (2,14) 1 ref
-    |}]
-;;
-
-let%expect_test "server: inlay hints for file with no refs" =
-  let s = start_server ~vault_root () in
-  did_open s ~rel_path:"note-b.md";
   let result =
-    Server.inlay_hint s ~rel_path:"note-b.md" ~start_line:0 ~end_line:20
+    Server.inlay_hint s ~rel_path:"note-a.md" ~start_line:0 ~end_line:20
     |> inlay_hint_positions
   in
   printf "%d hints\n" (List.length result);
   [%expect {| 0 hints |}]
+;;
+
+let%expect_test "server: arrows on an intra-note link list" =
+  let s = start_server ~vault_root () in
+  did_open s ~rel_path:"moc.md";
+  Server.inlay_hint s ~rel_path:"moc.md" ~start_line:0 ~end_line:20
+  |> inlay_hint_positions
+  |> List.iter ~f:(fun (line, char, label) -> printf "(%d,%d) %s\n" line char label);
+  [%expect
+    {|
+    (0,16) ↓3
+    (1,10) ↓6
+    (9,22) ↑6
+    (9,37) ↑4
+    |}]
+;;
+
+(* The switch reaches the server through the configuration, like every other
+   setting.  See {!page-"feature-configuration"}. *)
+let%expect_test "server: linkDirection off" =
+  let s =
+    start_server
+      ~vault_root
+      ~init_options:(`Assoc [ "inlayHints", `Assoc [ "linkDirection", `Bool false ] ])
+      ()
+  in
+  did_open s ~rel_path:"moc.md";
+  Server.inlay_hint s ~rel_path:"moc.md" ~start_line:0 ~end_line:20
+  |> inlay_hint_positions
+  |> List.iter ~f:(fun (line, char, label) -> printf "(%d,%d) %s\n" line char label);
+  [%expect {| |}]
 ;;
