@@ -54,13 +54,15 @@ let headings_in_range
     match a.kind with
     | Anchors.Block | Attr -> None
     | Heading _ ->
-      if a.line < range_start_line || a.line >= range_end_line
+      if a.first_line < range_start_line || a.first_line >= range_end_line
       then None
       else (
         let end_char =
-          if a.line < Array.length lines then String.length lines.(a.line) else 0
+          if a.first_line < Array.length lines
+          then String.length lines.(a.first_line)
+          else 0
         in
-        Some (a.line, end_char, a.id)))
+        Some (a.first_line, end_char, a.id)))
 ;;
 
 (** Every count worth showing for [rel_path], in line order: the whole-note

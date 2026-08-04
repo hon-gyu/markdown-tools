@@ -207,7 +207,7 @@ let%test_module "go_to_definition" =
     let%expect_test "wikilink to attribute id (self-file)" =
       let content = List.Assoc.find_exn files ~equal:String.equal "note-g.md" in
       show ~rel_path:"note-g.md" ~content ~line:4 ~character:9;
-      [%expect {| (((path note-g.md) (line 7) (character 0))) |}]
+      [%expect {| (((path note-g.md) (line 6) (character 0))) |}]
     ;;
 
     (* The target column is UTF-16: in note-i, two CJK chars (3 bytes each) and
@@ -334,10 +334,10 @@ let%test_module "go_to_definition" =
       [%expect
         {|
         wikilink x heading           -> note-m.md:1:0
-        wikilink x block attr        -> note-m.md:6:0
+        wikilink x block attr        -> note-m.md:5:0
         wikilink x inline attr       -> note-m.md:3:4
         markdown link x heading      -> note-m.md:1:0
-        markdown link x block attr   -> note-m.md:6:0
+        markdown link x block attr   -> note-m.md:5:0
         markdown link x inline attr  -> note-m.md:3:4
         |}]
     ;;

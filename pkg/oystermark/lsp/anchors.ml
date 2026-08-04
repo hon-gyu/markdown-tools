@@ -33,28 +33,28 @@ type kind =
     the identifier {e the parser assigned} — an authored [ \{#id\} ] included,
     and deduplicated with [-1], [-2] — not a slug re-derived from the text.
 
-    [line] is where a cursor has to be to be "on" this anchor. For a heading
-    and an attribute that is where the anchor starts; for a caret id it is the
-    {e last} line of the paragraph, which is the line the [ ^id] is written
-    on.
-
-    [spec_line] is the [ \{#id\} ] line above a block, when there is one — see
-    {!spec_line_above} for why it is not simply [line]. *)
+    [first_line] and [last_line] are the anchor's own extent, 0-based. An
+    attribute anchor starts at the [ \{#id\} ] line and runs through the block
+    it attributes; a caret id spans its whole paragraph. *)
 type t =
   { kind : kind
   ; id : string
   ; text : string (** The heading's text; [""] for the other kinds. *)
-  ; line : int (** 0-based, as LSP counts. *)
-  ; spec_line : int option
+  ; first_line : int
+  ; last_line : int (** Inclusive. *)
   ; first_byte : int
   ; last_byte : int (** Exclusive. *)
   }
 [@@deriving sexp, equal, compare]
 
-(** Where the id is actually written — the attribute line when the anchor has
-    one, otherwise the anchor's own line.  This is the line a rename rewrites
-    and a definition jump should land on. *)
-let write_line (a : t) : int = Option.value a.spec_line ~default:a.line
+(** The line the id is {e written} on — where a rename edits and a definition
+    jump should land. For a caret id that is the paragraph's last line, since
+    the [ ^id] closes it; for the others it is where the anchor starts. *)
+let write_line (a : t) : int =
+  match a.kind with
+  | Heading _ | Attr -> a.first_line
+  | Block -> a.last_line
+;;
 
 let of_loc (loc : Cmarkit.Textloc.t option) : (int * int * int * int) option =
   match loc with
@@ -67,53 +67,22 @@ let of_loc (loc : Cmarkit.Textloc.t option) : (int * int * int * int) option =
   | _ -> None
 ;;
 
-(** The line above [line] when the parser reads it as a block-attribute
-    specifier carrying [id].
-
-    This is the one place here that looks at characters, and it exists
-    because the AST cannot answer: {!Cmarkit.Block.Ext_attributes} spans the
-    block it attributes, {e not} the [ \{#id\} ] line written above it, and
-    {!Cmarkit.Attribute.t} carries no metadata. So the location is
-    reconstructed — but the recognition is still the parser's: the candidate
-    is handed to {!Oystermark.Parse.Cb_attribute.of_string} rather than
-    matched against a shape. A line that merely looks like a specifier and is
-    not one produces nothing. *)
-let spec_line_above ~(content : string) ~(id : string) ~(line : int) : int option =
-  if line <= 0
-  then None
-  else (
-    let above = line - 1 in
-    let start = Lsp_util.line_start_byte content ~line:above in
-    let stop =
-      Option.value (String.index_from content start '\n') ~default:(String.length content)
-    in
-    let text = String.strip (String.sub content ~pos:start ~len:(stop - start)) in
-    match String.chop_prefix text ~prefix:"{" with
-    | None -> None
-    | Some rest ->
-      (match String.chop_suffix rest ~suffix:"}" with
-       | None -> None
-       | Some inner ->
-         (match Oystermark.Parse.Cb_attribute.of_string inner with
-          | Some { id = Some found; _ } when String.equal found id -> Some above
-          | _ -> None)))
-;;
-
 (** Every anchor of [doc], in source order.  Anchors the parser could not
     locate are dropped: without a position there is nothing to answer with.
-    [content] is needed only to find the attribute lines the AST does not
-    locate — see {!spec_line_above}. *)
-let of_doc ?(content : string option) (doc : Cmarkit.Doc.t) : t list =
+    An attribute anchor's location covers its [ \{#id\} ] line as well as the
+    block it attributes: the parser spans the specifier, so nothing here has
+    to guess where it was written. *)
+let of_doc (doc : Cmarkit.Doc.t) : t list =
   let headings =
     Oystermark.Vault.Index.extract_headings doc
     |> List.filter_map ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
       of_loc h.loc
-      |> Option.map ~f:(fun (line, _last_line, first_byte, last_byte) ->
+      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
         { kind = Heading h.level
         ; id = h.slug
         ; text = h.text
-        ; line
-        ; spec_line = None
+        ; first_line
+        ; last_line
         ; first_byte
         ; last_byte
         }))
@@ -122,12 +91,12 @@ let of_doc ?(content : string option) (doc : Cmarkit.Doc.t) : t list =
     Oystermark.Vault.Index.extract_block_ids doc
     |> List.filter_map ~f:(fun (b : Oystermark.Vault.Index.block_entry) ->
       of_loc b.loc
-      |> Option.map ~f:(fun (_first_line, line, first_byte, last_byte) ->
+      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
         { kind = Block
         ; id = b.id
         ; text = ""
-        ; line
-        ; spec_line = None
+        ; first_line
+        ; last_line
         ; first_byte
         ; last_byte
         }))
@@ -136,14 +105,12 @@ let of_doc ?(content : string option) (doc : Cmarkit.Doc.t) : t list =
     Oystermark.Vault.Index.extract_attr_ids doc
     |> List.filter_map ~f:(fun (a : Oystermark.Vault.Index.attr_entry) ->
       of_loc a.loc
-      |> Option.map ~f:(fun (line, _last_line, first_byte, last_byte) ->
+      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
         { kind = Attr
         ; id = a.id
         ; text = ""
-        ; line
-        ; spec_line =
-            Option.bind content ~f:(fun content ->
-              spec_line_above ~content ~id:a.id ~line)
+        ; first_line
+        ; last_line
         ; first_byte
         ; last_byte
         }))
@@ -156,7 +123,7 @@ let of_doc ?(content : string option) (doc : Cmarkit.Doc.t) : t list =
       | c -> c)
 ;;
 
-let of_content (content : string) : t list = of_doc ~content (Lsp_util.parse_doc content)
+let of_content (content : string) : t list = of_doc (Lsp_util.parse_doc content)
 
 (** {1 Lookup} *)
 
@@ -176,16 +143,23 @@ let find_heading (ts : t list) ~(slug : string) : t option =
 
 (** The anchor the cursor is on, [None] when the line holds none.
 
-    Line-granular rather than byte-granular on purpose: a caret id names a
-    whole paragraph, and asking the reader to put the cursor exactly on the
-    [ ^id] would be a worse question than "which line are you on".  Headings
-    come first, then caret ids, then attributes — the order fragments resolve
-    in.  See {!page-"feature-find-references".activation}. *)
+    Line-granular rather than byte-granular on purpose: asking the reader to
+    put the cursor exactly on a [ ^id] would be a worse question than "which
+    line are you on".  A heading and an attribute answer anywhere in their own
+    extent — for an attribute that is its [ \{#id\} ] line and the block it
+    attributes, both of which are that anchor.  A caret id answers only on the
+    line it is written on: its paragraph is ordinary prose that happens to end
+    with a marker, not an anchor throughout.
+
+    Headings come first, then caret ids, then attributes — the order fragments
+    resolve in.  See {!page-"feature-find-references".activation}. *)
 let at_line (ts : t list) ~(line : int) : t option =
-  let on_line k =
-    List.find ts ~f:(fun a ->
-      (a.line = line || Option.equal Int.equal a.spec_line (Some line)) && k a.kind)
+  let covers (a : t) =
+    match a.kind with
+    | Heading _ | Attr -> a.first_line <= line && line <= a.last_line
+    | Block -> a.last_line = line
   in
+  let on_line k = List.find ts ~f:(fun a -> covers a && k a.kind) in
   List.find_map
     [ (function
         | Heading _ -> true
@@ -251,11 +225,11 @@ let%test_module "of_content" =
       show "# Alpha\n\nBody ^b1\n\nThe [key]{#kt} span.\n";
       [%expect
         {|
-        ((kind (Heading 1)) (id alpha) (text Alpha) (line 0) (spec_line ())
+        ((kind (Heading 1)) (id alpha) (text Alpha) (first_line 0) (last_line 0)
          (first_byte 0) (last_byte 7))
-        ((kind Block) (id b1) (text "") (line 2) (spec_line ()) (first_byte 9)
+        ((kind Block) (id b1) (text "") (first_line 2) (last_line 2) (first_byte 9)
          (last_byte 17))
-        ((kind Attr) (id kt) (text "") (line 4) (spec_line ()) (first_byte 23)
+        ((kind Attr) (id kt) (text "") (first_line 4) (last_line 4) (first_byte 23)
          (last_byte 33))
         |}]
     ;;
@@ -267,10 +241,10 @@ let%test_module "of_content" =
       show "{#intro}\n# Introduction\n";
       [%expect
         {|
-        ((kind (Heading 1)) (id intro) (text Introduction) (line 1) (spec_line ())
-         (first_byte 9) (last_byte 23))
-        ((kind Attr) (id intro) (text "") (line 1) (spec_line (0)) (first_byte 9)
+        ((kind Attr) (id intro) (text "") (first_line 0) (last_line 1) (first_byte 0)
          (last_byte 23))
+        ((kind (Heading 1)) (id intro) (text Introduction) (first_line 1)
+         (last_line 1) (first_byte 9) (last_byte 23))
         |}]
     ;;
 
@@ -278,9 +252,9 @@ let%test_module "of_content" =
       show "# Same\n\n# Same\n";
       [%expect
         {|
-        ((kind (Heading 1)) (id same) (text Same) (line 0) (spec_line ())
+        ((kind (Heading 1)) (id same) (text Same) (first_line 0) (last_line 0)
          (first_byte 0) (last_byte 6))
-        ((kind (Heading 1)) (id same-1) (text Same) (line 2) (spec_line ())
+        ((kind (Heading 1)) (id same-1) (text Same) (first_line 2) (last_line 2)
          (first_byte 8) (last_byte 14))
         |}]
     ;;
@@ -294,7 +268,7 @@ let%test_module "of_content" =
       show "::: warning\n# Inside\n:::\n";
       [%expect
         {|
-        ((kind (Heading 1)) (id inside) (text Inside) (line 1) (spec_line ())
+        ((kind (Heading 1)) (id inside) (text Inside) (first_line 1) (last_line 1)
          (first_byte 12) (last_byte 20))
         |}]
     ;;
@@ -389,7 +363,7 @@ let%test_module "at_line" =
       show "# Alpha\n\ntext ^b\n" ~line:0;
       [%expect
         {|
-        ((kind (Heading 1)) (id alpha) (text Alpha) (line 0) (spec_line ())
+        ((kind (Heading 1)) (id alpha) (text Alpha) (first_line 0) (last_line 0)
          (first_byte 0) (last_byte 7))
         |}]
     ;;
@@ -400,7 +374,7 @@ let%test_module "at_line" =
       show "one\ntwo ^b\n" ~line:1;
       [%expect
         {|
-        ((kind Block) (id b) (text "") (line 1) (spec_line ()) (first_byte 0)
+        ((kind Block) (id b) (text "") (first_line 0) (last_line 1) (first_byte 0)
          (last_byte 10))
         |}]
     ;;
@@ -414,7 +388,7 @@ let%test_module "at_line" =
       show "The [key]{#kt} span.\n" ~line:0;
       [%expect
         {|
-        ((kind Attr) (id kt) (text "") (line 0) (spec_line ()) (first_byte 4)
+        ((kind Attr) (id kt) (text "") (first_line 0) (last_line 0) (first_byte 4)
          (last_byte 14))
         |}]
     ;;

@@ -97,7 +97,7 @@ let detect_target
        same [doc] the links did, so a [#] or a [ ^id] inside a code block is
        not one, and a heading's identifier is the one the parser assigned
        rather than a slug re-derived here.  See {!page-"feature-index"}. *)
-    Anchors.at_line (Anchors.of_doc ~content doc) ~line
+    Anchors.at_line (Anchors.of_doc doc) ~line
     |> Option.map ~f:(fun (a : Anchors.t) ->
       match a.kind with
       | Anchors.Heading _ -> Path_heading { path = rel_path; slug = a.id }
