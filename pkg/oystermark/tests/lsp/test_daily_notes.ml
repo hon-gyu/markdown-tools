@@ -68,6 +68,7 @@ let%expect_test "actions from a daily note: calendar plus previous/next" =
     Open previous daily note         no edit                "journal/2026-07-10.md" false
     Insert link to today's daily note text-edits             no command
     Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -85,6 +86,7 @@ let%expect_test "previous and next from the middle of the range" =
     Open next daily note             no edit                "journal/2026-07-26.md" false
     Insert link to today's daily note text-edits             no command
     Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -99,6 +101,7 @@ let%expect_test "actions from an ordinary note" =
     Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
     Insert link to today's daily note text-edits             no command
     Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -113,6 +116,7 @@ let%expect_test "nested format" =
     Create tomorrow's daily note     create,text-edits      "journal/2026/07/2026-07-27.md" false true
     Insert link to today's daily note create,text-edits      no command
     Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -146,11 +150,13 @@ let%expect_test "the create edit opens the note without writing to it" =
 ;;
 
 (* An unsupported format disables the feature rather than naming a wrong file.
-   The unrelated quick-fix actions are unaffected. *)
-let%expect_test "unsupported format offers nothing" =
+   The unrelated quick-fix actions are unaffected — the one line below belongs
+   to {!page-"feature-toc"}, not to this family, and its presence is what
+   shows the menu itself still works. *)
+let%expect_test "unsupported format offers nothing of its own" =
   with_tmp_vault ~files (fun vault_root ->
     show_actions ~init_options:(options "YYYY-ww") ~vault_root "idea.md");
-  [%expect {| |}]
+  [%expect {| Insert table of contents         text-edits             no command |}]
 ;;
 
 (* ...and says why.  Offering nothing is also what a correctly configured
@@ -347,5 +353,6 @@ let%expect_test "linkAction: false withdraws the action, and nothing else" =
     Create yesterday's daily note    create,text-edits      "journal/2026-07-25.md" false true
     Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
     Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;

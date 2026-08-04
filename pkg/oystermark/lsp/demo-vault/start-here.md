@@ -31,6 +31,8 @@ and work down the list.
   - [[journal-index]]
 - Command block: commands as clickable lenses in the note
   - [[command-panel]]
+- Table of contents: insert one, and get told when it goes stale
+  - [[toc]]
 
 ## Reading order
 

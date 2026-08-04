@@ -145,12 +145,17 @@ let position_of_textloc ?content ?(encoding = Utf16) (tl : Cmarkit.Textloc.t) : 
 
 (** {1 Parsing} *)
 
-(** Parse [content] into a [Cmarkit.Doc.t] with locations enabled. *)
-let parse_doc (content : string) : Cmarkit.Doc.t =
+(** Parse [content] into a [Cmarkit.Doc.t] with locations enabled.
+
+    [layout] (default [false]) additionally keeps the source's layout nodes.
+    A feature needs it when it reads a block's {e delimiters} rather than its
+    content — the fences of a div carry no location without it. See
+    {!page-"feature-toc".region}. *)
+let parse_doc ?(layout = false) (content : string) : Cmarkit.Doc.t =
   Trace_core.with_span ~__FILE__ ~__LINE__ "parse_doc"
   @@ fun _sp ->
   Trace_core.add_data_to_span _sp [ "content_len", `Int (String.length content) ];
-  Oystermark.Parse.of_string ~locs:true content
+  Oystermark.Parse.of_string ~locs:true ~layout content
 ;;
 
 (* Tests

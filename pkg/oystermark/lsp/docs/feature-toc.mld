@@ -1,0 +1,210 @@
+{0 Table of contents}
+
+Insert a table of contents for the current note, and keep it honest: a TOC
+that has drifted from the headings it describes is reported as a diagnostic
+with a quick fix that rewrites it.
+
+The two halves are one feature because they share one thing — the {e region}:
+a delimited span of the document that the server owns. Without a region an
+inserted TOC is ordinary prose, indistinguishable from a hand-written list,
+and there is nothing to check it against.
+
+{1:region The region}
+
+A TOC region is a {b fenced div} of class [toc] — the vault's own div
+extension, the same one [::: warning] uses:
+
+{@markdown[
+::: toc
+- [Alpha](#alpha)
+  - [Beta](#beta)
+:::
+]}
+
+{2 Why a div and not marker comments}
+
+The other candidate is a pair of HTML comments, which is what [doctoc] and
+[markdown-toc] use. The div wins here because this vault {e has} divs:
+
+{ul
+  {- {b The body stays Markdown.} A div's content is ordinary block content,
+     so the list parses as a list and its links resolve like any other link
+     in the vault. A raw [<div>] would not: CommonMark stops parsing Markdown
+     inside an HTML block until a blank line, so the body's meaning would
+     depend on blank lines the writer has to remember.}
+  {- {b It survives rendering as a div.} [::: toc] becomes an element the
+     stylesheet can reach, which is what a table of contents wants; an HTML
+     comment renders to nothing at all.}
+  {- {b It is syntax the vault already has.} A region is a block the parser
+     understands, not a convention layered on top of comments it ignores.}
+}
+
+The cost, stated plainly: a div is visible in the source and in the output,
+where a comment is invisible in both. That is the trade taken.
+
+{2:recognition Recognition is the parser's}
+
+A region is a {!Cmarkit.Block.Ext_div} whose class is exactly [toc], found by
+folding the parsed document. There is no second reading of the text, and no
+second definition of what a fence is: the same AST that supplies the headings
+supplies the divs.
+
+This is a requirement, not an implementation detail. Recognizing fences by
+matching lines would be a second implementation of div syntax, free to drift
+from the one that decides what the note actually is — and it does drift
+immediately: a [::: toc] inside a fenced code block is not a div, a nested
+[::: toc] is closed before its parent, and both an indented fence and one
+inside a list item are divs that a naive line scan would misplace.
+
+Two consequences worth stating:
+
+{ul
+  {- The document is parsed with layout on
+     ([Oystermark.Parse.of_string ~layout:true]). Without it the div is still
+     a div, but {!Cmarkit.Block.Div.opening_fence} and
+     {!Cmarkit.Block.Div.closing_fence} carry no location, and the feature
+     needs the {e delimiters}, not just the content.}
+  {- There is no {e stray closing fence} case. A lone [:::] closes some other
+     div — [::: warning] and its neighbours — and never reaches this feature.
+     That is the concrete advantage of a class-bearing opening fence over a
+     symmetric comment pair.}
+}
+
+{2 Malformed and nested regions}
+
+{ul
+  {- A [::: toc] the parser closed at the end of the document rather than with
+     a fence — {!Cmarkit.Block.Div.closing_fence} is [None] — is
+     {b unterminated}. It swallows the rest of the note, which is not a span
+     to rewrite silently, so no TOC is checked or updated there and it is
+     reported (see {!diagnostics}).}
+  {- A [::: toc] inside another one is body text, not a region of its own:
+     the fold stops at the outer div. Note what the parser does with
+     [::: toc] / [::: toc] / [:::]: the lone fence closes the {e inner} div,
+     leaving the outer unterminated. A line-based scan would have paired the
+     outer fence with that [:::] and rewritten the wrong span.}
+  {- A document may hold several regions. Each is checked and updated
+     independently, and each holds the {e same} generated TOC — the content is
+     a function of the document's headings, not of where the region sits.}
+}
+
+{1:generation Generated content}
+
+The TOC is generated from the headings of the {e freshly parsed buffer} —
+the same source the link diagnostics use, not the vault index, so that it
+tracks a heading the moment it is typed. See {!page-"feature-document-sync"}.
+
+Each heading becomes one list item:
+
+{@markdown[
+- [heading text](#slug)
+]}
+
+{ul
+  {- The link text is the heading's plain text, as
+     {!Oystermark.Vault.Index.extract_headings} reports it, with [\[], [\]]
+     and the backslash itself backslash-escaped, so that a heading containing
+     brackets still produces a well-formed link.}
+  {- The destination is the heading's {e slug} — the identifier the parser
+     assigned, including its [-1], [-2] deduplication and any explicit
+     [ {#id} ] the author wrote above the heading. A slug is therefore unique
+     within the file, and every generated link resolves: intra-note fragment
+     links reach all three anchor kinds (see
+     {!page-"feature-attribute-anchors"}).}
+  {- Indentation is two spaces per level {e below the shallowest heading
+     present}, so a note whose headings start at [##] is not indented as
+     though an absent [#] were there. Levels skipped in the document are
+     skipped in the indentation too: [##] followed by [####] indents by one
+     step, not two.}
+  {- A heading whose text is empty is omitted: it has nothing to click.}
+  {- Headings that fall {e inside} a TOC region are omitted, so a TOC that
+     happens to sit under a heading is never described by itself.}
+}
+
+A document with no headings generates an empty body — the two fences with
+nothing between them. This is a legitimate up-to-date state, not an error;
+the region is a placeholder that fills in as the note grows.
+
+{1:staleness Staleness}
+
+A region is {b stale} when its body differs from the generated content, after
+normalizing both:
+
+{ol
+  {- trailing whitespace is stripped from every line;}
+  {- leading and trailing blank lines are dropped.}
+}
+
+Normalization is deliberately narrow. Reordered items, an edited link text, a
+removed entry and a heading added since the TOC was written all count as
+differences — that is the point. Only whitespace a formatter might have
+touched is forgiven.
+
+{1:diagnostics Diagnostics}
+
+Published with the rest of the document's diagnostics, on the same cadence
+(see {!page-"feature-diagnostics"}), with [source] ["oystermark"] and
+severity [Warning].
+
+{t
+  | Condition | Range | Message |
+  |-----------|-------|---------|
+  | stale region | the opening fence line | ["table of contents is out of date"] |
+  | unterminated opening fence | that line | ["unterminated table of contents: missing a closing ::: fence"] |
+}
+
+An up-to-date region produces nothing. A document with no [::: toc] produces
+nothing — the feature is inert until the writer asks for it, and a div of any
+other class is not its business.
+
+{1:actions Code actions}
+
+{2 Insert}
+
+Offered as a [Refactor] when the cursor is {e not} inside a TOC region,
+titled [Insert table of contents]. Its edit inserts, at the start of the
+cursor's line, the opening fence, the generated body, and the closing fence,
+each on its own line. The line the cursor was on follows the closing fence
+unchanged; no blank line is added, because a fence line already ends its own
+block.
+
+It is offered even in a note that already has a region elsewhere — a note may
+want a second one — and even when the note has no headings, which inserts an
+empty region.
+
+{2 Update}
+
+Offered as a [QuickFix], marked preferred, when the requested range
+intersects a {e stale} region: [Update table of contents]. Its edit replaces
+the region's body — the span between the two fence lines, fences excluded —
+with the generated content. The fences themselves are never rewritten, so an
+update cannot lose the region.
+
+A region that is already up to date offers nothing: there is no edit to make,
+and an action that does nothing is noise in the menu.
+
+{1:frame Which content is edited}
+
+Both the diagnostic and the update act on the {e buffer}, not on disk. This
+is not the usual choice for a code action (see
+{!page-"feature-document-sync".mixed_frame}), and here it is the necessary
+one: a TOC's whole job is to describe headings that were just typed, and an
+update computed against disk content would replace a span of the buffer with
+text derived from a different version of the file.
+
+{1 Testing obligations}
+
+{ul
+  {- Finding regions: well-formed, unterminated, a div of another class, a
+     nested [::: toc], a bare [:::] inside a region, several regions in one
+     document, an indented fence, and a fence inside a code block (which is
+     {e not} a region — the case that pins recognition to the parser).}
+  {- Generation: nesting, skipped levels, a document starting at [##], an
+     explicit [ {#id} ] anchor, duplicate heading texts (deduped slugs), a
+     heading containing brackets, an empty heading, no headings at all.}
+  {- Staleness: identical body, whitespace-only difference (fresh), added
+     heading, removed heading, reordered items, edited link text.}
+  {- Server level: the diagnostic appears on the opening fence line; the quick fix
+     replaces the body and yields the generated TOC when applied; the insert
+     action is absent inside a region and present outside it.}
+}

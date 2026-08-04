@@ -5,11 +5,13 @@
 
     The two answer the same question — {i which anchor does this link name?} —
     through different code: go-to-definition goes through
-    {!Oystermark.Vault.Resolve} and the vault index, hover falls back to its own
-    scan of the file when resolution stops at the note ({!Lsp_lib.Hover}'s
-    [find_heading_in_content]).  Two implementations of heading identity can
-    drift, and when they do the symptom is a link that previews one section and
-    jumps to another.
+    {!Oystermark.Vault.Resolve} and the vault index, hover falls back to
+    {!Lsp_lib.Anchors} when resolution stops at the note.  Both now take the
+    identity of an anchor from the parser, which is what removed the drift this
+    test was written to catch — hover used to re-derive a slug from the
+    heading's text, so an authored [ \{#id\} ] previewed the wrong section.
+    The test stays because the two paths remain distinct: when they disagree
+    the symptom is a link that previews one section and jumps to another.
 
     The invariant checked here: the first line of the hover body is the line
     go-to-definition lands on, in the file it lands in.  The two are compared

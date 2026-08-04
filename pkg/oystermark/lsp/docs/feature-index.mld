@@ -8,6 +8,17 @@
      feature-level spec awaiting code, not a feature the server has.}
 }
 
+{1 Principles}
+
+{ul
+  {- {b Syntax is recognized by the parser, never re-implemented here}: a
+     feature that needs headings, anchors, divs or fences reads them off the
+     AST ({!Lsp_lib.Anchors}, {!Lsp_lib.Link_collect}), because a second
+     reading of the text is free to drift from the one that decides what the
+     note actually is. The exception is completion, which by definition runs
+     on text that is not yet syntax.}
+}
+
 {1 Active features}
 
 {ul
@@ -18,6 +29,7 @@
   {- {!page-"feature-rename"}}
   {- {!page-"feature-document-outline"}}
   {- {!page-"feature-codeaction-create-unresolved-link"}}
+  {- {!page-"feature-toc"}}
   {- {!page-"feature-daily-notes"}}
   {- {!page-"feature-inlay-hints-link-direction"}}
   {- {!page-"feature-codelens-reference-counts"}}

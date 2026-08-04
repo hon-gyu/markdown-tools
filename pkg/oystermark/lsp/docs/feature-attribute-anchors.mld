@@ -134,7 +134,7 @@ feature's own spec is authoritative; the deltas are:
   | Feature            | Delta                                                              |
   |--------------------|--------------------------------------------------------------------|
   | go-to-definition   | [#id] fragment resolves to an attribute anchor; inline anchors jump to line {e and} character. |
-  | find-references    | cursor on a [{#id}] anchor finds links whose fragment targets that id. |
+  | find-references    | cursor on a [{#id}] anchor — the specifier line or the block it attributes, an inline span included — finds links whose fragment targets that id. |
   | diagnostics        | [#id] with no matching anchor is unresolved; duplicate ids in a file are reported. |
   | completion         | after [#], attribute ids join headings and block IDs in the suggestion set. |
 }

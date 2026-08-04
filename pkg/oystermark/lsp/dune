@@ -7,6 +7,7 @@
   lsp_config
   daily_notes
   command_block
+  anchors
   link_collect
   link_direction
   go_to_definition
@@ -17,6 +18,7 @@
   reference_counts
   rename
   document_outline
+  toc
   create_unresolved_note
   inlay_hints
   server)

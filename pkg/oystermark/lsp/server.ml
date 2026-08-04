@@ -21,6 +21,7 @@ module Feature = struct
   module Hover = Hover
   module Inlay_hints = Inlay_hints
   module Rename = Rename
+  module Toc = Toc
 end
 
 open Linol_lsp.Lsp.Types
@@ -207,6 +208,20 @@ let command_block_diagnostics (content : string) : Diagnostic.t list =
            ()))
 ;;
 
+(** A table of contents that no longer describes the document, and a [::: toc]
+    fence left unclosed.  Unlike the link diagnostics this needs no vault: a
+    TOC describes one file.  See {!page-"feature-toc".diagnostics}. *)
+let toc_diagnostics (content : string) : Diagnostic.t list =
+  Feature.Toc.diagnostics content
+  |> List.map ~f:(fun (d : Feature.Toc.diagnostic) ->
+    Diagnostic.create
+      ~range:(range_of_bytes content ~first_byte:d.first_byte ~last_byte:d.last_byte)
+      ~severity:DiagnosticSeverity.Warning
+      ~source:"oystermark"
+      ~message:(`String d.message)
+      ())
+;;
+
 let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   match t.vault with
   | None -> []
@@ -221,7 +236,7 @@ let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t 
           ~message:(`String d.message)
           ())
     in
-    links @ command_block_diagnostics content
+    links @ command_block_diagnostics content @ toc_diagnostics content
 ;;
 
 let did_open (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
@@ -1013,6 +1028,88 @@ let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list
   | _ -> None
 ;;
 
+(* Table of contents
+   ==================
+
+   See {!page-"feature-toc"}.  Both actions read {!buffer_content} rather than
+   disk: a TOC describes headings that were just typed, and an edit derived
+   from a different version of the file would be applied to this one.  See
+   {!page-"feature-toc".frame}. *)
+
+let toc_workspace_edit
+      (t : t)
+      ~(rel_path : string)
+      ~(content : string)
+      (e : Feature.Toc.edit)
+  : WorkspaceEdit.t
+  =
+  WorkspaceEdit.create
+    ~documentChanges:
+      [ `TextDocumentEdit
+          (TextDocumentEdit.create
+             ~textDocument:
+               (OptionalVersionedTextDocumentIdentifier.create
+                  ~uri:(uri_of_rel_path t rel_path)
+                  ())
+             ~edits:
+               [ `TextEdit
+                   (TextEdit.create
+                      ~range:
+                        (range_of_bytes
+                           content
+                           ~first_byte:e.first_byte
+                           ~last_byte:e.last_byte)
+                      ~newText:e.new_text)
+               ])
+      ]
+    ()
+;;
+
+(** Offered anywhere outside a region — including in a note that already has
+    one elsewhere, and in a note with no headings, which inserts the empty
+    region a growing note fills in. *)
+let toc_insert_actions (t : t) ~(rel_path : string) ~(line : int) : CodeAction.t list =
+  let content = buffer_content t rel_path in
+  match Feature.Toc.insertion content ~line with
+  | None -> []
+  | Some edit ->
+    [ CodeAction.create
+        ~title:"Insert table of contents"
+        ~kind:CodeActionKind.Refactor
+        ~edit:(toc_workspace_edit t ~rel_path ~content edit)
+        ()
+    ]
+;;
+
+(** The quick fix for the staleness diagnostic.  A region that is already up
+    to date offers nothing: there is no edit to make. *)
+let toc_update_actions
+      (t : t)
+      ~(rel_path : string)
+      ~(start_line : int)
+      ~(start_character : int)
+      ~(end_line : int)
+      ~(end_character : int)
+  : CodeAction.t list
+  =
+  let content = buffer_content t rel_path in
+  match
+    Feature.Toc.update
+      content
+      ~first_byte:(byte_of_position content ~line:start_line ~character:start_character)
+      ~last_byte:(byte_of_position content ~line:end_line ~character:end_character)
+  with
+  | None -> []
+  | Some edit ->
+    [ CodeAction.create
+        ~title:"Update table of contents"
+        ~kind:CodeActionKind.QuickFix
+        ~isPreferred:true
+        ~edit:(toc_workspace_edit t ~rel_path ~content edit)
+        ()
+    ]
+;;
+
 let code_action
       (t : t)
       ?(only : CodeActionKind.t list option)
@@ -1050,7 +1147,20 @@ let code_action
               ~line:start_line
               ~character:start_character
           @ insert_command_block_actions t ~rel_path ~line:start_line
+          @ toc_insert_actions t ~rel_path ~line:start_line
         | actions -> actions)
+      else []
+    in
+    let toc_fixes =
+      if requested CodeActionKind.QuickFix
+      then
+        toc_update_actions
+          t
+          ~rel_path
+          ~start_line
+          ~start_character
+          ~end_line
+          ~end_character
       else []
     in
     let quick_fixes =
@@ -1100,7 +1210,7 @@ let code_action
                ()
            ])
     in
-    quick_fixes @ daily)
+    quick_fixes @ toc_fixes @ daily)
 ;;
 
 let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)

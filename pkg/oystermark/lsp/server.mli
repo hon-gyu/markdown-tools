@@ -172,16 +172,21 @@ val rename
 (** Spec: {!page-"feature-document-outline"}. *)
 val document_symbol : t -> rel_path:string -> DocumentSymbol.t list option
 
-(** Spec: {!page-"feature-codeaction-create-unresolved-link"}.  The single
-    action offered creates the missing note and seeds it with a title heading,
-    in one workspace edit so the client applies both atomically.
+(** Code actions from several specs, filtered by [only], the client's
+    requested code-action-kind filter:
 
-    [only] is the client's requested code-action-kind filter; we have nothing
-    but quick fixes to offer, so anything that excludes them yields [].
+    - {!page-"feature-codeaction-create-unresolved-link"} — a [QuickFix] that
+      creates the missing note and seeds it with a title heading, in one
+      workspace edit so the client applies both atomically;
+    - {!page-"feature-toc"} — a [QuickFix] that rewrites a stale table of
+      contents, and a [Refactor] that inserts one at the cursor;
+    - {!page-"feature-daily-notes"} and {!page-"feature-command-block"} —
+      [Refactor] actions that open, create or link a note.
 
     The requested range is resolved against disk content — unsound if
-    [rel_path] has unsaved edits.  See
-    {!page-"feature-document-sync".mixed_frame}. *)
+    [rel_path] has unsaved edits — except for the table-of-contents actions,
+    which read the buffer.  See {!page-"feature-document-sync".mixed_frame}
+    and {!page-"feature-toc".frame}. *)
 val code_action
   :  t
   -> ?only:CodeActionKind.t list
