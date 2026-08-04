@@ -42,43 +42,12 @@ type target =
     Determine what the cursor is on: a link, a heading, or a block ID.
     See {!page-"feature-find-references".activation}. *)
 
-(** Check whether [line_str] ends with a block ID marker [ ^id].
-    Returns [Some id] if so. *)
-let block_id_of_line (line_str : string) : string option =
-  match String.lsplit2 line_str ~on:'^' with
-  | Some (prefix, id) ->
-    let prefix = String.rstrip prefix in
-    if
-      String.length prefix > 0
-      && (not (String.is_empty id))
-      && String.for_all id ~f:(fun c ->
-        Char.is_alphanum c || Char.equal c '-' || Char.equal c '_')
-    then Some id
-    else None
-  | None -> None
-;;
-
-(** Check whether [line_str] is a standalone djot block-attribute line carrying
-    an id, e.g. [ {#aside} ]. Returns [Some id] if so. Inline attributes
-    ([ [text]{#id} ]) are not detected here — cursor-on-inline-anchor is a
-    documented limitation (see {!page-"feature-attribute-anchors"}). *)
-let attr_id_of_line (line_str : string) : string option =
-  let s = String.strip line_str in
-  match String.chop_prefix s ~prefix:"{", String.chop_suffix s ~suffix:"}" with
-  | Some _, Some _ ->
-    let inner = String.sub s ~pos:1 ~len:(String.length s - 2) in
-    (match Oystermark.Parse.Cb_attribute.of_string inner with
-     | Some { id = Some id; _ } -> Some id
-     | _ -> None)
-  | _ -> None
-;;
-
 (** Determine the reference target from cursor position.
 
     Tries in order:
     1. Cursor on a link — resolve it to get the target.
-    2. Cursor on a heading — target is (current file, heading slug).
-    3. Cursor on a block ID line — target is (current file, block id). *)
+    2. Cursor on an anchor's line — target is (current file, that anchor),
+       with the anchor found by {!Anchors}, i.e. by the parser. *)
 let detect_target
       ~(index : Oystermark.Vault.Index.t)
       ~(rel_path : string)
@@ -98,7 +67,9 @@ let detect_target
        (match link_ref.fragment with
         | Some (Oystermark.Vault.Link_ref.Heading hs) ->
           let slug =
-            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
+            String.concat
+              ~sep:"-"
+              (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path; slug })
         | Some (Block_ref bid) -> Some (Path_block { path; block_id = bid })
@@ -110,7 +81,9 @@ let detect_target
        (match link_ref.fragment with
         | Some (Oystermark.Vault.Link_ref.Heading hs) ->
           let slug =
-            String.concat ~sep:"-" (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
+            String.concat
+              ~sep:"-"
+              (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path = rel_path; slug })
         | Some (Block_ref bid) -> Some (Path_block { path = rel_path; block_id = bid })
@@ -120,26 +93,16 @@ let detect_target
      | Curr_attr { id; _ } -> Some (Path_attr { path = rel_path; id })
      | Unresolved -> None)
   | None ->
-    (* Not on a link — check if cursor is on a heading or block ID line. *)
-    let lines = String.split_lines content in
-    (match List.nth lines line with
-     | None -> None
-     | Some line_str ->
-       (match Hover.heading_level_of_line line_str with
-        | Some _ ->
-          let text =
-            String.lstrip line_str ~drop:(fun c -> Char.equal c '#')
-            |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
-          in
-          let slug = Oystermark.Parse.Common.heading_id_of_text text in
-          Some (Path_heading { path = rel_path; slug })
-        | None ->
-          (match block_id_of_line line_str with
-           | Some block_id -> Some (Path_block { path = rel_path; block_id })
-           | None ->
-             (match attr_id_of_line line_str with
-              | Some id -> Some (Path_attr { path = rel_path; id })
-              | None -> None))))
+    (* Not on a link — is the cursor on an anchor?  The anchors come from the
+       same [doc] the links did, so a [#] or a [ ^id] inside a code block is
+       not one, and a heading's identifier is the one the parser assigned
+       rather than a slug re-derived here.  See {!page-"feature-index"}. *)
+    Anchors.at_line (Anchors.of_doc doc) ~line
+    |> Option.map ~f:(fun (a : Anchors.t) ->
+      match a.kind with
+      | Anchors.Heading _ -> Path_heading { path = rel_path; slug = a.id }
+      | Block -> Path_block { path = rel_path; block_id = a.id }
+      | Attr -> Path_attr { path = rel_path; id = a.id })
 ;;
 
 (** {2 Vault scanning}
@@ -334,25 +297,6 @@ let count_heading_refs
 ;;
 
 (** {1:test Test} *)
-
-let%test_module "block_id_of_line" =
-  (module struct
-    let%expect_test "simple block id" =
-      print_s [%sexp (block_id_of_line "some text ^abc123" : string option)];
-      [%expect {| (abc123) |}]
-    ;;
-
-    let%expect_test "no block id" =
-      print_s [%sexp (block_id_of_line "no block id here" : string option)];
-      [%expect {| () |}]
-    ;;
-
-    let%expect_test "caret at start not valid" =
-      print_s [%sexp (block_id_of_line "^notvalid" : string option)];
-      [%expect {| () |}]
-    ;;
-  end)
-;;
 
 (** Helper: build an index and pre-resolved docs for testing. *)
 module For_test = struct

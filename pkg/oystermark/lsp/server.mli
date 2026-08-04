@@ -65,11 +65,14 @@ val rel_path_of_uri : t -> DocumentUri.t -> string
 (** The command name advertised in [executeCommandProvider]. *)
 val daily_note_command : string
 
-(** What running {!daily_note_command} decided: the note to focus, and the edit
-    that creates it first when it does not exist. *)
+(** What running {!daily_note_command} decided: the note to focus, the edit that
+    creates it first when it does not exist, and whether a client that cannot
+    focus should be told where the note is — [false] when the calling action
+    already carried an edit that opens it. *)
 type open_note =
   { uri : DocumentUri.t
   ; create : WorkspaceEdit.t option
+  ; report_unfocused : bool
   }
 
 (** Handle [workspace/executeCommand].  [None] for an unknown command or
@@ -169,16 +172,21 @@ val rename
 (** Spec: {!page-"feature-document-outline"}. *)
 val document_symbol : t -> rel_path:string -> DocumentSymbol.t list option
 
-(** Spec: {!page-"feature-codeaction-create-unresolved-link"}.  The single
-    action offered creates the missing note and seeds it with a title heading,
-    in one workspace edit so the client applies both atomically.
+(** Code actions from several specs, filtered by [only], the client's
+    requested code-action-kind filter:
 
-    [only] is the client's requested code-action-kind filter; we have nothing
-    but quick fixes to offer, so anything that excludes them yields [].
+    - {!page-"feature-codeaction-create-unresolved-link"} — a [QuickFix] that
+      creates the missing note and seeds it with a title heading, in one
+      workspace edit so the client applies both atomically;
+    - {!page-"feature-toc"} — a [QuickFix] that rewrites a stale table of
+      contents, and a [Refactor] that inserts one at the cursor;
+    - {!page-"feature-daily-notes"} and {!page-"feature-command-block"} —
+      [Refactor] actions that open, create or link a note.
 
     The requested range is resolved against disk content — unsound if
-    [rel_path] has unsaved edits.  See
-    {!page-"feature-document-sync".mixed_frame}. *)
+    [rel_path] has unsaved edits — except for the table-of-contents actions,
+    which read the buffer.  See {!page-"feature-document-sync".mixed_frame}
+    and {!page-"feature-toc".frame}. *)
 val code_action
   :  t
   -> ?only:CodeActionKind.t list

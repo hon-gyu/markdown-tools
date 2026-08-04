@@ -165,8 +165,8 @@ let%expect_test "an id written twice is reported at both sites" =
     ~content:"{#twice}\nFirst block.\n\n{#twice}\nSecond block.\n";
   [%expect
     {|
-    ((first_byte 9) (last_byte 20) (message "duplicate anchor id: twice"))
-    ((first_byte 32) (last_byte 44) (message "duplicate anchor id: twice"))
+    ((first_byte 0) (last_byte 20) (message "duplicate anchor id: twice"))
+    ((first_byte 23) (last_byte 44) (message "duplicate anchor id: twice"))
     |}]
 ;;
 
@@ -186,6 +186,6 @@ let%expect_test "a derived slug colliding with a hand-written id is reported" =
   [%expect
     {|
     ((first_byte 0) (last_byte 10) (message "duplicate anchor id: overview"))
-    ((first_byte 25) (last_byte 43) (message "duplicate anchor id: overview"))
+    ((first_byte 13) (last_byte 43) (message "duplicate anchor id: overview"))
     |}]
 ;;

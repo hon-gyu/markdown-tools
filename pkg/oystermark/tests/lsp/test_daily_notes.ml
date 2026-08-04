@@ -25,7 +25,11 @@ let options ?(folder = "journal") (format : string) : Yojson.Safe.t =
   `Assoc [ "dailyNotes", `Assoc [ "format", `String format; "folder", `String folder ] ]
 ;;
 
-(** Every code action offered at [rel_path], as [title -> command arguments]. *)
+(** Every code action offered at [rel_path], as [title -> edit, command
+    arguments].  The edit is what creates a missing note and — being a text
+    edit against it — what opens it on a client with no [window/showDocument];
+    the command that follows only opens.  See
+    {!page-"feature-daily-notes".focus}. *)
 let show_actions ?(init_options = options "YYYY-MM-DD") ~(vault_root : string) rel_path =
   let s = start_server ~init_options ~today ~vault_root () in
   did_open s ~rel_path;
@@ -45,7 +49,12 @@ let show_actions ?(init_options = options "YYYY-MM-DD") ~(vault_root : string) r
         List.map (Option.value c.arguments ~default:[]) ~f:Yojson.Safe.to_string
         |> String.concat ~sep:" "
     in
-    printf "%-32s %s\n" a.title args)
+    let edit =
+      match a.edit with
+      | None -> "no edit"
+      | Some edit -> String.concat ~sep:"," (document_change_kinds edit)
+    in
+    printf "%-32s %-22s %s\n" a.title edit args)
 ;;
 
 let%expect_test "actions from a daily note: calendar plus previous/next" =
@@ -53,12 +62,13 @@ let%expect_test "actions from a daily note: calendar plus previous/next" =
     show_actions ~vault_root "journal/2026-07-26.md");
   [%expect
     {|
-    Open today's daily note          "journal/2026-07-26.md" false
-    Create yesterday's daily note    "journal/2026-07-25.md" true
-    Create tomorrow's daily note     "journal/2026-07-27.md" true
-    Open previous daily note         "journal/2026-07-10.md" false
-    Insert link to today's daily note no command
-    Insert oysterlsp command block   no command
+    Open today's daily note          no edit                "journal/2026-07-26.md" false false
+    Create yesterday's daily note    create,text-edits      "journal/2026-07-25.md" false true
+    Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
+    Open previous daily note         no edit                "journal/2026-07-10.md" false
+    Insert link to today's daily note text-edits             no command
+    Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -69,13 +79,14 @@ let%expect_test "previous and next from the middle of the range" =
     show_actions ~vault_root "journal/2026-07-10.md");
   [%expect
     {|
-    Open today's daily note          "journal/2026-07-26.md" false
-    Create yesterday's daily note    "journal/2026-07-25.md" true
-    Create tomorrow's daily note     "journal/2026-07-27.md" true
-    Open previous daily note         "journal/2026-07-03.md" false
-    Open next daily note             "journal/2026-07-26.md" false
-    Insert link to today's daily note no command
-    Insert oysterlsp command block   no command
+    Open today's daily note          no edit                "journal/2026-07-26.md" false false
+    Create yesterday's daily note    create,text-edits      "journal/2026-07-25.md" false true
+    Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
+    Open previous daily note         no edit                "journal/2026-07-03.md" false
+    Open next daily note             no edit                "journal/2026-07-26.md" false
+    Insert link to today's daily note text-edits             no command
+    Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -85,11 +96,12 @@ let%expect_test "actions from an ordinary note" =
   with_tmp_vault ~files (fun vault_root -> show_actions ~vault_root "idea.md");
   [%expect
     {|
-    Open today's daily note          "journal/2026-07-26.md" false
-    Create yesterday's daily note    "journal/2026-07-25.md" true
-    Create tomorrow's daily note     "journal/2026-07-27.md" true
-    Insert link to today's daily note no command
-    Insert oysterlsp command block   no command
+    Open today's daily note          no edit                "journal/2026-07-26.md" false false
+    Create yesterday's daily note    create,text-edits      "journal/2026-07-25.md" false true
+    Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
+    Insert link to today's daily note text-edits             no command
+    Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
@@ -99,20 +111,52 @@ let%expect_test "nested format" =
     show_actions ~init_options:(options "YYYY/MM/YYYY-MM-DD") ~vault_root "idea.md");
   [%expect
     {|
-    Create today's daily note        "journal/2026/07/2026-07-26.md" true
-    Create yesterday's daily note    "journal/2026/07/2026-07-25.md" true
-    Create tomorrow's daily note     "journal/2026/07/2026-07-27.md" true
-    Insert link to today's daily note no command
-    Insert oysterlsp command block   no command
+    Create today's daily note        create,text-edits      "journal/2026/07/2026-07-26.md" false true
+    Create yesterday's daily note    create,text-edits      "journal/2026/07/2026-07-25.md" false true
+    Create tomorrow's daily note     create,text-edits      "journal/2026/07/2026-07-27.md" false true
+    Insert link to today's daily note create,text-edits      no command
+    Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;
 
+(* The create edit's shape is the whole point of it: a [CreateFile] for the
+   note and a text edit against it that writes {e nothing}.  The empty edit is
+   what makes a client open the new note — a text edit cannot be applied to a
+   document that is not open — while leaving the note as empty as creation
+   through the command left it.  See {!page-"feature-daily-notes".focus}. *)
+let%expect_test "the create edit opens the note without writing to it" =
+  with_tmp_vault ~files (fun vault_root ->
+    let s = start_server ~init_options:(options "YYYY-MM-DD") ~today ~vault_root () in
+    did_open s ~rel_path:"idea.md";
+    Server.code_action
+      s
+      ~rel_path:"idea.md"
+      ~start_line:0
+      ~start_character:0
+      ~end_line:0
+      ~end_character:0
+      ()
+    |> List.filter ~f:(fun (a : CodeAction.t) ->
+      String.equal a.title "Create tomorrow's daily note")
+    |> List.iter ~f:(fun (a : CodeAction.t) ->
+      Option.iter a.edit ~f:(fun edit ->
+        printf
+          "%s: [%s] wrote %s\n"
+          a.title
+          (String.concat ~sep:"; " (document_change_kinds edit))
+          (String.concat ~sep:"|" (inserted_texts edit) |> sprintf "%S"))));
+  [%expect {| Create tomorrow's daily note: [create; text-edits] wrote "" |}]
+;;
+
 (* An unsupported format disables the feature rather than naming a wrong file.
-   The unrelated quick-fix actions are unaffected. *)
-let%expect_test "unsupported format offers nothing" =
+   The unrelated quick-fix actions are unaffected — the one line below belongs
+   to {!page-"feature-toc"}, not to this family, and its presence is what
+   shows the menu itself still works. *)
+let%expect_test "unsupported format offers nothing of its own" =
   with_tmp_vault ~files (fun vault_root ->
     show_actions ~init_options:(options "YYYY-ww") ~vault_root "idea.md");
-  [%expect {| |}]
+  [%expect {| Insert table of contents         text-edits             no command |}]
 ;;
 
 (* ...and says why.  Offering nothing is also what a correctly configured
@@ -149,13 +193,14 @@ let show_command ?(arguments : Yojson.Safe.t list option) ~(vault_root : string)
   let s = start_server ~init_options:(options "YYYY-MM-DD") ~today ~vault_root () in
   match Server.execute_command s ~command ~arguments with
   | None -> print_endline "no intent"
-  | Some { uri; create } ->
+  | Some { uri; create; report_unfocused } ->
     printf
-      "%s create=%s\n"
+      "%s create=%s report_unfocused=%b\n"
       (Server.rel_path_of_uri s uri)
       (match create with
        | None -> "none"
        | Some edit -> String.concat ~sep:"," (document_change_kinds edit))
+      report_unfocused
 ;;
 
 let%expect_test "existing note is opened without an edit" =
@@ -164,7 +209,7 @@ let%expect_test "existing note is opened without an edit" =
       ~vault_root
       ~arguments:[ `String "journal/2026-07-26.md"; `Bool true ]
       Server.daily_note_command);
-  [%expect {| journal/2026-07-26.md create=none |}]
+  [%expect {| journal/2026-07-26.md create=none report_unfocused=true |}]
 ;;
 
 let%expect_test "missing note is created, then opened" =
@@ -173,7 +218,35 @@ let%expect_test "missing note is created, then opened" =
       ~vault_root
       ~arguments:[ `String "journal/2026-07-27.md"; `Bool true ]
       Server.daily_note_command);
-  [%expect {| journal/2026-07-27.md create=create |}]
+  [%expect {| journal/2026-07-27.md create=create report_unfocused=true |}]
+;;
+
+(* The optional third argument is the code action saying "I already handed the
+   client an edit that opens this note".  A failure to focus is then not worth
+   a message — the reader is looking at the note.  Absent, as a lens or a
+   scripting client sends it, the report stands.  See
+   {!page-"feature-daily-notes".focus}. *)
+let%expect_test "an action that opened the note by its edit asks for no report" =
+  with_tmp_vault ~files (fun vault_root ->
+    show_command
+      ~vault_root
+      ~arguments:[ `String "journal/2026-07-27.md"; `Bool false; `Bool true ]
+      Server.daily_note_command;
+    show_command
+      ~vault_root
+      ~arguments:[ `String "journal/2026-07-27.md"; `Bool false; `Bool false ]
+      Server.daily_note_command;
+    (* A fourth argument is not a shape this server knows. *)
+    show_command
+      ~vault_root
+      ~arguments:[ `String "journal/2026-07-27.md"; `Bool false; `Bool true; `Bool true ]
+      Server.daily_note_command);
+  [%expect
+    {|
+    journal/2026-07-27.md create=none report_unfocused=false
+    journal/2026-07-27.md create=none report_unfocused=true
+    no intent
+    |}]
 ;;
 
 (* An editor may send anything; neither an unknown command nor unusable
@@ -276,9 +349,10 @@ let%expect_test "linkAction: false withdraws the action, and nothing else" =
   [%expect
     {|
     -- the rest of the menu:
-    Open today's daily note          "journal/2026-07-26.md" false
-    Create yesterday's daily note    "journal/2026-07-25.md" true
-    Create tomorrow's daily note     "journal/2026-07-27.md" true
-    Insert oysterlsp command block   no command
+    Open today's daily note          no edit                "journal/2026-07-26.md" false false
+    Create yesterday's daily note    create,text-edits      "journal/2026-07-25.md" false true
+    Create tomorrow's daily note     create,text-edits      "journal/2026-07-27.md" false true
+    Insert oysterlsp command block   text-edits             no command
+    Insert table of contents         text-edits             no command
     |}]
 ;;

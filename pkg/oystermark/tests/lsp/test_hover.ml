@@ -67,8 +67,7 @@ let%expect_test "server: hover on heading fragment" =
      \n\
      \n## Section One\
      \n\
-     \nBody text ^block1\
-     \n")
+     \nBody text ^block1")
     |}]
 ;;
 
@@ -146,10 +145,11 @@ let%expect_test "trace: hover spans for heading fragment" =
   print_endline (Trace_collect.format spans);
   [%expect
     {|
-    hover 5us content_bytes=52 rel_path=note-b.md line=- character=-
+    hover 6us content_bytes=51 rel_path=note-b.md line=- character=-
     ├── byte_offset_of_position 1us line=- character=- offset=42
     ├── parse_doc 2us content_len=144
     ├── collect_links 3us num_links=5
-    └── find_link_ref_at_offset 4us offset=42 found=true
+    ├── find_link_ref_at_offset 4us offset=42 found=true
+    └── parse_doc 5us content_len=74
     |}]
 ;;

@@ -72,8 +72,12 @@ attribute whose {!Oystermark.Vault.Index}-visible id is present (i.e.
 Each anchor records a [Cmarkit.Textloc] from the node it annotates:
 
 {ul
-  {- Block and heading anchors record a {b line} (as the existing heading
-     and block-ID anchors do).}
+  {- A block anchor records the {b [ \{#id\} ] line} it was written on,
+     through the block it attributes: {!Cmarkit.Block.Ext_attributes} spans
+     the specifier and its block, so navigation lands on the line the author
+     wrote the id on rather than on the block below it.}
+  {- Heading anchors record a {b line}, as the existing heading and block-ID
+     anchors do.}
   {- Inline anchors record a {b line and character}, because the
      annotated span has a column-precise [textloc]. Navigation to an
      inline anchor may therefore land on a character offset, not only the
@@ -134,7 +138,7 @@ feature's own spec is authoritative; the deltas are:
   | Feature            | Delta                                                              |
   |--------------------|--------------------------------------------------------------------|
   | go-to-definition   | [#id] fragment resolves to an attribute anchor; inline anchors jump to line {e and} character. |
-  | find-references    | cursor on a [{#id}] anchor finds links whose fragment targets that id. |
+  | find-references    | cursor on a [{#id}] anchor — the specifier line or the block it attributes, an inline span included — finds links whose fragment targets that id. |
   | diagnostics        | [#id] with no matching anchor is unresolved; duplicate ids in a file are reported. |
   | completion         | after [#], attribute ids join headings and block IDs in the suggestion set. |
 }

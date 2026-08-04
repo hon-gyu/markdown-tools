@@ -185,6 +185,19 @@ let apply_edits (content : string) (edits : Lsp_lib.Rename.edit list) : string =
   |> fst
 ;;
 
+(** Every text edit a workspace edit carries, as [(range, newText)].  Unlike
+    {!inserted_texts} this keeps the range, which is what a test of an edit
+    that {e replaces} a span has to assert on. *)
+let text_edits (edit : WorkspaceEdit.t) : (Range.t * string) list =
+  Option.value edit.documentChanges ~default:[]
+  |> List.concat_map ~f:(function
+    | `TextDocumentEdit (e : TextDocumentEdit.t) ->
+      List.map e.edits ~f:(function
+        | `TextEdit (t : TextEdit.t) -> t.range, t.newText
+        | `AnnotatedTextEdit (t : AnnotatedTextEdit.t) -> t.range, t.newText)
+    | `CreateFile _ | `RenameFile _ | `DeleteFile _ -> [])
+;;
+
 (** Every [newText] a workspace edit would insert, in order. *)
 let inserted_texts (edit : WorkspaceEdit.t) : string list =
   Option.value edit.documentChanges ~default:[]

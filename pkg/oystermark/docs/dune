@@ -66,6 +66,7 @@
   feature-index
   feature-inlay-hints-link-direction
   feature-rename
+  feature-toc
   feature-utf16-positions
   cmarkit-label-resolution
   cmarkit-mapper-api

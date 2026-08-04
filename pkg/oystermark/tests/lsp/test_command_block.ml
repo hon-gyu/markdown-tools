@@ -180,6 +180,7 @@ let%expect_test "the usual actions elsewhere in the note" =
     Create tomorrow's daily note
     Open previous daily note
     Insert link to today's daily note
+    Insert table of contents
     |}]
 ;;
 
@@ -193,6 +194,7 @@ let%expect_test "no action for an inapplicable command" =
     Create yesterday's daily note
     Create tomorrow's daily note
     Insert link to today's daily note
+    Insert table of contents
     |}]
 ;;
 
@@ -335,7 +337,7 @@ let%expect_test "no commands, no block" =
          ~end_character:0
          ()
        |> List.iter ~f:(fun (a : CodeAction.t) -> printf "%s\n" a.title));
-  [%expect {| |}]
+  [%expect {| Insert table of contents |}]
 ;;
 
 (** {1 Go to definition}

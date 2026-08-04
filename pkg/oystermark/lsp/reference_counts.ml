@@ -35,29 +35,34 @@ type entry =
 
 let count (e : entry) : int = List.length e.refs
 
-(** Find all headings in [content] within the line range [\[range_start_line,
-    range_end_line)].  Returns [(line, end_character, slug)] triples. *)
+(** The headings of [content] within the line range [\[range_start_line,
+    range_end_line)], as [(line, end_character, slug)] triples.
+
+    Both which lines are headings and what each one's slug is come from
+    {!Anchors}, i.e. from the parser: a [#] inside a fenced code block gets no
+    lens, and a heading with an authored [ \{#id\} ] is counted under the id
+    references actually name.  See {!page-"feature-index"}. *)
 let headings_in_range
       ~(content : string)
       ~(range_start_line : int)
       ~(range_end_line : int)
   : (int * int * string) list
   =
-  let lines = String.split_lines content in
-  List.filter_mapi lines ~f:(fun i line_str ->
-    if i < range_start_line || i >= range_end_line
-    then None
-    else (
-      match Hover.heading_level_of_line line_str with
-      | None -> None
-      | Some _ ->
-        let text =
-          String.lstrip line_str ~drop:(fun c -> Char.equal c '#')
-          |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
+  let lines = Array.of_list (String.split_lines content) in
+  Anchors.of_content content
+  |> List.filter_map ~f:(fun (a : Anchors.t) ->
+    match a.kind with
+    | Anchors.Block | Attr -> None
+    | Heading _ ->
+      if a.first_line < range_start_line || a.first_line >= range_end_line
+      then None
+      else (
+        let end_char =
+          if a.first_line < Array.length lines
+          then String.length lines.(a.first_line)
+          else 0
         in
-        let slug = Oystermark.Parse.Common.heading_id_of_text text in
-        let end_char = String.length line_str in
-        Some (i, end_char, slug)))
+        Some (a.first_line, end_char, a.id)))
 ;;
 
 (** Every count worth showing for [rel_path], in line order: the whole-note

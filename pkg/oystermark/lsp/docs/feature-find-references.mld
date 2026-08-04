@@ -18,12 +18,21 @@ Two activation modes:
 {ol
   {- {b Cursor on a link}: find all other references to the same
      resolved target.}
-  {- {b Cursor on a heading or block ID}: find all links that target
-     this specific heading/block in this file.}
+  {- {b Cursor on an anchor's line}: find all links that target that
+     specific anchor in this file. All three anchor kinds count — heading,
+     caret id, attribute id — including an inline [ [text]\{#id\} ].}
 }
 
-If the cursor is not on a link, heading, or block ID, no results are
-returned.
+The anchors come from {!Lsp_lib.Anchors}, i.e. from the parser: a [#] or a
+[ ^id] inside a fenced code block is not an anchor, and a heading's identity
+is the id the parser assigned rather than a slug re-derived from its text.
+See {!page-"feature-index"}.
+
+A caret id is reached from the line it is {e written} on — the paragraph's
+last line — and a block attribute from either the [ \{#id\} ] line or the
+block it attributes.
+
+If the cursor is on neither a link nor an anchor, no results are returned.
 
 {1 Collection}
 

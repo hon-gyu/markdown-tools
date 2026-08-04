@@ -149,25 +149,34 @@ let target_path = function
   | Path_attr { path; _ } -> path
 ;;
 
+(** The line [target]'s definition is written on, found by {!Anchors} — that
+    is, by the parser.  It answers with the id the parser assigned, so a
+    heading carrying an authored [ \{#id\} ] is found, and a [#] or a [ ^id]
+    inside a fenced code block is not mistaken for one.  See
+    {!page-"feature-index"}.
+
+    {!definition_edit} then works out the column {e within} that line.  That
+    arithmetic stays textual, but it is no longer recognition: the line it
+    runs on is a node the parser identified. *)
 let find_definition_line content target =
-  String.split_lines content
-  |> List.find_mapi ~f:(fun line text ->
-    let found =
-      match target with
-      | Find_references.Path_heading { slug; _ } ->
-        Hover.heading_level_of_line text
-        |> Option.exists ~f:(fun _ ->
-          let heading =
-            String.lstrip text ~drop:(Char.equal '#')
-            |> String.lstrip ~drop:(Char.equal ' ')
-          in
-          String.equal (Oystermark.Parse.Common.heading_id_of_text heading) slug)
-      | Path_block { block_id; _ } ->
-        Option.equal String.equal (Find_references.block_id_of_line text) (Some block_id)
-      | Path_attr { id; _ } -> Option.is_some (attr_id_offset ~id text)
-      | Path_only _ -> false
-    in
-    Option.some_if found line)
+  let anchors = Anchors.of_content content in
+  let line ~id ~is_kind =
+    Anchors.find anchors ~id ~is_kind |> Option.map ~f:Anchors.write_line
+  in
+  match target with
+  | Find_references.Path_heading { slug; _ } ->
+    line ~id:slug ~is_kind:(function
+      | Anchors.Heading _ -> true
+      | Block | Attr -> false)
+  | Path_block { block_id; _ } ->
+    line ~id:block_id ~is_kind:(function
+      | Anchors.Block -> true
+      | Heading _ | Attr -> false)
+  | Path_attr { id; _ } ->
+    line ~id ~is_kind:(function
+      | Anchors.Attr -> true
+      | Heading _ | Block -> false)
+  | Path_only _ -> None
 ;;
 
 (** Bounds of a link's destination within [slice] (the link's full source text):

@@ -270,81 +270,28 @@ let truncate ~max_chars (s : string) : string =
     shown ^ "\n\n" ^ notice)
 ;;
 
-(** Extract the section of [content] starting at [heading_line] (0-based)
-    up to but not including the next heading of equal or higher level.
+(** The section headed by the heading whose identifier is [slug]: the heading
+    itself and everything up to the next heading of equal or higher level.
+    [None] when no such heading exists.
 
-    [heading_level] is the ATX level (1–6) of the anchor heading.
-    Returns the raw lines of the section joined by newlines. *)
-let extract_section ~(heading_line : int) ~(heading_level : int) (content : string)
-  : string
-  =
-  let lines = String.split_lines content in
-  let lines_arr = Array.of_list lines in
-  let n = Array.length lines_arr in
-  (* Find where the section ends: next heading at same or higher level. *)
-  let end_line =
-    let rec find i =
-      if i >= n
-      then n
-      else (
-        let line = lines_arr.(i) in
-        (* Count leading '#' characters. *)
-        let hashes =
-          String.lfindi line ~f:(fun _ c -> not (Char.equal c '#'))
-          |> Option.value ~default:(String.length line)
-        in
-        if
-          hashes >= 1
-          && hashes <= heading_level
-          && String.length line > hashes
-          && Char.equal line.[hashes] ' '
-        then i
-        else find (i + 1))
-    in
-    find (heading_line + 1)
-  in
-  Array.sub lines_arr ~pos:heading_line ~len:(end_line - heading_line)
-  |> Array.to_list
-  |> String.concat ~sep:"\n"
+    Both the heading and the section's end come from
+    {!Anchors} — that is, from the parser.  A [#] inside a fenced code block
+    does not end a section, and a heading carrying an authored [ \{#id\} ] is
+    found by the id its author wrote.  See {!page-"feature-hover"}. *)
+let heading_section ~(slug : string) (content : string) : string option =
+  let anchors = Anchors.of_content content in
+  Anchors.find_heading anchors ~slug |> Option.map ~f:(Anchors.section anchors content)
 ;;
 
-(** Extract the paragraph that contains [block_id] from [content].
-    Returns the paragraph text (without the trailing [^id] marker)
-    or [None] if not found. *)
+(** The paragraph carrying the caret id [block_id], or [None] when the note
+    has no such id.  Located by {!Anchors}, so a [ ^id] written inside a code
+    block is not one.  See {!page-"feature-hover"}. *)
 let extract_block ~(block_id : string) (content : string) : string option =
-  (* A block ID appears as " ^id" at the end of a paragraph's last line. *)
-  let marker = " ^" ^ block_id in
-  let lines = String.split_lines content in
-  (* Walk backwards through lines to find the marker, then collect the
-     paragraph (consecutive non-blank lines ending at the marker line). *)
-  let lines_arr = Array.of_list lines in
-  let n = Array.length lines_arr in
-  let find_marker () =
-    let rec loop i =
-      if i >= n
-      then None
-      else if String.is_suffix lines_arr.(i) ~suffix:marker
-      then Some i
-      else loop (i + 1)
-    in
-    loop 0
-  in
-  match find_marker () with
-  | None -> None
-  | Some marker_line ->
-    (* Walk backwards to find the start of the paragraph. *)
-    let start =
-      let rec loop i =
-        if i < 0 || String.is_empty (String.strip lines_arr.(i))
-        then i + 1
-        else loop (i - 1)
-      in
-      loop (marker_line - 1)
-    in
-    let para_lines =
-      Array.sub lines_arr ~pos:start ~len:(marker_line - start + 1) |> Array.to_list
-    in
-    Some (String.concat ~sep:"\n" para_lines)
+  let anchors = Anchors.of_content content in
+  Anchors.find anchors ~id:block_id ~is_kind:(function
+    | Anchors.Block -> true
+    | Heading _ | Attr -> false)
+  |> Option.map ~f:(Anchors.block_text content)
 ;;
 
 (** Extract the block carrying attribute id [{#id}] from [content] and render it
@@ -356,42 +303,6 @@ let extract_attr_block ~(id : string) (content : string) : string option =
   Oystermark.Parse.Extract.get_block_by_attr_id [ Cmarkit.Doc.block doc ] id
   |> Option.map ~f:(fun b ->
     Oystermark.Parse.commonmark_of_doc (Cmarkit.Doc.make b) |> String.strip)
-;;
-
-(** {2 Heading-level parsing} *)
-
-(** Return the ATX heading level (1–6) of [line], or [None]. *)
-let heading_level_of_line (line : string) : int option =
-  let hashes =
-    String.lfindi line ~f:(fun _ c -> not (Char.equal c '#'))
-    |> Option.value ~default:(String.length line)
-  in
-  if
-    hashes >= 1
-    && hashes <= 6
-    && String.length line > hashes
-    && Char.equal line.[hashes] ' '
-  then Some hashes
-  else None
-;;
-
-(** Find the 0-based line number and ATX level of the heading whose slug
-    matches [slug] in [content].  Returns [None] if not found. *)
-let find_heading_in_content ~(slug : string) (content : string) : (int * int) option =
-  let lines = String.split_lines content in
-  List.findi lines ~f:(fun _i line ->
-    match heading_level_of_line line with
-    | None -> false
-    | Some _ ->
-      (* Strip leading '#'s and space, then slugify. *)
-      let text =
-        String.lstrip line ~drop:(fun c -> Char.equal c '#')
-        |> String.lstrip ~drop:(fun c -> Char.equal c ' ')
-      in
-      String.equal (Oystermark.Parse.Common.heading_id_of_text text) slug)
-  |> Option.map ~f:(fun (i, line) ->
-    let level = heading_level_of_line line |> Option.value_exn in
-    i, level)
 ;;
 
 (** {2 Formatting} *)
@@ -476,10 +387,7 @@ let hover
                    ~sep:"-"
                    (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
                in
-               (match find_heading_in_content ~slug file_content with
-                | Some (hline, hlevel) ->
-                  extract_section ~heading_line:hline ~heading_level:hlevel file_content
-                | None -> file_content)
+               Option.value (heading_section ~slug file_content) ~default:file_content
              | Some (Block_ref bid) ->
                (match extract_block ~block_id:bid file_content with
                 | Some p -> p
@@ -492,10 +400,7 @@ let hover
          | None -> None
          | Some file_content ->
            let body =
-             match find_heading_in_content ~slug file_content with
-             | Some (hline, hlevel) ->
-               extract_section ~heading_line:hline ~heading_level:hlevel file_content
-             | None -> file_content
+             Option.value (heading_section ~slug file_content) ~default:file_content
            in
            Some (path, Text body))
       | Block { path; block_id } ->
@@ -525,10 +430,7 @@ let hover
                 ~sep:"-"
                 (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
             in
-            (match find_heading_in_content ~slug content with
-             | Some (hline, hlevel) ->
-               extract_section ~heading_line:hline ~heading_level:hlevel content
-             | None -> content)
+            Option.value (heading_section ~slug content) ~default:content
           | Some (Block_ref bid) ->
             (match extract_block ~block_id:bid content with
              | Some p -> p
@@ -537,12 +439,7 @@ let hover
         in
         Some (rel_path, Text body)
       | Curr_heading { slug; _ } ->
-        let body =
-          match find_heading_in_content ~slug content with
-          | Some (hline, hlevel) ->
-            extract_section ~heading_line:hline ~heading_level:hlevel content
-          | None -> content
-        in
+        let body = Option.value (heading_section ~slug content) ~default:content in
         Some (rel_path, Text body)
       | Curr_block { block_id } ->
         let body =
@@ -632,14 +529,18 @@ let%test_module "truncate" =
   end)
 ;;
 
-let%test_module "extract_section" =
+let%test_module "heading_section" =
   (module struct
     let content =
       "# Title\n\nIntro.\n\n## Section One\n\nBody one.\n\n## Section Two\n\nBody two.\n"
     ;;
 
+    let show ~slug content =
+      print_string (Option.value (heading_section ~slug content) ~default:"<not found>")
+    ;;
+
     let%expect_test "extracts first section" =
-      print_string (extract_section ~heading_line:4 ~heading_level:2 content);
+      show ~slug:"section-one" content;
       [%expect
         {|
         ## Section One
@@ -649,7 +550,7 @@ let%test_module "extract_section" =
     ;;
 
     let%expect_test "top-level heading stops at next h1" =
-      print_string (extract_section ~heading_line:0 ~heading_level:1 content);
+      show ~slug:"title" content;
       [%expect
         {|
         # Title

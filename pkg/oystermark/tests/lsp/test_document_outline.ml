@@ -38,7 +38,7 @@ let%expect_test "heading hierarchy with block and attribute anchors" =
   |> List.iter ~f:(show 0);
   [%expect
     {|
-    #preamble [12-19] select[12-19]
+    #preamble [0-19] select[0-19]
     Title [21-103] select[21-28]
       ^root [30-45] select[30-45]
       Child [47-103] select[47-55]

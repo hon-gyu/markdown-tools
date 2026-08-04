@@ -264,8 +264,8 @@ Plain paragraph, no id.
     Printf.printf "%s @ line %s\n" a.id line);
   [%expect
     {|
-    intro @ line 3
+    intro @ line 2
     key-term @ line 5
-    aside @ line 8
+    aside @ line 7
     |}]
 ;;
