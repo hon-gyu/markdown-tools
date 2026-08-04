@@ -120,9 +120,10 @@ uv run --no-project pkg/oystermark/lsp/scripts/smoke.py
 
 It opens a real stdio session against a bare vault (no `oysterlsp.json`, no
 `initializationOptions`) and asserts the effects an editor observes: the
-advertised capabilities, the code actions offered, that a command reaches its
-handler and produces `workspace/applyEdit` plus `window/showDocument`, and that
-a command-block line gets a lens carrying a command. Pass a path to check
+advertised capabilities, the code actions offered, that a creating action
+carries the edit that opens its note, that a command reaches its handler and
+produces `window/showDocument` — plus `workspace/applyEdit` when it is the one
+asked to create — and that a command-block line gets a lens carrying a command. Pass a path to check
 another binary — `… scripts/smoke.py $(which oystermark-lsp)` verifies what is
 installed, which is what your editor actually runs.
 

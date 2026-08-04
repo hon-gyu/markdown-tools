@@ -158,11 +158,11 @@ One further action, [Insert link to today's daily note], writes [ [[2026-07-26]]
 at the cursor and creates the note if it is missing, in a single edit so the
 link resolves the moment it lands.
 
-It is the only member of the family that reaches its note {e without}
-[window/showDocument]: a [WorkspaceEdit] is all it asks for, and the link it
-leaves behind is followed by go-to-definition. Where focusing is unavailable
-(see {!focus}) this is the working route to today's note, at the cost of
-navigation that writes to the buffer — the link stays until it is deleted,
+It reaches its note {e without} [window/showDocument]: a [WorkspaceEdit] is all
+it asks for, and the link it leaves behind is followed by go-to-definition.
+Where focusing is unavailable (see {!focus}) this is the working route to a
+today's note that {e already exists} — the creating actions get there by their
+own edit — at the cost of navigation that writes to the buffer — the link stays until it is deleted,
 which is why it is offered as a link rather than performed as a hidden step of
 the other actions.
 
@@ -182,23 +182,39 @@ the writing habit that is noise, so it can be turned off on its own:
 
 Turning it off leaves the rest of the family intact; it is not a way to disable
 daily notes, which is what an unsupported [format] does. Where
-[window/showDocument] is missing, though, this action is the only route to the
-note, so switching it off there gives up reaching daily notes altogether — a
-trade worth making knowingly.
+[window/showDocument] is missing, though, this action is the only route to a
+note that already exists, so switching it off there leaves creation as the
+one way in — a trade worth making knowingly.
 
 {2 Mechanism}
 
-A code action cannot itself focus an editor, so each action carries a command,
-[oystermark.dailyNote.open], whose argument is the resolved vault-relative path
-and a flag saying whether it must be created. Executing it:
+An action that must create its note carries the [WorkspaceEdit] that does so:
+a [CreateFile] — parent folders included, never overwriting an existing file
+([ignoreIfExists]) — followed by a [TextDocumentEdit] against the new note
+whose one edit inserts the empty string. The created note is therefore empty,
+as it has always been; the empty edit is there because a client cannot apply a
+text edit to a document without opening it, which is how creation reaches a
+{e document} rather than only the disk. See {!focus}.
+
+A code action cannot itself focus an editor, so each action {e also} carries a
+command, [oystermark.dailyNote.open], whose argument is the resolved
+vault-relative path and a flag saying whether it must be created. Executing it:
 
 {ol
-  {- creates the note — parent folders included — through a
-     [workspace/applyEdit] carrying a [CreateFile] edit, when the flag is set
-     and nothing is there. An existing file is never overwritten
-     ([ignoreIfExists]);}
+  {- creates the note through a [workspace/applyEdit] carrying a [CreateFile]
+     edit, when the flag is set and nothing is there;}
   {- requests [window/showDocument] with [takeFocus] to open it.}
 }
+
+The code actions pass the flag as [false] — their own edit has already created
+the note by the time the command runs, and a second [CreateFile] would race the
+buffer the client just opened, which may be unsaved and so absent from disk.
+They add a third, optional argument instead: [true] when the action carried a
+create edit, which tells the command that the note is already in front of the
+reader and that failing to focus it deserves no message. Omitted, as a
+{{!page-"feature-command-block"}command-block lens} or a scripting client sends
+it, the message stands — and a lens has no edit to carry in the first place, a
+[CodeLens] being a command and nothing else, so there the command still creates.
 
 The server therefore advertises [executeCommandProvider] for that command.
 
@@ -217,17 +233,29 @@ the path through [window/showMessage], because a command that finishes in
 silence is indistinguishable from one that failed. The [executeCommand] result
 is the path as well, for a client scripting against the server.
 
-The consequence is worth stating plainly: where the capability is missing, a
-command that only opens — [daily/today] on a note that already exists — does
-nothing visible but the message, while a command that {e creates} still puts a
-file on disk, since [workspace/applyEdit] is the better-supported half. Editors
-differ here and some in current use are on the wrong side of it (Zed, for one,
-neither advertises nor implements the request). Nothing in this server can make
-a client focus a document; closing that gap is client-side work.
+The consequence is worth stating plainly, and it now differs between creating
+and opening. Editors differ on the capability and some in current use are on
+the wrong side of it (Zed, for one, neither advertises nor implements the
+request). There:
+
+{ul
+  {- an action that {b creates} still reaches the note, because
+     [workspace/applyEdit] is the better-supported half and the edit ends in a
+     text edit against the new file — the client has to open it to apply it,
+     and shows the reader an empty buffer of the note;}
+  {- an action that only {b opens} — [Open today's daily note] on a note that
+     already exists — does nothing visible but the message. There is no edit to
+     make for a file that is already as it should be, and no other lever.}
+}
+
+So the gap has narrowed to opening, and closing {e that} is client-side work:
+nothing in this server can make a client focus a document it was not asked to
+change.
 
 What the server {e can} do is offer a route that needs no such capability:
 {!link} writes a wikilink to the note, and go-to-definition follows it. That is
-the supported answer for these clients, and the reason the action exists.
+the supported answer for these clients when the note already exists, and the
+reason the action exists.
 
 {1 Testing}
 
@@ -241,6 +269,11 @@ the supported answer for these clients, and the reason the action exists.
      previous/next skip gaps, that they are unavailable off a daily note and at
      the ends of the range, and that the calendar actions resolve to the right
      path whether or not it exists.}
+  {- Creation: an action for a missing note carries a [CreateFile] and a text
+     edit that writes the empty string, and asks its command not to report a
+     failure to focus; an action for a note that exists carries no edit and
+     does ask. The command's own third argument is exercised both ways, and a
+     fourth is refused.}
 }
 
 Property-based testing fits the round-trip obligation and is preferred there.
@@ -255,8 +288,8 @@ Property-based testing fits the round-trip obligation and is preferred there.
   {- {b English month and weekday names only}.}
   {- {b No Obsidian config}: a vault configured only through Obsidian's settings
      needs its [format] restated in [initializationOptions].}
-  {- {b Opening depends on the client} (see {!focus}): where
+  {- {b Opening an existing note depends on the client} (see {!focus}): where
      [window/showDocument] is unsupported, the command reports the path instead
-     of focusing it.}
+     of focusing it. Creation is unaffected — its edit opens the new note.}
   {- Positions and edits follow {!page-"feature-utf16-positions"}.}
 }

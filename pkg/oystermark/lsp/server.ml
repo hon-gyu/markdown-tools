@@ -451,6 +451,11 @@ let daily_note_command = "oystermark.dailyNote.open"
 type open_note =
   { uri : DocumentUri.t
   ; create : WorkspaceEdit.t option (** [None] when the note already exists. *)
+  ; report_unfocused : bool
+    (** Whether a client that cannot focus should be told where the note
+            is.  [false] when the caller already gave the client an edit that
+            opens it, so the reader has the note in front of them and the
+            message would only contradict what they can see. *)
   }
 
 (** Whether a vault-relative path exists on disk.  Read from disk rather than
@@ -478,18 +483,58 @@ let daily_table (t : t) : (Daily_notes.Table.t, string) Result.t =
        Ok table)
 ;;
 
+(** The edit that brings a missing note into existence, carried by the code
+    action itself rather than deferred to {!daily_note_command}.
+
+    A [CreateFile] on its own leaves a client with nothing to show: the file
+    lands on disk and no editor opens, which is why creation used to end in the
+    same silence as opening where [window/showDocument] is missing.  A
+    [TextDocumentEdit] cannot be applied to a document without opening it, so
+    the empty text edit below — it writes nothing, the created note stays empty
+    — is what puts the note in front of the reader on such a client.  Focusing
+    is still the client's (see {!page-"feature-daily-notes".focus}); this only
+    makes creation reach a document by the better-supported half. *)
+let create_note_edit (uri : DocumentUri.t) : WorkspaceEdit.t =
+  let zero = Position.create ~line:0 ~character:0 in
+  WorkspaceEdit.create
+    ~documentChanges:
+      [ `CreateFile
+          (CreateFile.create
+             ~uri
+             ~options:(CreateFileOptions.create ~ignoreIfExists:true ~overwrite:false ())
+             ())
+      ; `TextDocumentEdit
+          (TextDocumentEdit.create
+             ~textDocument:(OptionalVersionedTextDocumentIdentifier.create ~uri ())
+             ~edits:
+               [ `TextEdit
+                   (TextEdit.create
+                      ~range:(Range.create ~start:zero ~end_:zero)
+                      ~newText:"")
+               ])
+      ]
+    ()
+;;
+
 (** One daily-note code action: a title that says whether the note will be
-    created, and the command that opens it. *)
+    created, the edit that creates it when it is missing, and the command that
+    opens it.
+
+    The command is asked to open only ([create = false]): the edit above has
+    already created the note by the time it runs, and a second [CreateFile]
+    would race the buffer the client just opened — unsaved, so the file may not
+    be on disk yet. *)
 let daily_note_action (t : t) ~(title : string) ~(path : string) : CodeAction.t =
   let exists = file_exists t path in
   CodeAction.create
     ~title:(sprintf "%s %s" (if exists then "Open" else "Create") title)
     ~kind:CodeActionKind.Refactor
+    ?edit:(if exists then None else Some (create_note_edit (uri_of_rel_path t path)))
     ~command:
       (Command.create
          ~title
          ~command:daily_note_command
-         ~arguments:[ `String path; `Bool (not exists) ]
+         ~arguments:[ `String path; `Bool false; `Bool (not exists) ]
          ())
     ()
 ;;
@@ -779,15 +824,21 @@ let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeActio
     (match resolve_command t ~rel_path c with
      | { target = None; _ } -> []
      | { label; target = Some (path, create) } ->
+       (* Same bargain as {!daily_note_action}: an action can carry the edit,
+          so creation reaches a document even where the command cannot focus
+          one.  The lens beside it has only the command — a [CodeLens] carries
+          nothing else — and stays as it was. *)
        [ CodeAction.create
            ~title:label
            ~kind:CodeActionKind.Refactor
            ~isPreferred:true
+           ?edit:
+             (if create then Some (create_note_edit (uri_of_rel_path t path)) else None)
            ~command:
              (Command.create
                 ~title:label
                 ~command:daily_note_command
-                ~arguments:[ `String path; `Bool create ]
+                ~arguments:[ `String path; `Bool false; `Bool create ]
                 ())
            ()
        ])
@@ -924,8 +975,21 @@ let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list
      and nothing offered the command in the first place, disabled or not yet
      initialized. *)
   | _ when Option.is_none t.vault -> None
-  | cmd, Some [ `String path; `Bool create ] when String.equal cmd daily_note_command ->
+  | cmd, Some (`String path :: `Bool create :: rest)
+    when String.equal cmd daily_note_command
+         &&
+         match rest with
+         | [] | [ `Bool _ ] -> true
+         | _ -> false ->
     let uri = uri_of_rel_path t path in
+    (* The optional third argument says the caller already handed the client an
+       edit that opens this note (see {!create_note_edit}).  Then a failure to
+       focus is not worth a message: the reader is looking at the note. *)
+    let report_unfocused =
+      match rest with
+      | [ `Bool opened_by_edit ] -> not opened_by_edit
+      | _ -> true
+    in
     let create =
       if create && not (file_exists t path)
       then
@@ -945,7 +1009,7 @@ let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list
              ())
       else None
     in
-    Some { uri; create }
+    Some { uri; create; report_unfocused }
   | _ -> None
 ;;
 

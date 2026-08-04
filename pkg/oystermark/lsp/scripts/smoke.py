@@ -203,20 +203,38 @@ def run(binary, show_document=True):
             f"got {titles}",
         )
 
+        # A creating action carries the edit that makes the note itself: the
+        # CreateFile puts it on disk and the text edit against it is what makes
+        # a client open it, which is the only route to a document where
+        # window/showDocument is missing.  See `docs/feature-daily-notes.mld`.
+        creating = next(
+            (a for a in actions if a["title"].startswith("Create") and a.get("edit")),
+            None,
+        )
+        if creating is None:
+            check("a creating action carries an edit", False)
+        else:
+            changes = creating["edit"].get("documentChanges", [])
+            kinds = [c.get("kind", "textEdit") for c in changes]
+            check(
+                "the create edit creates the note and opens it",
+                kinds == ["create", "textEdit"],
+                f"got {kinds}",
+                hint="a CreateFile alone lands on disk and opens nothing",
+            )
+
         # The seam that had no coverage: a command must reach the handler and
-        # produce its two protocol effects.
+        # produce its protocol effects.
         print("\nworkspace/executeCommand")
         daily = next((a for a in actions if a.get("command")), None)
         if daily is None:
             check("a code action carries a command", False)
         else:
+            arguments = daily["command"]["arguments"]
             before, said = len(s.requests), len(s.messages)
             result = s.request(
                 "workspace/executeCommand",
-                {
-                    "command": daily["command"]["command"],
-                    "arguments": daily["command"]["arguments"],
-                },
+                {"command": daily["command"]["command"], "arguments": arguments},
             )
             sent, messages = s.requests[before:], s.messages[said:]
             check(
@@ -225,17 +243,39 @@ def run(binary, show_document=True):
                 hint="null means the request was dispatched to a hook that is "
                 "not overridden — check which linol method handles it",
             )
-            check("sends workspace/applyEdit", "workspace/applyEdit" in sent)
+            # The action already created the note through its own edit, so its
+            # command is asked to open only.
+            check("makes no second edit", "workspace/applyEdit" not in sent)
             if show_document:
                 check("sends window/showDocument", "window/showDocument" in sent)
                 check("stays quiet when the client can focus", not messages)
             else:
-                # Where focusing is impossible the command must still say so:
-                # silence is indistinguishable from failure.
                 check(
                     "does not send window/showDocument",
                     "window/showDocument" not in sent,
                 )
+                # The third argument said an edit already opened the note, so
+                # there is nothing to tell a reader who is looking at it.
+                check(
+                    "stays quiet about a note its edit opened",
+                    not messages,
+                    f"said {messages}",
+                )
+
+            # A lens carries no edit — a CodeLens is a command and nothing else
+            # — so it asks the command to create, and gets the older behaviour:
+            # an applyEdit, and a message where focusing is impossible.
+            path = arguments[0]
+            before, said = len(s.requests), len(s.messages)
+            s.request(
+                "workspace/executeCommand",
+                {"command": daily["command"]["command"], "arguments": [path, True]},
+            )
+            sent, messages = s.requests[before:], s.messages[said:]
+            check("asked to create, it sends applyEdit", "workspace/applyEdit" in sent)
+            if not show_document:
+                # Silence would be indistinguishable from failure: nothing
+                # opened and the caller was given no edit to open it with.
                 check(
                     "reports the path instead",
                     any(root in m for m in messages),

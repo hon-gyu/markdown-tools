@@ -271,7 +271,7 @@ class oystermark_server ~sw =
       : Yojson.Safe.t =
       match Server.execute_command server ~command ~arguments with
       | None -> `Null
-      | Some { uri; create } ->
+      | Some { uri; create; report_unfocused } ->
         (* The client's acknowledgement of the edit carries nothing this
            command needs. *)
         let ignore_response _ = () in
@@ -284,6 +284,12 @@ class oystermark_server ~sw =
           in
           ());
         let created = Option.is_some create in
+        (* Silent when the action that sent this command carried an edit that
+           already opened the note: there is nothing to tell a reader who is
+           looking at it.  See {!page-"feature-daily-notes".focus}. *)
+        let report () =
+          if report_unfocused then self#report_unfocused ~notify_back ~created uri
+        in
         if can_show_document
         then (
           let _ =
@@ -294,10 +300,10 @@ class oystermark_server ~sw =
                 (* A client may advertise the capability and still decline: the
                  result is the only place that shows up. *)
                 | Ok ({ success = true } : ShowDocumentResult.t) -> ()
-                | Ok _ | Error _ -> self#report_unfocused ~notify_back ~created uri)
+                | Ok _ | Error _ -> report ())
           in
           ())
-        else self#report_unfocused ~notify_back ~created uri;
+        else report ();
         (* A client that cannot focus still gets the note created; the path is
            the answer it can act on. *)
         `String (DocumentUri.to_path uri)
