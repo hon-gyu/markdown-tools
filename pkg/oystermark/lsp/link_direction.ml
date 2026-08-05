@@ -306,7 +306,8 @@ let%test_module "hints" =
              Body ^para\n\n\
              The [key]{#kt} term.\n" )
         ];
-      [%expect {|
+      [%expect
+        {|
         (0,11) ↓4
         (0,28) ↓4
         (0,41) ↓4

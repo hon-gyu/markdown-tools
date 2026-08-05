@@ -163,9 +163,7 @@ let extract_attr_ids (doc : Cmarkit.Doc.t) : attr_entry list =
     chose to name that way, and its notes are notes. *)
 let ignored_dirs = [ ".git"; ".obsidian"; ".oyster"; ".trash" ]
 
-let is_ignored_dir (name : string) : bool =
-  List.mem ignored_dirs name ~equal:String.equal
-;;
+let is_ignored_dir (name : string) : bool = List.mem ignored_dirs name ~equal:String.equal
 
 (** Recursively list all entries (files and directories), returning relative
     paths.  Directories have a trailing [/].  {!ignored_dirs} and hidden files

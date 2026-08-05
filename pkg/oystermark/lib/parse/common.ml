@@ -40,9 +40,7 @@ let heading_id (h : Block.Heading.t) : string option =
 (** The identifier the parser would derive from heading text [s]. For resolving a
     link fragment written as text, e.g. a wikilink [ [[note#Some Heading]] ] —
     against {!heading_id}. Matches the first heading of that text. *)
-let heading_id_of_text (s : string) : string =
-  Inline.id (Inline.Text (s, Meta.none))
-;;
+let heading_id_of_text (s : string) : string = Inline.id (Inline.Text (s, Meta.none))
 
 (** Render inlines to plain text, losing their markdown syntax. Used to render a
     heading to the plain text that names it. *)

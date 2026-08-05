@@ -41,7 +41,8 @@ let%expect_test "dot-directories are notes; tooling directories are not" =
     ; ".DS_Store"
     ]
   |> List.iter ~f:print_endline;
-  [%expect {|
+  [%expect
+    {|
     .a/
     .a/b.md
     .a/c.md

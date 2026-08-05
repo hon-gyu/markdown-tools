@@ -64,10 +64,9 @@ let of_string
       ~block_id:true
       ~wikilink:true
       ~callout:(Block.Callout.Config.make ())
-      (* CommonMark behaviors the djot preset would disable. Kept on. *)
+        (* CommonMark behaviors the djot preset would disable. Kept on. *)
       ~intraword_emphasis:true
-      ~underscore_thematic_break:true
-      (* Djot extensions begin *)
+      ~underscore_thematic_break:true (* Djot extensions begin *)
       ~div:true
       ~inline_attributes:true
       ~block_attributes:true
@@ -77,8 +76,8 @@ let of_string
       ~extended_ordered_list_styles:true
       ~table_captions:true
       ~smart_punctuation:true
-      (* Djot extensions end *)
-      (* A heading is exactly its own line, as in CommonMark. *)
+        (* Djot extensions end *)
+        (* A heading is exactly its own line, as in CommonMark. *)
       ~multiline_atx_headings:false
       body
   in
