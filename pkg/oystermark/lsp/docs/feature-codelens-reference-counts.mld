@@ -21,6 +21,7 @@ The server advertises [codeLensProvider] already, for
   | Key                              | Type      | Default                        |
   |----------------------------------|-----------|--------------------------------|
   | [codeLens.references]            | [boolean] | [true]                         |
+  | [codeLens.countTocLinks]         | [boolean] | [false]                        |
   | [codeLens.showReferencesCommand] | [string]  | ["editor.action.showReferences"] |
 }
 
@@ -68,6 +69,13 @@ anything pointing at it.
 
 Find references and rename see these links as usual; only the counts
 skip them.  See {!page-"feature-find-references".generated}.
+
+[codeLens.countTocLinks] turns the exclusion off, for a vault that reads
+its table of contents as part of the note rather than as furniture.  The
+links are then counted as what they are — links the note makes to itself
+— so they land in the in-note half of the title, and a heading no one
+points at gets [1 in-note reference] from the TOC entry naming it.  That
+last sentence is the reason the default is [false].
 
 {2 Authored in-note links are counted apart}
 

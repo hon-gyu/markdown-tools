@@ -84,10 +84,10 @@ let headings_in_range
     nothing than annotate every heading in the vault with a nought — and the
     zero case is the common one.  [docs] is the pre-resolved vault.
 
-    Links the server generated are not counted: a [::: toc] region names every
-    heading in the note, and counting those would put [1 reference] on every
-    heading of a note that has a table of contents — the column of numbers the
-    zero rule exists to prevent.  See
+    Links the server generated are not counted unless [count_toc_links] says
+    to: a [::: toc] region names every heading in the note, and counting those
+    would put [1 reference] on every heading of a note that has a table of
+    contents — the column of numbers the zero rule exists to prevent.  See
     {!page-"feature-codelens-reference-counts".self}. *)
 let entries
       ~(docs : (string * Cmarkit.Doc.t) list)
@@ -95,11 +95,13 @@ let entries
       ~(content : string)
       ~(range_start_line : int)
       ~(range_end_line : int)
+      ~(count_toc_links : bool)
   : entry list
   =
   let authored (target : Find_references.target) : Find_references.reference list =
     Find_references.scan_vault ~docs target
-    |> List.filter ~f:(fun (r : Find_references.reference) -> not r.in_toc)
+    |> List.filter ~f:(fun (r : Find_references.reference) ->
+      count_toc_links || not r.in_toc)
   in
   let file =
     if range_start_line <= 0 && range_end_line > 0
@@ -175,7 +177,13 @@ let%test_module "reference_counts" =
 
     let show ?(range_start_line = 0) ?(range_end_line = 100) rel_path =
       let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
-      entries ~docs ~rel_path ~content ~range_start_line ~range_end_line
+      entries
+        ~docs
+        ~rel_path
+        ~content
+        ~range_start_line
+        ~range_end_line
+        ~count_toc_links:false
       |> List.iter ~f:(fun e -> printf "line %d: %s\n" e.line (lens_title e))
     ;;
 
@@ -249,9 +257,15 @@ let%test_module "in-note references" =
 
     let _index, docs = Find_references.For_test.make_vault files
 
-    let show rel_path =
+    let show ?(count_toc_links = false) rel_path =
       let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
-      entries ~docs ~rel_path ~content ~range_start_line:0 ~range_end_line:100
+      entries
+        ~docs
+        ~rel_path
+        ~content
+        ~range_start_line:0
+        ~range_end_line:100
+        ~count_toc_links
       |> List.iter ~f:(fun e -> printf "line %d: %s\n" e.line (lens_title e))
     ;;
 
@@ -271,6 +285,29 @@ let%test_module "in-note references" =
        naming what it counts is what lets it stand alone. *)
     let%expect_test "only in-note links" =
       show "solo.md";
+      [%expect
+        {|
+        line 0: 1 in-note link
+        line 2: 1 in-note reference
+        |}]
+    ;;
+
+    (* Asked for, a TOC entry is counted as what it is: a link the note makes
+       to itself, in the in-note half.  [# Alpha], which only the TOC names,
+       gets its lens back — which is the reading this is off by default. *)
+    let%expect_test "counting them is a setting" =
+      show ~count_toc_links:true "toc-note.md";
+      [%expect
+        {|
+        line 0: 2 backlinks, 3 in-note links
+        line 0: 1 in-note reference
+        line 7: 1 reference, 2 in-note references
+        |}]
+    ;;
+
+    (* A note with no TOC does not notice the setting. *)
+    let%expect_test "no region, no difference" =
+      show ~count_toc_links:true "solo.md";
       [%expect
         {|
         line 0: 1 in-note link

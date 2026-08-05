@@ -92,6 +92,11 @@
           "default": true,
           "description": "Whether to show a '3 references' lens above each heading something links to, and a '12 backlinks' lens above the note. Note that clients gate code lens themselves — Zed's 'code_lens' setting is off by default."
         },
+        "countTocLinks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether links inside a '::: toc' region count towards the lens. Off by default: the server wrote those links, and counting them puts a lens above every heading of every note that has a table of contents. On, they are counted as links the note makes to itself."
+        },
         "showReferencesCommand": {
           "type": "string",
           "default": "editor.action.showReferences",

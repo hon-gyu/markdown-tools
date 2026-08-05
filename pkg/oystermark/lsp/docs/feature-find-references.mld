@@ -77,8 +77,12 @@ from it:
   |--------|-----------------|
   | [textDocument/references] | included — the link is really there, and the writer asked to see every one |
   | {!page-"feature-rename"} | rewritten — skipping them would leave the TOC stale the moment a heading is renamed |
-  | {!page-"feature-codelens-reference-counts"} | not counted — see that page's {e in-note references} |
+  | {!page-"feature-codelens-reference-counts"} | not counted, unless [codeLens.countTocLinks] says otherwise |
 }
+
+A flag also leaves that last row a {e setting} rather than a fork in the
+scan: both answers are one [List.filter] away from the same result, and
+the scan does not have to know which one the vault asked for.
 
 {1 Result}
 

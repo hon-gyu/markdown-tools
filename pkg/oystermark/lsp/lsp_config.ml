@@ -66,6 +66,13 @@ type t =
   ; code_lens_references : bool
     (** Whether to put a [3 references] / [12 backlinks] lens above the lines
       the count is about.  See {!page-"feature-codelens-reference-counts"}. *)
+  ; code_lens_count_toc_links : bool
+    (** Whether a link inside a [::: toc] region counts towards the lens.  Off:
+      the server wrote those links, and counting them puts a lens above every
+      heading of every note that has a table of contents.  On, they are
+      counted as what they are — links the note makes to itself — and land in
+      the in-note half of the title.  See
+      {!page-"feature-codelens-reference-counts".self}. *)
   ; code_lens_show_references_command : string
     (** The client-side command a reference lens carries, invoked with
       [\[uri; position; locations\]].  The default is the name VS Code
@@ -97,6 +104,7 @@ let default =
   ; hover_image_max_bytes = 256 * 1024
   ; inlay_link_direction = true
   ; code_lens_references = true
+  ; code_lens_count_toc_links = false
   ; code_lens_show_references_command = "editor.action.showReferences"
   ; daily_notes = default_daily_notes
   }
@@ -132,6 +140,7 @@ module Partial = struct
     ; hover_image_max_bytes : int option
     ; inlay_link_direction : bool option
     ; code_lens_references : bool option
+    ; code_lens_count_toc_links : bool option
     ; code_lens_show_references_command : string option
     ; daily_notes : daily_notes
     }
@@ -145,6 +154,7 @@ module Partial = struct
     ; hover_image_max_bytes = None
     ; inlay_link_direction = None
     ; code_lens_references = None
+    ; code_lens_count_toc_links = None
     ; code_lens_show_references_command = None
     ; daily_notes = { format = None; folder = None; template = None; link_action = None }
     }
@@ -165,6 +175,8 @@ module Partial = struct
     ; hover_image_max_bytes = pick upper.hover_image_max_bytes lower.hover_image_max_bytes
     ; inlay_link_direction = pick upper.inlay_link_direction lower.inlay_link_direction
     ; code_lens_references = pick upper.code_lens_references lower.code_lens_references
+    ; code_lens_count_toc_links =
+        pick upper.code_lens_count_toc_links lower.code_lens_count_toc_links
     ; code_lens_show_references_command =
         pick
           upper.code_lens_show_references_command
@@ -196,6 +208,8 @@ let resolve (p : Partial.t) : resolved =
       Option.value p.inlay_link_direction ~default:default.inlay_link_direction
   ; code_lens_references =
       Option.value p.code_lens_references ~default:default.code_lens_references
+  ; code_lens_count_toc_links =
+      Option.value p.code_lens_count_toc_links ~default:default.code_lens_count_toc_links
   ; code_lens_show_references_command =
       Option.value
         p.code_lens_show_references_command
@@ -361,6 +375,9 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
         | "references" ->
           acc := { !acc with Partial.code_lens_references = parse_bool w ~key value };
           true
+        | "countTocLinks" ->
+          acc := { !acc with Partial.code_lens_count_toc_links = parse_bool w ~key value };
+          true
         (* [""] is meaningful here — a lens with no command behind it — so it
            is read rather than rejected as an empty string would be
            elsewhere. *)
@@ -432,6 +449,7 @@ let known_keys : string list =
   ; "hover.imageMaxBytes"
   ; "inlayHints.linkDirection"
   ; "codeLens.references"
+  ; "codeLens.countTocLinks"
   ; "codeLens.showReferencesCommand"
   ; "goToDefinition.unresolvedFragment"
   ; "diagnostics.unresolvedFragment"
@@ -483,6 +501,7 @@ let to_json (t : t) : Yojson.Safe.t =
     ; ( "codeLens"
       , `Assoc
           [ "references", `Bool t.code_lens_references
+          ; "countTocLinks", `Bool t.code_lens_count_toc_links
           ; "showReferencesCommand", `String t.code_lens_show_references_command
           ] )
     ; ( "goToDefinition"
@@ -591,6 +610,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY/MM/YYYY-MM-DD) (folder (journal)) (template (tpl.md))
@@ -608,6 +628,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -633,6 +654,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -640,6 +662,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -663,6 +686,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -683,6 +707,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -700,6 +725,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -718,6 +744,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -726,6 +753,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
@@ -757,6 +785,7 @@ let%test_module "configuration" =
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder (journal)) (template ()) (link_action true))))

@@ -69,6 +69,22 @@ let%expect_test "a table of contents is not a reference" =
     |}]
 ;;
 
+(* Turned on, the TOC entries are counted as what they are — links the note
+   makes to itself — and [# Alpha], which only the TOC names, gets a lens.
+   See {!page-"feature-codelens-reference-counts".self}. *)
+let%expect_test "codeLens.countTocLinks" =
+  show_lenses
+    ~vault_root
+    ~init_options:(`Assoc [ "codeLens", `Assoc [ "countTocLinks", `Bool true ] ])
+    "toc-note.md";
+  [%expect
+    {|
+    0: 1 backlink, 3 in-note links -> editor.action.showReferences
+    5: 1 in-note reference -> editor.action.showReferences
+    7: 1 reference, 2 in-note references -> editor.action.showReferences
+    |}]
+;;
+
 (* Nothing points at note-b, and a zero is not worth a line of the note. *)
 let%expect_test "no lens where the count is zero" =
   show_lenses ~vault_root "note-b.md";

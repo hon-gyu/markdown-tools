@@ -769,6 +769,7 @@ let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens
         ~content
         ~range_start_line:0
         ~range_end_line:Int.max_value
+        ~count_toc_links:t.config.code_lens_count_toc_links
       |> List.map ~f:(fun (e : Reference_counts.entry) ->
         let at = Position.create ~line:e.line ~character:0 in
         let locations =
