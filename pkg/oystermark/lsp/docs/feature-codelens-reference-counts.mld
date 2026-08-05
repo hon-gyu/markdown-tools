@@ -46,19 +46,87 @@ A count of zero produces no lens.  Most headings in a vault are pointed
 at by nothing, and a column of [0 references] would be the loudest thing
 on the page.
 
+{1:self In-note references}
+
+A note that links to its own headings is not pointed at by anything, and
+a count that mixes those in with the links from elsewhere reads as more
+attention than the note actually has.  The two are counted apart.
+
+{2 Generated links do not count at all}
+
+A link inside a [::: toc] region (see {!page-"feature-toc"}) is one the
+server wrote.  It is not counted — not in the number, and not in the
+locations the lens hands over on a click, so the two still agree.
+
+This is the case that forces the rule.  A TOC names {e every} heading in
+the note, so counting its links would put [1 reference] above every
+heading of every note that has one — the column of numbers the
+zero-suppression rule above exists to prevent, restored in full by a
+single code action.  It would also make the note's own count grow by one
+per heading, which is a number about the note's shape rather than about
+anything pointing at it.
+
+Find references and rename see these links as usual; only the counts
+skip them.  See {!page-"feature-find-references".generated}.
+
+{2 Authored in-note links are counted apart}
+
+What is left after the TOC is excluded is a link the writer typed —
+a map of contents by hand, a "see {i Method} below".  Those are real and
+worth reporting, just not as backlinks:
+
+{t
+  | Elsewhere | In note | Note                              | Heading                                 |
+  |-----------|---------|-----------------------------------|-----------------------------------------|
+  | n         | 0       | [{n} backlinks]                   | [{n} references]                        |
+  | n         | m       | [{n} backlinks, {m} in-note links]| [{n} references, {m} in-note references]|
+  | 0         | m       | [{m} in-note links]               | [{m} in-note references]                |
+}
+
+The two numbers are {b disjoint}: [3 backlinks, 1 in-note link] is four
+links, not three of which one is in-note.  That is why each half names
+what it counts in full rather than trailing a bare qualifier — two named
+things add up, where [3 backlinks, 1 in note] reads just as easily as a
+total and a part of it.  Naming both halves also lets either appear
+alone, so the third row needs no [0] to lead it.
+
+A lens appears whenever either count is non-zero: an in-note link is
+something the writer put there deliberately, and hiding it would be a
+second rule to remember.
+
 {1:wording Wording}
 
 {t
-  | Count | Note           | Heading        |
-  |-------|----------------|----------------|
-  | 1     | [1 backlink]   | [1 reference]  |
-  | n     | [{n} backlinks]| [{n} references] |
+  | Count | Note                | Heading                  |
+  |-------|---------------------|--------------------------|
+  | 1     | [1 backlink]        | [1 reference]            |
+  | n     | [{n} backlinks]     | [{n} references]         |
+  | 1 in note | [1 in-note link] | [1 in-note reference]   |
+  | n in note | [{n} in-note links] | [{n} in-note references] |
 }
 
 "References" for a heading is what the editors this borrows from say.
 "Backlinks" for the note is the word for the same thing in a vault, and
 the two being different is useful: it says which of the two counts you
 are looking at without reading the line under it.
+
+Whichever noun a lens takes, it keeps across both halves: a heading reads
+[3 references, 1 in-note reference], not two different words for the
+thing it counts, and it never trades the word for another because a
+number went to zero.
+
+The note's in-note half is the exception, and only because the word it
+would otherwise take contradicts itself: a backlink is by definition from
+somewhere else, so there is no such thing as an in-note one.  It says
+{e link}, the plain word underneath both.
+
+"In-note {e link}", not "internal link": Obsidian calls every wikilink an
+internal link — meaning inside the vault rather than out on the web — so
+that phrase says the opposite of what is meant here.  "In-note" names
+where the link was written, which is the distinction being drawn.
+
+Every count is [{n} {noun}], singular and plural spelled out, the two
+joined by a comma.
 
 {1:click Clicking}
 

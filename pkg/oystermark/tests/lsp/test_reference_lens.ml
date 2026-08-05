@@ -43,15 +43,29 @@ let%expect_test "counts above the note and the heading they are about" =
     |}]
 ;;
 
-(* A note's own links to its own headings are references like any others, so a
-   note that links into itself is counted from the inside. *)
+(* A note's own links to its own headings are counted apart: nothing points at
+   this map of contents from outside, so its in-note links are all its lenses
+   have to say.  See {!page-"feature-codelens-reference-counts".self}. *)
 let%expect_test "self-references count" =
   show_lenses ~vault_root "moc.md";
   [%expect
     {|
-    0: 4 backlinks -> editor.action.showReferences
-    3: 2 references -> editor.action.showReferences
-    7: 1 reference -> editor.action.showReferences
+    0: 4 in-note links -> editor.action.showReferences
+    3: 2 in-note references -> editor.action.showReferences
+    7: 1 in-note reference -> editor.action.showReferences
+    |}]
+;;
+
+(* The [::: toc] region names both headings and counts for neither: [# Alpha]
+   has no lens at all, and [## Method] is at the count note-c gives it plus the
+   one link the prose makes.  See
+   {!page-"feature-codelens-reference-counts".self}. *)
+let%expect_test "a table of contents is not a reference" =
+  show_lenses ~vault_root "toc-note.md";
+  [%expect
+    {|
+    0: 1 backlink, 1 in-note link -> editor.action.showReferences
+    7: 1 reference, 1 in-note reference -> editor.action.showReferences
     |}]
 ;;
 

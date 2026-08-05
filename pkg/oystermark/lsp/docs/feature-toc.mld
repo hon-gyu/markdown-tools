@@ -121,6 +121,11 @@ Each heading becomes one list item:
      happens to sit under a heading is never described by itself.}
 }
 
+The links are generated, and the features that count links know it: a TOC
+entry is not a reference to the heading it names. See
+{!page-"feature-codelens-reference-counts".self} and
+{!page-"feature-find-references".generated}.
+
 A document with no headings generates an empty body — the two fences with
 nothing between them. This is a legitimate up-to-date state, not an error;
 the region is a placeholder that fills in as the note grows.

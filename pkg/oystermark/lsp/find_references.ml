@@ -11,11 +11,18 @@ open Core
 
 (** {1:implementation Implementation} *)
 
-(** A single reference: the document it appears in and its byte range. *)
+(** A single reference: the document it appears in and its byte range.
+
+    [in_toc] marks a link the server wrote rather than the author: one inside a
+    [::: toc] region (see {!page-"feature-toc"}).  It is a tag and not a filter
+    because the callers want opposite things from it — a count that includes
+    generated links is wrong, a rename that skips them leaves the TOC stale.
+    See {!page-"feature-find-references".generated}. *)
 type reference =
   { rel_path : string
   ; first_byte : int
   ; last_byte : int
+  ; in_toc : bool
   }
 [@@deriving sexp, equal, compare]
 
@@ -179,8 +186,20 @@ let resolved_matches
       | None -> false)
 ;;
 
+(** What the fold carries: the references so far, and whether the node being
+    visited sits inside a [::: toc] region. *)
+type acc =
+  { refs : reference list
+  ; in_toc : bool
+  }
+
 (** Collect references from a single pre-resolved document by folding over
-    its AST and reading {!Oystermark.Vault.Resolve.resolved_key} metadata. *)
+    its AST and reading {!Oystermark.Vault.Resolve.resolved_key} metadata.
+
+    A [::: toc] region is recognized by {!Toc.is_toc}, i.e. by the parser and
+    by the same predicate that decides what the TOC feature owns: there is one
+    definition of what a region is, so a [::: toc] written inside a code block
+    is not one here either. *)
 let collect_from_doc
       ~(source_rel_path : string)
       (ref_target : target)
@@ -197,15 +216,32 @@ let collect_from_doc
         if Cmarkit.Textloc.is_none loc
         then acc
         else
-          { rel_path = source_rel_path
-          ; first_byte = Cmarkit.Textloc.first_byte loc
-          ; last_byte = Cmarkit.Textloc.last_byte loc
-          }
-          :: acc)
+          { acc with
+            refs =
+              { rel_path = source_rel_path
+              ; first_byte = Cmarkit.Textloc.first_byte loc
+              ; last_byte = Cmarkit.Textloc.last_byte loc
+              ; in_toc = acc.in_toc
+              }
+              :: acc.refs
+          })
       else acc
   in
   let folder =
     Cmarkit.Folder.make
+      ~block:(fun f acc (b : Cmarkit.Block.t) ->
+        match b with
+        | Cmarkit.Block.Ext_div (d, _) when Toc.is_toc d ->
+          (* Descend with the flag raised, then restore it: a region may sit
+             inside anything, and anything may follow it. *)
+          let inner =
+            Cmarkit.Folder.fold_block
+              f
+              { acc with in_toc = true }
+              (Cmarkit.Block.Div.block d)
+          in
+          Cmarkit.Folder.ret { inner with in_toc = acc.in_toc }
+        | _ -> Cmarkit.Folder.default)
       ~inline:(fun _f acc i ->
         match i with
         | Cmarkit.Inline.Link (_, meta) | Cmarkit.Inline.Image (_, meta) ->
@@ -218,7 +254,7 @@ let collect_from_doc
       ~block_ext_default:(fun _f acc _b -> acc)
       ()
   in
-  List.rev (Cmarkit.Folder.fold_doc folder [] doc)
+  List.rev (Cmarkit.Folder.fold_doc folder { refs = []; in_toc = false } doc).refs
 ;;
 
 (** Scan all pre-resolved vault documents for references matching [ref_target].

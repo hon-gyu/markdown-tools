@@ -60,6 +60,26 @@ the reference target:
      same file {e and} whose fragment matches.}
 }
 
+{1:generated Generated links are tagged, not dropped}
+
+A link inside a [::: toc] region (see {!page-"feature-toc"}) was written by
+the server, not by the author.  Every reference carries an [in_toc] flag
+saying so, set during the same fold that collects it, with the region
+recognized by the TOC feature's own predicate — so there is one definition
+of what a region is, and a [::: toc] inside a code block is not one here
+either.
+
+It is a flag rather than a filter because the callers want opposite things
+from it:
+
+{t
+  | Caller | Generated links |
+  |--------|-----------------|
+  | [textDocument/references] | included — the link is really there, and the writer asked to see every one |
+  | {!page-"feature-rename"} | rewritten — skipping them would leave the TOC stale the moment a heading is renamed |
+  | {!page-"feature-codelens-reference-counts"} | not counted — see that page's {e in-note references} |
+}
+
 {1 Result}
 
 A list of LSP [Location] objects, one per referring link.  Each
