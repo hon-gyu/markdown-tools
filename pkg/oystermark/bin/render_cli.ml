@@ -1,6 +1,7 @@
 open Core
 open Oystermark_render
 module Cache = Code_executor.Cache
+module Dev_server = Render_cli_dev_server
 
 (* NOTE:
 

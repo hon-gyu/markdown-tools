@@ -1,8 +1,8 @@
 (executable
- (public_name oystermark)
+ (public_name oystermark-render)
  (package oystermark)
- (name main)
- (modules main dev_server)
+ (name render_cli)
+ (modules render_cli render_cli_dev_server)
  (libraries
   oystermark
   oystermark.render
