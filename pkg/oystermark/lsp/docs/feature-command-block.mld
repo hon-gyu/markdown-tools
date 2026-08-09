@@ -124,7 +124,7 @@ This is a {b dev-time} feature. The block is an ordinary code block to every
 other part of Oystermark: the parser reads it as one, the renderer prints it as
 one, and nothing here changes what a build produces. A block is expected to be
 deleted from a note before that note is published — no [Silent] handling, no
-pipeline hook, no interaction with {!Oystermark.Config}.
+pipeline hook, no interaction with {!Oystermark_render.Config}.
 
 {1:limitations Limitations}
 

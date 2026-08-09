@@ -5,6 +5,7 @@
 
 open! Core
 open Oystermark
+open Oystermark_render
 
 (** Build a mini-vault, run the full pipeline, render [target] to HTML.
     [max_depth] controls embed recursion depth. *)

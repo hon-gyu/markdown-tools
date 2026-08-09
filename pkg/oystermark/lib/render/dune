@@ -1,6 +1,6 @@
 (library
- (name oystermark)
- (public_name oystermark)
+ (name oystermark_render)
+ (public_name oystermark.render)
  (libraries
   parse
   vault

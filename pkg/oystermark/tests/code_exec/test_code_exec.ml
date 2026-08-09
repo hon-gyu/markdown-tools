@@ -1,5 +1,5 @@
 open! Core
-open Oystermark
+open Oystermark_render
 
 let run_dot ?on_error md =
   let doc = Parse.of_string md in

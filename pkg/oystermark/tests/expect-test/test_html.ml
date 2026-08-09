@@ -1,5 +1,6 @@
 open! Core
 open Oystermark
+open Oystermark_render
 
 let test_index : Vault.Index.t =
   { files =

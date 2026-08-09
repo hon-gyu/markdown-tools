@@ -29,11 +29,11 @@ See {!Oystermark.Vault}.
 
 HTML rendering.
 
-See {!Oystermark.Html}.
+See {!Oystermark_render.Html}.
 
 {2 Pipeline}
 
-A {{!Oystermark.Pipeline}pipeline} is a sequence of hooks that run at successive stages of vault processing.
+A {{!Oystermark_render.Pipeline}pipeline} is a sequence of hooks that run at successive stages of vault processing.
 
 Stages:
 {ol

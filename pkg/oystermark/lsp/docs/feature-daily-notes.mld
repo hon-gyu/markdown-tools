@@ -44,7 +44,7 @@ Wiring [initializationOptions] into {!Lsp_lib.Config} is part of this
 feature: the record exists today but the server never populates it.
 
 An unparseable [dailyNotes] object leaves the defaults in place rather than
-failing initialization, matching {!Oystermark.Config}'s tolerance for stale
+failing initialization, matching {!Oystermark_render.Config}'s tolerance for stale
 config.
 
 {2:format Date format}

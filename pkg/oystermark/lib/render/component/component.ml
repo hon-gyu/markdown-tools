@@ -2,7 +2,7 @@
 
   Usage:
   - Used by {!Pipeline} to add components as HTML blocks using [backend_block].
-  - Used in {!Oystermark.render_vault}'s last step to render non-body content (WIP).
+  - Used in {!Oystermark_render.render_vault}'s last step to render non-body content (WIP).
 *)
 
 open Core

@@ -2,7 +2,7 @@ open Core
 open Cmarkit
 open Parse.Struct
 open Parse.Struct.For_test
-module Theme = Oystermark.Theme
+module Theme = Oystermark_render.Theme
 
 let html_of_doc = Component.Html.For_test.html_of_doc
 

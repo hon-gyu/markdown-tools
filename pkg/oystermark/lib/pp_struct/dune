@@ -10,7 +10,7 @@
 (executable
  (name t1)
  (modules t1)
- (libraries oymarkit core parse component oystermark))
+ (libraries oymarkit core parse component oystermark.render))
 
 (rule
  (with-stdout-to

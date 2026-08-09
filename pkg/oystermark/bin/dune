@@ -5,6 +5,7 @@
  (modules main dev_server)
  (libraries
   oystermark
+  oystermark.render
   core
   core_unix
   core_unix.command_unix

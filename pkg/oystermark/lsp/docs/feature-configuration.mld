@@ -13,7 +13,7 @@ editor settings.
 {1:file The file}
 
 [oysterlsp.json], at the vault root. Optional: its absence is not an error and
-not worth a message. This is {b not} {!Oystermark.Config}, which configures a
+not worth a message. This is {b not} {!Oystermark_render.Config}, which configures a
 vault {e build} and is passed by path on the command line; the two have no keys
 in common and are read by different programs.
 
@@ -183,7 +183,7 @@ server capabilities would remain restart-only.
 {ul
   {- The file is looked for at the vault root only: no search upward from the
      edited file, no per-directory overrides.}
-  {- JSON, so no comments. Consistent with {!Oystermark.Config}.}
+  {- JSON, so no comments. Consistent with {!Oystermark_render.Config}.}
   {- No environment-variable or command-line source for {e settings}. The one
      argument the binary takes, [--print-default-config], writes a file and
      exits; it configures nothing.}

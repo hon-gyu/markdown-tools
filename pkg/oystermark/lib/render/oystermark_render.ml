@@ -6,8 +6,6 @@
     3. vault: concat_map with full vault context (after link resolution) *)
 
 open Core
-module Parse = Parse
-module Vault = Vault
 module Html = Component.Html
 module Pipeline = Pipeline
 module Theme = Theme
@@ -46,7 +44,7 @@ let render_vault
       then (
         let full_path = Filename.concat vault_root rel_path in
         let content = In_channel.read_all full_path in
-        let doc = Parse.of_string content ~config in
+        let doc = Parse.of_string content ~enable_struct:config.ext_struct.enable in
         pipeline.on_parse rel_path doc)
       else [])
   in

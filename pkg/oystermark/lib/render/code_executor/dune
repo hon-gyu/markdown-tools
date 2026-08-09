@@ -1,6 +1,6 @@
 (library
  (name code_executor)
- (public_name oystermark.code_executor)
+ (public_name oystermark.render.code_executor)
  (libraries oymarkit parse core core_unix.filename_unix trace_collect)
  (inline_tests)
  (preprocess

@@ -1,7 +1,8 @@
-(** User-facing configuration for an Oystermark vault build.
+(** User-facing configuration for an Oystermark rendered vault build.
 
-    A {!t} bundles every knob the renderer exposes — theme, CSS snippets,
-    pipeline profile, and home-page graph view — and is typically loaded from
+    A {!t} bundles the parser policy and rendering knobs exposed by the vault
+    builder — structured-list handling, theme, CSS snippets, pipeline profile,
+    and home-page graph view — and is typically loaded from
     a JSON file via {!of_file}. Unknown fields and malformed values are
     tolerated: parsing falls back to {!default} (or per-field defaults via
     [\[@default\]]) rather than raising, so a partial or slightly stale config

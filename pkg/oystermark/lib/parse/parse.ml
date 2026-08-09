@@ -36,21 +36,20 @@ let mk_mapper () : Cmarkit.Mapper.t =
     ()
 ;;
 
-(** [of_string ?strict ?layout s] parses markdown string [s] into a
+(** [of_string ?strict ?layout ?enable_struct s] parses markdown string [s] into a
     [Cmarkit.Doc.t] with frontmatter embedded as a {!Frontmatter.Frontmatter}
     block and wikilinks/block IDs parsed. Heading identifiers are assigned by the
-    parser ([~heading_auto_ids:true]) and read via {!Common.heading_id}. *)
+    parser ([~heading_auto_ids:true]) and read via {!Common.heading_id}.
+    [enable_struct] controls the post-parse structured-list rewrite. *)
 let of_string
       (* Cmarkit config *)
       ?(strict = false)
       ?(layout = false)
       ?(locs = true)
-      (* Oystermark config *)
-      ?(config = Config.default)
+      ?(enable_struct = true)
       (s : string)
   : Cmarkit.Doc.t
   =
-  let enable_struct = config.ext_struct.enable in
   let open Cmarkit in
   (* Blank (not strip) the frontmatter so parsed [Textloc]s stay aligned with
      the original file's byte/line positions. See {!Frontmatter.blank_frontmatter}. *)

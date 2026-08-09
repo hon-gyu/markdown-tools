@@ -1,12 +1,12 @@
 open! Core
-open Oystermark
+open Oystermark_render
 
 let vault_root = "../data/vault/pipeline"
 
 let%expect_test "render_vault: draft excluded" =
   let pipeline = Pipeline.exclude_drafts in
   let results =
-    Oystermark.render_vault ~pipeline ~backend_blocks:true ~safe:false vault_root
+    Oystermark_render.render_vault ~pipeline ~backend_blocks:true ~safe:false vault_root
   in
   let files = List.map results ~f:fst |> List.sort ~compare:String.compare in
   List.iter files ~f:(fun f -> printf "%s\n" f);
@@ -21,7 +21,7 @@ let%expect_test "render_vault: draft excluded" =
 
 let%expect_test "render_vault: home page" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.id
       ~backend_blocks:true
       ~safe:false
@@ -43,7 +43,7 @@ let%expect_test "render_vault: home page" =
 
 let%expect_test "render_vault: subdir index" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.id
       ~backend_blocks:true
       ~safe:false
@@ -73,7 +73,7 @@ let%expect_test "render_vault: subdir index" =
 
 let%expect_test "render_vault: regular note unchanged" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.id
       ~backend_blocks:true
       ~safe:false
@@ -109,7 +109,7 @@ let%expect_test "render_vault: custom pipeline can drop files" =
   in
   let pipeline = Pipeline.compose drop_home Pipeline.id in
   let results =
-    Oystermark.render_vault ~pipeline ~backend_blocks:true ~safe:false vault_root
+    Oystermark_render.render_vault ~pipeline ~backend_blocks:true ~safe:false vault_root
   in
   let files = List.map results ~f:fst |> List.sort ~compare:String.compare in
   List.iter files ~f:(fun f -> printf "%s\n" f);
@@ -129,7 +129,7 @@ let dir_resolve_root = "../data/vault/dir-resolve"
 
 let%expect_test "wikilink to dir-only name is unresolved" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.id
       ~backend_blocks:true
       ~safe:false
@@ -157,7 +157,7 @@ let%expect_test "wikilink to dir-only name is unresolved" =
 
 let%expect_test "dir_index: generates index page for directory" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.(dir_index ())
       ~backend_blocks:true
       ~safe:false
@@ -175,7 +175,7 @@ let%expect_test "dir_index: generates index page for directory" =
 
 let%expect_test "dir_index: generated page has TOC with children" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.(dir_index ())
       ~backend_blocks:true
       ~safe:false
@@ -211,7 +211,7 @@ let code_embed_root = "../data/vault/code-embed"
 let%expect_test "transclude_code_files: wikilink embed replaced with code block" =
   let pipeline = Pipeline.transclude_code_files in
   let results =
-    Oystermark.render_vault ~pipeline ~backend_blocks:true ~safe:false code_embed_root
+    Oystermark_render.render_vault ~pipeline ~backend_blocks:true ~safe:false code_embed_root
   in
   let html = List.Assoc.find_exn results ~equal:String.equal "note/index.html" in
   printf "%s" html;
@@ -234,7 +234,7 @@ let%expect_test "transclude_code_files: wikilink embed replaced with code block"
 
 let%expect_test "dir_index: skips dir when index.md already exists" =
   let results =
-    Oystermark.render_vault
+    Oystermark_render.render_vault
       ~pipeline:Pipeline.(dir_index ())
       ~backend_blocks:true
       ~safe:false

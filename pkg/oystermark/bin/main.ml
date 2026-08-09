@@ -1,5 +1,5 @@
 open Core
-open Oystermark
+open Oystermark_render
 module Cache = Code_executor.Cache
 
 (* NOTE:

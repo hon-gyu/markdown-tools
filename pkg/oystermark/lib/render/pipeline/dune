@@ -1,6 +1,6 @@
 (library
  (name pipeline)
- (public_name oystermark.pipeline)
+ (public_name oystermark.render.pipeline)
  (libraries
   parse
   vault

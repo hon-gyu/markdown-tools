@@ -1,6 +1,6 @@
 (library
  (name config)
- (public_name oystermark-core.config)
+ (public_name oystermark.render.config)
  (libraries core yojson yaml)
  (inline_tests)
  (preprocess
