@@ -1,5 +1,5 @@
 (executable
- (public_name oystermark-render)
+ (public_name oyster-vault-renderer)
  (package oystermark)
  (name render_cli)
  (modules render_cli render_cli_dev_server)
@@ -18,8 +18,8 @@
 (executable
  (public_name md2script)
  (package oystermark)
- (name md2script)
- (modules md2script)
+ (name md2script_cli)
+ (modules md2script_cli)
  (libraries
   parse
   oymarkit
