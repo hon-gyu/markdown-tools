@@ -18,12 +18,6 @@ let all_entry_paths (vault : t) : string list =
   doc_paths @ vault.index.dirs
 ;;
 
-(** List all entries in the vault (files and directories, relative paths).
-    Directories have a trailing [/].  Hidden entries are excluded. *)
-let list_entries (vault_root : string) : string list =
-  Index.list_entries_recursive ~root:vault_root ~rel_prefix:""
-;;
-
 (** Build an index from a list of [(rel_path, doc)] pairs
     plus a list of non-md relative paths. *)
 let build_index
@@ -53,7 +47,7 @@ let of_root_path ?(skip_expand : bool = false) ?(locs : bool = true) (vault_root
   =
   (* Scan files *)
   let all_files =
-    List.filter (list_entries vault_root) ~f:(fun p ->
+    List.filter (Index.list_entries_recursive vault_root ()) ~f:(fun p ->
       not (String.is_suffix p ~suffix:"/"))
   in
   let (docs : (string * Cmarkit.Doc.t) list) =

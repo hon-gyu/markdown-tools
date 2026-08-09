@@ -165,7 +165,7 @@ let is_ignored_dir (name : string) : bool = List.mem ignored_dirs name ~equal:St
 
     @return A list of relative paths to entries (files and directories).
 *)
-let rec list_entries_recursive ~(root : string) ~(rel_prefix : string) : string list =
+let rec list_entries_recursive (root : string) ?(rel_prefix = "") () : string list =
   let (entries : string list) =
     try Sys_unix.ls_dir root with
     | _ -> []
@@ -180,7 +180,7 @@ let rec list_entries_recursive ~(root : string) ~(rel_prefix : string) : string 
       in
       match Sys_unix.is_directory full_path with
       | `Yes ->
-        (rel_path ^ "/") :: list_entries_recursive ~root:full_path ~rel_prefix:rel_path
+        (rel_path ^ "/") :: list_entries_recursive full_path ~rel_prefix:rel_path ()
       (* A dot-file is not a note: [.DS_Store] and its like are what the vault
          is stored with, not what it is made of. *)
       | _ -> if String.is_prefix name ~prefix:"." then [] else [ rel_path ]))

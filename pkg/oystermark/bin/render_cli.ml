@@ -74,7 +74,7 @@ let do_render ~verbose ~config ~theme ~vault_root ~output_dir =
       print_char '.';
       Out_channel.flush Out_channel.stdout));
   (* Copy non-markdown assets (images, etc.) to the output directory *)
-  let all_entries = Vault.list_entries vault_root in
+  let all_entries = Vault.Index.list_entries_recursive vault_root () in
   let is_asset (p : string) : bool =
     (not (String.is_suffix p ~suffix:".md")) && not (String.is_suffix p ~suffix:"/")
   in

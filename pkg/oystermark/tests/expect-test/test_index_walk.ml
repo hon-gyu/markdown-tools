@@ -16,7 +16,7 @@ let list_entries (files : string list) : string list =
     Core_unix.mkdir_p (Filename.dirname full);
     Out_channel.write_all full ~data:"# Note\n");
   Exn.protect
-    ~f:(fun () -> Oystermark.Vault.list_entries root |> List.sort ~compare:String.compare)
+    ~f:(fun () -> Oystermark.Vault.Index.list_entries_recursive root () |> List.sort ~compare:String.compare)
     ~finally:(fun () ->
       let (_ : Core_unix.Exit_or_signal.t) =
         Core_unix.system (sprintf "rm -rf %s" (Filename.quote root))

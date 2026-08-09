@@ -30,7 +30,7 @@ let render_vault
       (vault_root : string)
   : (string * string) list
   =
-  let all_entries = Vault.list_entries vault_root in
+  let all_entries = Vault.Index.list_entries_recursive vault_root () in
   (* Stage 1: discover *)
   let discovered =
     List.filter all_entries ~f:(fun p -> pipeline.on_discover p all_entries)
