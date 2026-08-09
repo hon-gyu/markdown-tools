@@ -1,10 +1,9 @@
-(** Oystermark extends CommonMark with Obsidian-style wikilinks and block
-    references.
+(** Oystermark vault rendering
 
     Processing uses a staged {!Pipeline.t}:
-    1. {b discover} — filter paths before reading
-    2. {b parse} — concat_map after full parse, before indexing
-    3. {b vault} — concat_map with full vault context (after link resolution) *)
+    1. discover: filter paths before reading
+    2. parse: concat_map after full parse, before indexing
+    3. vault: concat_map with full vault context (after link resolution) *)
 
 open Core
 module Parse = Parse
