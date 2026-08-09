@@ -1,0 +1,45 @@
+{0 Vault operations}
+
+Vault operations are library services shared by protocol and command-line
+clients. They consume a vault snapshot and return values or a rename plan;
+they do not write files or construct LSP messages.
+
+{1 Links and graph queries}
+
+{!Oystermark.Vault.Query} collects authored wikilinks, Markdown links, embeds,
+and images into one located link type carrying both the authored reference and
+its resolved destination. It provides incoming, outgoing, unresolved, and
+graph-statistics queries.
+
+Graph statistics distinguish resolved link occurrences from unique directed
+note-to-note edges. Multiple links from one source note to one destination are
+multiple occurrences and one edge.
+
+Queries must run on documents before embed expansion. Expanded embeds repeat
+another note's syntax in the host document and would therefore manufacture
+links that the author did not write there.
+
+{1 Rename}
+
+{!Oystermark.Vault.Rename} plans note and heading renames as byte edits plus
+an optional file move. A client owns application:
+{ul
+ {- the LSP client converts byte edits and moves to a workspace edit;}
+ {- the command-line client previews the plan and writes it only when asked.}
+}
+
+Keeping application outside the library lets editor-buffer snapshots and
+filesystem snapshots use the same rename semantics.
+
+{1 Command line}
+
+The [oystermark-vault] executable exposes the shared services:
+{v
+oystermark-vault unresolved VAULT
+oystermark-vault stats VAULT
+oystermark-vault links VAULT NOTE [--incoming|--outgoing]
+oystermark-vault rename-note VAULT NOTE NEW-NAME [--apply]
+oystermark-vault rename-heading VAULT NOTE HEADING NEW-HEADING [--apply]
+v}
+
+Rename commands are dry runs unless [--apply] is present.

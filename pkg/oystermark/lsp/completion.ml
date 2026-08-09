@@ -766,9 +766,9 @@ let%test_module "markdown links" =
         let dest = Option.value_exn i.insert_text in
         let doc = Lsp_util.parse_doc (sprintf "[label](%s)" dest) in
         let resolved =
-          match Link_collect.collect_links doc with
+          match Link_collect.collect_links ~index ~rel_path:"note-a.md" doc with
           | [ ll ] ->
-            (match Oystermark.Vault.Resolve.resolve ll.link_ref "note-a.md" index with
+            (match ll.destination with
              | Note { path } | File { path } -> path
              | other -> Sexp.to_string [%sexp (other : Oystermark.Vault.Resolve.target)])
           | links -> sprintf "<%d links>" (List.length links)

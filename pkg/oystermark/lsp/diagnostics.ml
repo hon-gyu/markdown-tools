@@ -105,16 +105,16 @@ let compute
   @@ fun _sp ->
   Trace_core.add_data_to_span _sp [ "rel_path", `String rel_path ];
   let doc = Lsp_util.parse_doc content in
-  let links = Link_collect.collect_links doc in
+  let links = Link_collect.collect_links ~index ~rel_path doc in
   let diagnostics =
     List.filter_map links ~f:(fun (ll : Link_collect.located_link) ->
-      let target = Oystermark.Vault.Resolve.resolve ll.link_ref rel_path index in
+      let target = ll.destination in
       (* A link is unresolved when: the target file doesn't exist, OR the file
          exists but the heading/block fragment wasn't found (resolve falls back
          to Note/File/Curr_file instead of Heading/Block/Curr_heading/Curr_block).
          See {!page-"feature-diagnostics".resolution_check}. *)
       let is_unresolved =
-        match target, ll.link_ref.fragment with
+        match target, ll.reference.fragment with
         | Oystermark.Vault.Resolve.Unresolved, _ -> true
         | (Note _ | File _), Some _ ->
           Lsp_config.equal_fragment_behavior config.diag_unresolved_fragment Strict
@@ -125,12 +125,12 @@ let compute
       if is_unresolved
       then (
         let target_str =
-          match ll.link_ref.target with
+          match ll.reference.target with
           | Some t -> t
           | None -> ""
         in
         let fragment_str =
-          match ll.link_ref.fragment with
+          match ll.reference.fragment with
           | Some (Oystermark.Vault.Link_ref.Heading h) -> "#" ^ String.concat ~sep:"#" h
           | Some (Block_ref b) -> "#^" ^ b
           | None -> ""

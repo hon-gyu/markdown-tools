@@ -25,6 +25,9 @@ Vault-level operations: directory indexing, link resolution, and embed expansion
 
 See {!Oystermark.Vault}.
 
+Shared link queries, graph statistics, and rename plans are specified in
+{!page-"vault-operations"}.
+
 {2 Render}
 
 HTML rendering.

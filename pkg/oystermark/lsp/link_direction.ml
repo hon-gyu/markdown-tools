@@ -105,13 +105,9 @@ let hints
   @@ fun _sp ->
   let doc = Lsp_util.parse_doc content in
   let result =
-    Link_collect.collect_links doc
+    Link_collect.collect_links ~index ~rel_path doc
     |> List.filter_map ~f:(fun (l : Link_collect.located_link) ->
-      match
-        intra_note_target
-          ~rel_path
-          (Oystermark.Vault.Resolve.resolve l.link_ref rel_path index)
-      with
+      match intra_note_target ~rel_path l.destination with
       | None -> None
       | Some target_loc ->
         (* The hint sits just past the link's last byte, and the delta is

@@ -42,6 +42,7 @@
  (package oystermark)
  (mld_files
   index
+  vault-operations
   self-describing-note-gen
   code-exec-cache-design
   tracking

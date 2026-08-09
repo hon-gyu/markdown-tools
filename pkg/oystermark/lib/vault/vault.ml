@@ -2,6 +2,8 @@ module Index = Index
 module Link_ref = Link_ref
 module Resolve = Resolve
 module Embed = Embed
+module Query = Query
+module Rename = Rename
 open Core
 
 type t =

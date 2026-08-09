@@ -35,13 +35,13 @@ let title_of_path path =
 
 let action_at_range ~index ~rel_path ~content ~first_byte ~last_byte =
   let doc = Lsp_util.parse_doc content in
-  Link_collect.collect_links doc
+  Link_collect.collect_links ~index ~rel_path doc
   |> List.find ~f:(fun link ->
     link.first_byte <= last_byte && first_byte <= link.last_byte)
   |> Option.bind ~f:(fun link ->
-    match link.kind, link.link_ref.target, link.link_ref.fragment with
+    match link.kind, link.reference.target, link.reference.fragment with
     | Link_collect.Link, Some target, None ->
-      (match Oystermark.Vault.Resolve.resolve link.link_ref rel_path index with
+      (match link.destination with
        | Unresolved ->
          safe_note_path target
          |> Option.map ~f:(fun rel_path -> { rel_path; title = title_of_path rel_path })

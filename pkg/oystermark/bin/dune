@@ -30,3 +30,12 @@
   yaml)
  (preprocess
   (pps ppx_jane)))
+
+(executable
+ (public_name oyster)
+ (package oystermark)
+ (name vault_cli)
+ (modules vault_cli)
+ (libraries oystermark core core_unix core_unix.command_unix)
+ (preprocess
+  (pps ppx_jane)))

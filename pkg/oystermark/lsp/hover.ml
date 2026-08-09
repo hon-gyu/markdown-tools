@@ -351,7 +351,7 @@ let hover
     [ "rel_path", `String rel_path; "line", `Int line; "character", `Int character ];
   let offset = Lsp_util.byte_offset_of_position content ~line ~character in
   let doc = Lsp_util.parse_doc content in
-  let links = Link_collect.collect_links doc in
+  let links = Link_collect.collect_links ~index ~rel_path doc in
   match Link_collect.find_at_offset links offset with
   | None -> None
   | Some link_ref ->
