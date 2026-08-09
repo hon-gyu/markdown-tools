@@ -61,12 +61,12 @@ let render_vault
   (* Expand note embeds after resolution *)
   let expanded : (string * Cmarkit.Doc.t) list = Vault.Embed.expand_docs resolved in
   let vault_ctx : Vault.t =
-    { vault_root; index; docs = expanded; vault_meta = Cmarkit.Meta.none }
+    Vault.with_docs { vault_root; index; vault_meta = Cmarkit.Meta.none } expanded
   in
   (* Stage 4: on_vault + Render *)
   let final_vault : Vault.t = pipeline.on_vault vault_ctx in
   let sidebar_paths : string list =
-    List.filter_map final_vault.docs ~f:(fun (p, _) ->
+    List.filter_map (Vault.docs final_vault) ~f:(fun (p, _) ->
       if String.is_suffix p ~suffix:".md" then Some p else None)
   in
   let sidebar : string =
@@ -78,7 +78,7 @@ let render_vault
       ~compare_path:(Pipeline.compare_path_of_toc_order config.toc_order)
       sidebar_paths
   in
-  List.filter_map final_vault.docs ~f:(fun (rel_path, final) ->
+  List.filter_map (Vault.docs final_vault) ~f:(fun (rel_path, final) ->
     if String.is_suffix rel_path ~suffix:".md"
     then (
       let fm = Parse.Frontmatter.of_doc final in

@@ -6,8 +6,11 @@ module Resolve = Vault.Resolve
 
 (* Vault index modelled after the tt vault to cover behaviors documented in Note 1.md. *)
 let test_index : Index.t =
-  { files =
+  { notes =
       [ { rel_path = "Note 1.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings =
             [ { text = "Level 3 title"; level = 3; slug = "level-3-title"; loc = None }
             ; { text = "Level 4 title"; level = 4; slug = "level-4-title"; loc = None }
@@ -25,6 +28,9 @@ let test_index : Index.t =
         ; attrs = []
         }
       ; { rel_path = "Note 2.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings =
             [ { text = "Some level 2 title"
               ; level = 2
@@ -42,35 +48,168 @@ let test_index : Index.t =
         ; blocks = []
         ; attrs = []
         }
-      ; { rel_path = "Three laws of motion.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "().md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "ww.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Figure1.jpg"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Figure1.jpg.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Figure1.jpg.md.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Figure1.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Figure1^2.jpg"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "image.png"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "empty_video.mp4"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "unsupported_text_file.txt"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "a.joiwduvqneoi"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Something"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Something.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "Note 1"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "indir_same_name.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "dir/indir_same_name.md"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "dir/indir2.md"; headings = []; blocks = []; attrs = [] }
+      ; { rel_path = "Three laws of motion.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "().md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "ww.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Figure1.jpg"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Figure1.jpg.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Figure1.jpg.md.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Figure1.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Figure1^2.jpg"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "image.png"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "empty_video.mp4"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "unsupported_text_file.txt"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "a.joiwduvqneoi"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Something"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Something.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "Note 1"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "indir_same_name.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "dir/indir_same_name.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "dir/indir2.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
       ; { rel_path = "dir/inner_dir/note_in_inner_dir.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings = []
         ; blocks = []
         ; attrs = []
         }
       ; { rel_path = "dir/inner_dir/deep.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings = []
         ; blocks = [ { id = "deep1"; loc = None } ]
         ; attrs = []
         }
       ]
+  ; files = []
   ; dirs = []
   }
 ;;

@@ -103,10 +103,10 @@ let%expect_test "is_path_subsequence" =
     {b Ranking Multiple Matches} in [specification/obsidian/link-resolution.md],
     where the order is measured against Obsidian itself: depth wins first, and
     a sibling of the linking note only breaks a tie between equal depths. *)
-let match_rank ~(source_dir : string) (f : Index.file_entry) : int * int =
-  let depth = List.length (String.split f.rel_path ~on:'/') in
+let match_rank ~(source_dir : string) (rel_path : string) : int * int =
+  let depth = List.length (String.split rel_path ~on:'/') in
   let in_source_dir =
-    if String.equal (Filename.dirname f.rel_path) source_dir then 0 else 1
+    if String.equal (Filename.dirname rel_path) source_dir then 0 else 1
   in
   depth, in_source_dir
 ;;
@@ -117,22 +117,22 @@ let match_rank ~(source_dir : string) (f : Index.file_entry) : int * int =
     subsequence match.  Candidates that tie on every rank keep index order —
     arbitrary, as it is in Obsidian, but at least it is the same arbitrary
     answer every time the index is built the same way. *)
-let resolve_file ~(source : string) (files : Index.file_entry list) (target_str : string)
-  : Index.file_entry option
+let resolve_file ~(source : string) (files : string list) (target_str : string)
+  : string option
   =
   let normalize_target s = if String.mem s '.' then s else s ^ ".md" in
   let normalized = normalize_target target_str in
   (* Exact match *)
-  match List.find files ~f:(fun f -> String.equal f.rel_path normalized) with
+  match List.find files ~f:(String.equal normalized) with
   | Some _ as result -> result
   | None ->
     (* Subsequence match: split needle into path components *)
     let needle = String.split normalized ~on:'/' in
     let source_dir = Filename.dirname source in
     List.filter files ~f:(fun f ->
-      let haystack = String.split f.rel_path ~on:'/' in
+      let haystack = String.split f ~on:'/' in
       is_path_subsequence ~haystack ~needle)
-    |> List.fold ~init:None ~f:(fun best (f : Index.file_entry) ->
+    |> List.fold ~init:None ~f:(fun best f ->
       match best with
       | Some b
         when [%compare: int * int] (match_rank ~source_dir b) (match_rank ~source_dir f)
@@ -209,7 +209,7 @@ let resolve_attr_of_heading_query (attrs : Index.attr_entry list) (hs : string l
 let resolve (link_ref : Link_ref.t) (curr_file : string) (index : Index.t) : target =
   (* TODO(refactor): the matches be re-written to use Let_syntax? *)
   let current_entry =
-    List.find index.files ~f:(fun f -> String.equal f.rel_path curr_file)
+    List.find index.notes ~f:(fun f -> String.equal f.rel_path curr_file)
   in
   match link_ref.target with
   | None ->
@@ -239,35 +239,38 @@ let resolve (link_ref : Link_ref.t) (curr_file : string) (index : Index.t) : tar
               | None -> Curr_file))
         | None -> Curr_file))
   | Some target_str ->
-    (match resolve_file ~source:curr_file index.files target_str with
+    let paths =
+      List.map index.notes ~f:(fun note -> note.rel_path)
+      @ List.map index.files ~f:(fun file -> file.rel_path)
+    in
+    (match resolve_file ~source:curr_file paths target_str with
      | None -> Unresolved
-     | Some file ->
+     | Some path ->
        let file_or_note (path : string) : target =
          if String.is_suffix path ~suffix:".md" then Note { path } else File { path }
        in
-       (match link_ref.fragment with
-        | None -> file_or_note file.rel_path
-        | Some (Link_ref.Heading hs) ->
+       let note =
+         List.find index.notes ~f:(fun note -> String.equal note.rel_path path)
+       in
+       (match link_ref.fragment, note with
+        | None, _ -> file_or_note path
+        | Some _, None -> File { path }
+        | Some (Link_ref.Heading hs), Some file ->
           (match resolve_headings file.headings hs with
            | Some h ->
              Heading
-               { path = file.rel_path
-               ; heading = h.text
-               ; level = h.level
-               ; slug = h.slug
-               ; loc = h.loc
-               }
+               { path; heading = h.text; level = h.level; slug = h.slug; loc = h.loc }
            | None ->
              (match resolve_attr_of_heading_query file.attrs hs with
-              | Some a -> Attr { path = file.rel_path; id = a.id; loc = a.loc }
-              | None -> file_or_note file.rel_path))
-        | Some (Link_ref.Block_ref bid) ->
+              | Some a -> Attr { path; id = a.id; loc = a.loc }
+              | None -> file_or_note path))
+        | Some (Link_ref.Block_ref bid), Some file ->
           (match List.find file.blocks ~f:(fun b -> String.equal b.id bid) with
-           | Some b -> Block { path = file.rel_path; block_id = bid; loc = b.loc }
+           | Some b -> Block { path; block_id = bid; loc = b.loc }
            | None ->
              (match resolve_attr file.attrs bid with
-              | Some a -> Attr { path = file.rel_path; id = a.id; loc = a.loc }
-              | None -> file_or_note file.rel_path))))
+              | Some a -> Attr { path; id = a.id; loc = a.loc }
+              | None -> file_or_note path))))
 ;;
 
 (** Build a [Cmarkit.Mapper.t] that resolves links against the vault index. *)
@@ -322,26 +325,23 @@ let resolve_docs (docs : (string * Cmarkit.Doc.t) list) (index : Index.t)
    and the only part of the ranking an author cannot predict. *)
 let%expect_test "ranking multiple subsequence matches" =
   let files =
-    List.map
-      [ "s1.md"
-      ; "s2.md"
-      ; "aaa/s5.md"
-      ; "mmm/s7.md"
-      ; "bbb/s7.md"
-      ; "zzz/s6.md"
-      ; "notes/probe.md"
-      ; "notes/s1.md"
-      ; "notes/s3.md"
-      ; "notes/s5.md"
-      ; "notes/s6.md"
-      ; "deep/a/s1.md"
-      ; "deep/a/s2.md"
-      ; "deep/a/s3.md"
-      ; "deep/a/s4.md"
-      ; "deep/b/s4.md"
-      ]
-      ~f:(fun rel_path : Index.file_entry ->
-        { rel_path; headings = []; blocks = []; attrs = [] })
+    [ "s1.md"
+    ; "s2.md"
+    ; "aaa/s5.md"
+    ; "mmm/s7.md"
+    ; "bbb/s7.md"
+    ; "zzz/s6.md"
+    ; "notes/probe.md"
+    ; "notes/s1.md"
+    ; "notes/s3.md"
+    ; "notes/s5.md"
+    ; "notes/s6.md"
+    ; "deep/a/s1.md"
+    ; "deep/a/s2.md"
+    ; "deep/a/s3.md"
+    ; "deep/a/s4.md"
+    ; "deep/b/s4.md"
+    ]
   in
   let resolve_from source target =
     printf
@@ -349,7 +349,7 @@ let%expect_test "ranking multiple subsequence matches" =
       source
       target
       (match resolve_file ~source files target with
-       | Some f -> f.rel_path
+       | Some f -> f
        | None -> "<unresolved>")
   in
   List.iter [ "s1"; "s2"; "s3"; "s4"; "s5"; "s6"; "s7" ] ~f:(fun t ->

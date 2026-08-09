@@ -25,15 +25,26 @@ type attr_entry =
   ; loc : Cmarkit.Textloc.t option
   }
 
-type file_entry =
+type non_md_entry =
   { rel_path : string
-  ; headings : heading_entry list
-  ; blocks : block_entry list (** blocks with id attached *)
-  ; attrs : attr_entry list
+  ; birthtime : (int * int * int) option (** created date YYYY/MM/DD, when available *)
+  ; mtime : (int * int * int) option (** modified date YYYY/MM/DD, when available *)
   }
 
+type note_entry =
+  { rel_path : string
+  ; birthtime : (int * int * int) option (** created date YYYY/MM/DD, when available *)
+  ; mtime : (int * int * int) option (** modified date YYYY/MM/DD, when available *)
+  ; doc : Cmarkit.Doc.t
+  ; headings : heading_entry list
+  ; blocks : block_entry list (** blocks with caret id *)
+  ; attrs : attr_entry list (** djot inline and block attributes *)
+  }
+(* The last three are derived from [doc], pre-computed for now *)
+
 type t =
-  { files : file_entry list
+  { notes : note_entry list
+  ; files : non_md_entry list
   ; dirs : string list (** directory relative paths with trailing [/] *)
   }
 

@@ -158,8 +158,7 @@ let markdown_dest ~(content : string) ~(line : int) ~(character : int) : md_dest
     See {!page-"feature-completion".note_name_completion}. *)
 let note_name_items (index : Oystermark.Vault.Index.t) : item list =
   let md_files =
-    List.filter_map index.files ~f:(fun (f : Oystermark.Vault.Index.file_entry) ->
-      if String.is_suffix f.rel_path ~suffix:".md" then Some f.rel_path else None)
+    List.map index.notes ~f:(fun (f : Oystermark.Vault.Index.note_entry) -> f.rel_path)
   in
   let basename p = String.chop_suffix_if_exists (Filename.basename p) ~suffix:".md" in
   let counts =
@@ -252,26 +251,28 @@ let max_path_items = 500
     it the two groups swap.  Returns the items and whether the list was cut
     short at {!max_path_items}. *)
 let path_items ~(image : bool) (index : Oystermark.Vault.Index.t) : item list * bool =
-  let title (f : Oystermark.Vault.Index.file_entry) =
+  let title (f : Oystermark.Vault.Index.note_entry) =
     List.find_map f.headings ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
       if h.level = 1 then Some h.text else None)
   in
+  let item rel_path detail =
+    let group =
+      (* [0] sorts first. *)
+      match Link_collect.is_image_target rel_path, image with
+      | true, true | false, false -> 0
+      | _ -> 1
+    in
+    ( group
+    , { label = rel_path
+      ; detail
+      ; filter_text = Some rel_path
+      ; insert_text = Some (escape_destination rel_path)
+      ; kind = File
+      } )
+  in
   let items =
-    List.map index.files ~f:(fun (f : Oystermark.Vault.Index.file_entry) ->
-      let is_md = String.is_suffix f.rel_path ~suffix:".md" in
-      let group =
-        (* [0] sorts first. *)
-        match Link_collect.is_image_target f.rel_path, image with
-        | true, true | false, false -> 0
-        | _ -> 1
-      in
-      ( group
-      , { label = f.rel_path
-        ; detail = (if is_md then title f else None)
-        ; filter_text = Some f.rel_path
-        ; insert_text = Some (escape_destination f.rel_path)
-        ; kind = File
-        } ))
+    List.map index.notes ~f:(fun f -> item f.rel_path (title f))
+    @ List.map index.files ~f:(fun f -> item f.rel_path None)
     |> List.sort ~compare:(fun (ga, a) (gb, b) ->
       match Int.compare ga gb with
       | 0 -> String.compare a.label b.label
@@ -293,14 +294,17 @@ let target_entry
       ~(rel_path : string)
       ~(content : string)
       (note_part : string)
-  : Oystermark.Vault.Index.file_entry option
+  : Oystermark.Vault.Index.note_entry option
   =
-  let find path = List.find index.files ~f:(fun f -> String.equal f.rel_path path) in
+  let find path = List.find index.notes ~f:(fun f -> String.equal f.rel_path path) in
   if String.is_empty note_part
   then (
     let doc = Lsp_util.parse_doc content in
     Some
       { rel_path
+      ; birthtime = None
+      ; mtime = None
+      ; doc
       ; headings = Oystermark.Vault.Index.extract_headings doc
       ; blocks = Oystermark.Vault.Index.extract_block_ids doc
       ; attrs = Oystermark.Vault.Index.extract_attr_ids doc
@@ -318,7 +322,7 @@ let target_entry
 (** Heading, block-id, and attribute-id suggestions for a file entry.  All three
     kinds share one fragment namespace (see {!page-"feature-attribute-anchors"}).
     See {!page-"feature-completion".fragment_completion}. *)
-let fragment_items (entry : Oystermark.Vault.Index.file_entry) : item list =
+let fragment_items (entry : Oystermark.Vault.Index.note_entry) : item list =
   let heading_items =
     List.map entry.headings ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
       { label = h.text

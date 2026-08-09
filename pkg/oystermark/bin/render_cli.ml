@@ -44,7 +44,7 @@ let file_cmd : Command.t =
        in
        let vault = Vault.of_root_path vault_root in
        let doc =
-         List.Assoc.find vault.docs ~equal:String.equal rel_path
+         List.Assoc.find (Vault.docs vault) ~equal:String.equal rel_path
          |> Option.value_exn ~message:(sprintf "File %s not found in vault" rel_path)
        in
        let html = Html.of_doc ~backend_blocks:true ~safe:false doc in

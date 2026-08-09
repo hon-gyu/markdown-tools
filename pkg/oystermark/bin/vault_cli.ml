@@ -43,7 +43,7 @@ let unresolved_command =
     (let%map_open.Command root = vault_param in
      fun () ->
        let vault = load root in
-       Vault.Query.unresolved ~index:vault.index ~docs:vault.docs
+       Vault.Query.unresolved ~index:vault.index ~docs:(Vault.docs vault)
        |> List.iter ~f:(print_link root))
 ;;
 
@@ -53,7 +53,7 @@ let stats_command =
     (let%map_open.Command root = vault_param in
      fun () ->
        let vault = load root in
-       let stats = Vault.Query.stats ~index:vault.index ~docs:vault.docs in
+       let stats = Vault.Query.stats ~index:vault.index ~docs:(Vault.docs vault) in
        printf "notes\t%d\n" stats.notes;
        printf "resolved link occurrences\t%d\n" stats.resolved_link_occurrences;
        printf "unique directed edges\t%d\n" stats.unique_edges;
@@ -89,10 +89,14 @@ let links_command =
        in
        if not outgoing
        then
-         show "incoming" (Vault.Query.incoming ~index:vault.index ~docs:vault.docs ~note);
+         show
+           "incoming"
+           (Vault.Query.incoming ~index:vault.index ~docs:(Vault.docs vault) ~note);
        if not incoming
        then
-         show "outgoing" (Vault.Query.outgoing ~index:vault.index ~docs:vault.docs ~note))
+         show
+           "outgoing"
+           (Vault.Query.outgoing ~index:vault.index ~docs:(Vault.docs vault) ~note))
 ;;
 
 let apply_edits content edits =
@@ -146,7 +150,12 @@ let rename_command target_name summary make_target =
        in
        let target = make_target vault path target in
        match
-         Vault.Rename.plan ~index:vault.index ~docs:vault.docs ~read_file target ~new_name
+         Vault.Rename.plan
+           ~index:vault.index
+           ~docs:(Vault.docs vault)
+           ~read_file
+           target
+           ~new_name
        with
        | Error message -> failwith message
        | Ok change ->
@@ -173,7 +182,7 @@ let rename_note_command =
        match
          Vault.Rename.plan
            ~index:vault.index
-           ~docs:vault.docs
+           ~docs:(Vault.docs vault)
            ~read_file
            ({ path; subject = Note } : Vault.Rename.target)
            ~new_name
@@ -188,7 +197,7 @@ let rename_note_command =
 
 let heading_target (vault : Vault.t) path heading =
   let entry =
-    List.find_exn vault.index.files ~f:(fun entry -> String.equal entry.rel_path path)
+    List.find_exn vault.index.notes ~f:(fun entry -> String.equal entry.rel_path path)
   in
   let heading =
     List.find entry.headings ~f:(fun h ->

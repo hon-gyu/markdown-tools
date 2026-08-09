@@ -3,8 +3,11 @@ open Oystermark
 open Oystermark_render
 
 let test_index : Vault.Index.t =
-  { files =
+  { notes =
       [ { rel_path = "Note 1.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings =
             [ { text = "Level 3 title"; level = 3; slug = "level-3-title"; loc = None }
             ; { text = "L2"; level = 2; slug = "l2"; loc = None }
@@ -14,21 +17,56 @@ let test_index : Vault.Index.t =
         ; attrs = []
         }
       ; { rel_path = "Note 2.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings =
             [ { text = "Some heading"; level = 2; slug = "some-heading"; loc = None } ]
         ; blocks = []
         ; attrs = []
         }
-      ; { rel_path = "image.png"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "video.mp4"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "audio.mp3"; headings = []; blocks = []; attrs = [] }
-      ; { rel_path = "doc.pdf"; headings = []; blocks = []; attrs = [] }
+      ; { rel_path = "image.png"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "video.mp4"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "audio.mp3"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
+      ; { rel_path = "doc.pdf"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
+        ; headings = []
+        ; blocks = []
+        ; attrs = []
+        }
       ; { rel_path = "dir/deep.md"
+        ; birthtime = None
+        ; mtime = None
+        ; doc = Parse.of_string ""
         ; headings = []
         ; blocks = [ { id = "d1"; loc = None } ]
         ; attrs = []
         }
       ]
+  ; files = []
   ; dirs = []
   }
 ;;

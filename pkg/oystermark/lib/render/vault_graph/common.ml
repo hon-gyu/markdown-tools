@@ -194,7 +194,7 @@ let of_vault (vault : Vault.t) : t =
   (* Add all notes as Tgt_note vertices and collect metadata *)
   let g, meta =
     List.fold
-      vault.docs
+      (Vault.docs vault)
       ~init:(g, Map.empty (module String))
       ~f:(fun (g, meta) (rel_path, doc) ->
         let g = G.add_vertex g { path = rel_path; kind = Note } in
@@ -203,7 +203,7 @@ let of_vault (vault : Vault.t) : t =
   in
   (* Add edges *)
   let g =
-    List.fold vault.docs ~init:g ~f:(fun g (src_path, doc) ->
+    List.fold (Vault.docs vault) ~init:g ~f:(fun g (src_path, doc) ->
       let edges = collect_edges_from_doc src_path doc in
       List.fold edges ~init:g ~f:(fun g (src, tgt) -> G.add_edge_e g (src, Link, tgt)))
   in

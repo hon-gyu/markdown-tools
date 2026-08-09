@@ -46,7 +46,7 @@ let event_of_loc ~name ~kind = function
       }
 ;;
 
-let events (entry : Oystermark.Vault.Index.file_entry) =
+let events (entry : Oystermark.Vault.Index.note_entry) =
   let headings =
     List.filter_map entry.headings ~f:(fun h ->
       event_of_loc ~name:h.text ~kind:(Heading h.level) h.loc)
@@ -71,7 +71,7 @@ let events (entry : Oystermark.Vault.Index.file_entry) =
       | c -> c)
 ;;
 
-let symbols ~(entry : Oystermark.Vault.Index.file_entry) ~(content_length : int)
+let symbols ~(entry : Oystermark.Vault.Index.note_entry) ~(content_length : int)
   : symbol list
   =
   let roots_rev = ref [] in
@@ -114,7 +114,7 @@ let symbols ~(entry : Oystermark.Vault.Index.file_entry) ~(content_length : int)
 ;;
 
 let document_outline ~(index : Oystermark.Vault.Index.t) ~rel_path ~content =
-  List.find index.files ~f:(fun entry -> String.equal entry.rel_path rel_path)
+  List.find index.notes ~f:(fun entry -> String.equal entry.rel_path rel_path)
   |> Option.value_map ~default:[] ~f:(fun entry ->
     symbols ~entry ~content_length:(String.length content))
 ;;

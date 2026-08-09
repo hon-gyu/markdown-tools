@@ -319,7 +319,7 @@ let title_of_path (rel_path : string) : string =
 ;;
 
 let title (ctx : Vault.t) : html list =
-  List.map ctx.docs ~f:(fun (rel_path, _doc) -> title_of_path rel_path)
+  List.map (Vault.docs ctx) ~f:(fun (rel_path, _doc) -> title_of_path rel_path)
 ;;
 
 module Backlink = struct
@@ -449,7 +449,7 @@ module Backlink = struct
   let backlinks (rel_path : string) : vault_component =
     fun (vault : Vault.t) ->
     let sources : (string * string list) list =
-      List.filter_map vault.docs ~f:(fun (src_path, doc) ->
+      List.filter_map (Vault.docs vault) ~f:(fun (src_path, doc) ->
         let blocks : string list = extract_backlink_blocks rel_path doc in
         match blocks with
         | [] -> None

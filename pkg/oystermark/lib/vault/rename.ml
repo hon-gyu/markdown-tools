@@ -216,7 +216,7 @@ let attr_id_offset ~(id : string) line =
 ;;
 
 let definition_edit ~index ~read_file { path; subject } ~new_name =
-  List.find index.Index.files ~f:(fun f -> String.equal f.rel_path path)
+  List.find index.Index.notes ~f:(fun f -> String.equal f.rel_path path)
   |> Option.bind ~f:(fun file ->
     let loc =
       match subject with
@@ -321,13 +321,16 @@ let%expect_test "plan note and heading renames" =
     let entries =
       List.map md_docs ~f:(fun (rel_path, doc) ->
         ({ Index.rel_path
+         ; birthtime = None
+         ; mtime = None
+         ; doc
          ; headings = Index.extract_headings doc
          ; blocks = Index.extract_block_ids doc
          ; attrs = Index.extract_attr_ids doc
          }
-         : Index.file_entry))
+         : Index.note_entry))
     in
-    ({ files = entries; dirs = [] } : Index.t)
+    ({ notes = entries; files = []; dirs = [] } : Index.t)
   in
   let docs = Resolve.resolve_docs md_docs index in
   let read_file path = List.Assoc.find files ~equal:String.equal path in

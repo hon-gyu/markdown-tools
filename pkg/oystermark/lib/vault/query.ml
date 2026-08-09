@@ -141,13 +141,16 @@ let%expect_test "queries distinguish occurrences and edges" =
     let files =
       List.map docs ~f:(fun (rel_path, doc) ->
         ({ Index.rel_path
+         ; birthtime = None
+         ; mtime = None
+         ; doc
          ; headings = Index.extract_headings doc
          ; blocks = Index.extract_block_ids doc
          ; attrs = Index.extract_attr_ids doc
          }
-         : Index.file_entry))
+         : Index.note_entry))
     in
-    ({ files; dirs = [] } : Index.t)
+    ({ notes = files; files = []; dirs = [] } : Index.t)
   in
   let docs = Resolve.resolve_docs docs index in
   print_s [%sexp (stats ~index ~docs : stats)];

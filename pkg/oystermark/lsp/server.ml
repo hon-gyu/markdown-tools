@@ -308,7 +308,7 @@ let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
     let refs =
       Feature.Find_references.find_references
         ~index:v.index
-        ~docs:v.docs
+        ~docs:(Oystermark.Vault.docs v)
         ~rel_path
         ~content:(disk_content t rel_path)
         ~line
@@ -361,7 +361,7 @@ let rename
     let edits =
       Feature.Rename.rename
         ~index:v.index
-        ~docs:v.docs
+        ~docs:(Oystermark.Vault.docs v)
         ~read_file:(read_file t)
         ~rel_path
         ~content
@@ -764,7 +764,7 @@ let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens
     | None -> []
     | Some v ->
       Reference_counts.entries
-        ~docs:v.docs
+        ~docs:(Oystermark.Vault.docs v)
         ~rel_path
         ~content
         ~range_start_line:0

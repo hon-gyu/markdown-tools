@@ -49,7 +49,7 @@ let home_toc
       if not (String.equal path home_path)
       then [ path, doc ]
       else (
-        let doc_paths = List.map ctx.docs ~f:fst in
+        let doc_paths = List.map (Vault.docs ctx) ~f:fst in
         let all_entry_paths = doc_paths @ ctx.index.dirs in
         let toc_paths : string list =
           List.filter_map all_entry_paths ~f:(fun p ->
@@ -80,10 +80,11 @@ let dir_index
   =
   let compare_path = compare_path_of_toc_order toc_order in
   let on_vault (ctx : Vault.t) : Vault.t =
-    let doc_paths : string list = List.map ctx.docs ~f:fst in
+    let docs = Vault.docs ctx in
+    let doc_paths : string list = List.map docs ~f:fst in
     let non_empty_dirs : string list =
       List.filter ctx.index.dirs ~f:(fun (dir_path : string) ->
-        List.exists ctx.docs ~f:(fun (p, _) ->
+        List.exists docs ~f:(fun (p, _) ->
           String.is_prefix p ~prefix:dir_path && not (String.equal p dir_path)))
     in
     let all_paths : string list = doc_paths @ non_empty_dirs in
@@ -91,12 +92,12 @@ let dir_index
       List.filter_map ctx.index.dirs ~f:(fun (dir_path : string) ->
         let index_path : string = dir_path ^ "index.md" in
         (* Skip if an explicit index.md already exists *)
-        if List.Assoc.mem ctx.docs ~equal:String.equal index_path
+        if List.Assoc.mem docs ~equal:String.equal index_path
         then None
         else (
           (* Skip directories that contain no notes *)
           let has_notes : bool =
-            List.exists ctx.docs ~f:(fun (p, _) ->
+            List.exists docs ~f:(fun (p, _) ->
               String.is_prefix p ~prefix:dir_path && not (String.equal p dir_path))
           in
           if not has_notes
@@ -132,7 +133,7 @@ let dir_index
             in
             Some (index_path, Cmarkit.Doc.make toc_block))))
     in
-    { ctx with docs = ctx.docs @ new_docs }
+    Vault.with_docs ctx (docs @ new_docs)
   in
   make ~on_vault ()
 ;;
@@ -173,7 +174,7 @@ let home_graph
     let g = of_vault ctx in
     let html = to_widget_html ~config g in
     let docs =
-      List.map ctx.docs ~f:(fun (path, doc) ->
+      List.map (Vault.docs ctx) ~f:(fun (path, doc) ->
         if not (String.equal path home_path)
         then path, doc
         else (
@@ -187,7 +188,7 @@ let home_graph
           in
           path, Cmarkit.Mapper.map_doc mapper doc))
     in
-    { ctx with docs }
+    Vault.with_docs ctx docs
   in
   make ~on_vault ()
 ;;
