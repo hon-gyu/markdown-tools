@@ -7,9 +7,7 @@ type heading_entry =
   { text : string
   ; level : int
   ; slug : string
-    (** The identifier the parser gave the heading: case-folded, punctuation
-        dropped, spaces to [-], deduped with [-1], [-2], … See
-        {!Parse.Common.heading_id}. *)
+    (** The identifier the parser gave the heading. See {!Parse.Common.heading_id}. *)
   ; loc : Cmarkit.Textloc.t option
   }
 
@@ -20,10 +18,8 @@ type block_entry =
 
 (** An explicit djot attribute id ([{#id}]) attached to an inline span or block.
 
-    Unlike {!heading_entry} (matched by derived slug) and {!block_entry}
-    (whole-paragraph [^caret] ids), an attribute anchor can pin an arbitrary
-    inline sub-span, so [loc] may carry a column, not only a line.
-    See {!page-"feature-attribute-anchors"}. *)
+    Unlike {!heading_entry} and {!block_entry}, an attribute anchor can pin an arbitrary
+    inline sub-span, so [loc] may carry a column, not only a line. *)
 type attr_entry =
   { id : string
   ; loc : Cmarkit.Textloc.t option
@@ -32,7 +28,7 @@ type attr_entry =
 type file_entry =
   { rel_path : string
   ; headings : heading_entry list
-  ; blocks : block_entry list
+  ; blocks : block_entry list (** blocks with id attached *)
   ; attrs : attr_entry list
   }
 
@@ -157,17 +153,18 @@ let extract_attr_ids (doc : Cmarkit.Doc.t) : attr_entry list =
   List.rev (Cmarkit.Folder.fold_doc folder [] doc)
 ;;
 
-(** Directories that hold tooling state rather than notes, skipped by name.
-    The list is what a vault is expected to contain beside its notes; a
-    directory whose name merely begins with a [.] is a directory the author
-    chose to name that way, and its notes are notes. *)
-let ignored_dirs = [ ".git"; ".obsidian"; ".oyster"; ".trash" ]
-
+let ignored_dirs = [ ".git"; ".obsidian"; ".oyster"; ".trash"; ".history" ]
 let is_ignored_dir (name : string) : bool = List.mem ignored_dirs name ~equal:String.equal
 
-(** Recursively list all entries (files and directories), returning relative
-    paths.  Directories have a trailing [/].  {!ignored_dirs} and hidden files
-    are excluded. *)
+(** Recursively IO-read all entries (files and directories) under [root], returning relative
+    paths.
+    - directories have a trailing [/].
+    - notes in {!ignored_dirs} and notes starting with [.] are excluded.
+
+    @param rel_prefix The relative prefix to prepend to each entry's path.
+
+    @return A list of relative paths to entries (files and directories).
+*)
 let rec list_entries_recursive ~(root : string) ~(rel_prefix : string) : string list =
   let (entries : string list) =
     try Sys_unix.ls_dir root with
