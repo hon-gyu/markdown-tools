@@ -9,14 +9,9 @@ open Core
 type t =
   { vault_root : string
   ; index : Index.t (** index of all files in the vault *)
-  ; docs : (string * Cmarkit.Doc.t) list
+  ; docs : (string * Cmarkit.Doc.t) list (** parsed docs (AST) *)
   ; vault_meta : Cmarkit.Meta.t
   }
-
-let all_entry_paths (vault : t) : string list =
-  let doc_paths : string list = List.map vault.docs ~f:fst in
-  doc_paths @ vault.index.dirs
-;;
 
 (** Build an index from a list of [(rel_path, doc)] pairs
     plus a list of non-md relative paths. *)
@@ -40,8 +35,7 @@ let build_index
   { files = md_entries @ non_md; dirs }
 ;;
 
-(** Simple build: read all .md files, optionally filter, build index.
-    For pipeline-aware builds, use the lower-level functions directly. *)
+(** Simple build: read all .md files, optionally filter, build index. *)
 let of_root_path ?(skip_expand : bool = false) ?(locs : bool = true) (vault_root : string)
   : t
   =

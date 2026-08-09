@@ -49,8 +49,10 @@ let home_toc
       if not (String.equal path home_path)
       then [ path, doc ]
       else (
+        let doc_paths = List.map ctx.docs ~f:fst in
+        let all_entry_paths = doc_paths @ ctx.index.dirs in
         let toc_paths : string list =
-          List.filter_map (Vault.all_entry_paths ctx) ~f:(fun p ->
+          List.filter_map all_entry_paths ~f:(fun p ->
             if String.is_suffix p ~suffix:"/" then None else Some p)
         in
         let toc_cmark_list = Component.toc_cmark_list ~dir_link ~compare_path toc_paths in
