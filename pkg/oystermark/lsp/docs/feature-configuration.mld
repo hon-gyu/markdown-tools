@@ -27,6 +27,7 @@ The same shape in both sources — one schema, one parser.
   | Key | Type | Default | Meaning |
   |-----|------|---------|---------|
   | [disable] | bool | [false] | Turn the server off for this vault. See {!section-disable}. |
+  | [imports] | array of strings | [[]] | Descendant projects visible to this project. See {!page-"feature-projects".imports}. |
   | [dailyNotes.format] | string | [YYYY-MM-DD] | Date format naming the note. See {!page-"feature-daily-notes".format}. |
   | [dailyNotes.folder] | string | vault root | Vault-relative folder the daily notes live under. |
   | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |

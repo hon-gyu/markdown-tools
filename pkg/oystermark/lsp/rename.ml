@@ -25,17 +25,14 @@ let shared_target = function
   | Path_attr { path; id } -> { path; subject = Attr { id } }
 ;;
 
+let plan_target ~index ~docs ~read_file target ~new_name =
+  Oystermark.Vault.Rename.plan ~index ~docs ~read_file (shared_target target) ~new_name
+;;
+
 let rename ~index ~docs ~read_file ~rel_path ~content ~line ~character ~new_name () =
   Find_references.detect_target ~index ~rel_path ~content ~line ~character
   |> Option.value_map ~default:[] ~f:(fun target ->
-    match
-      Oystermark.Vault.Rename.plan
-        ~index
-        ~docs
-        ~read_file
-        (shared_target target)
-        ~new_name
-    with
+    match plan_target ~index ~docs ~read_file target ~new_name with
     | Error _ -> []
     | Ok change -> change.edits)
 ;;

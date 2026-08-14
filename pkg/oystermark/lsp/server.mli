@@ -24,8 +24,9 @@ type t
     of {!page-"feature-daily-notes"} mean the same thing tomorrow. *)
 val create : ?now:(unit -> Core.Date.t) -> unit -> t
 
-(** Discover the workspace-root and nested projects below [root], build one
-    pruned vault per project, and adopt each project's configuration. Client
+(** Discover the workspace-root and nested projects below [root], build each
+    project's owned tree plus its configured imported views, and adopt each
+    project's configuration. Client
     [initializationOptions] are overridden by the [oysterlsp.json] at that
     project root. See {!page-"feature-projects"} and
     {!page-"feature-configuration"}.
