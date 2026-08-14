@@ -24,10 +24,11 @@ type t
     of {!page-"feature-daily-notes"} mean the same thing tomorrow. *)
 val create : ?now:(unit -> Core.Date.t) -> unit -> t
 
-(** Build the vault from [root] and adopt the configuration: the client's
-    [initializationOptions], overridden by [oysterlsp.json] at the root.  The
-    options are taken raw so that parsing — and its tolerance for malformed
-    input — lives in {!Lsp_lib.Config}.  See {!page-"feature-configuration"}.
+(** Discover the workspace-root and nested projects below [root], build one
+    pruned vault per project, and adopt each project's configuration. Client
+    [initializationOptions] are overridden by the [oysterlsp.json] at that
+    project root. See {!page-"feature-projects"} and
+    {!page-"feature-configuration"}.
 
     A configuration with ["disable": true] adopts no vault: the server holds
     the settings, {!disabled} becomes true, and every handler goes on
@@ -35,10 +36,9 @@ val create : ?now:(unit -> Core.Date.t) -> unit -> t
     {!page-"feature-configuration".disable}. *)
 val initialize : t -> root:string -> ?init_options:Yojson.Safe.t -> unit -> unit
 
-(** Whether the configuration turned the server off — [false] before
-    {!initialize}.  The adapter reports it once, since a server that answers
-    nothing and says nothing is indistinguishable from a broken one.  See
-    {!page-"feature-configuration".disable}. *)
+(** Whether every discovered project is disabled — [false] before
+    {!initialize}. The adapter reports it once only when the whole server
+    answers nothing. See {!page-"feature-configuration".disable}. *)
 val disabled : t -> bool
 
 (** [config_warnings t] is everything the configuration sources asked for and
@@ -52,8 +52,8 @@ val config_warnings : t -> string list
 (** The vault root, or [None] before {!initialize}. *)
 val vault_root : t -> string option
 
-(** Strip the vault root from [uri]'s path.  Falls back to the absolute path
-    for files outside the vault (and before {!initialize}). *)
+(** Strip the workspace root from [uri]'s path. Falls back to the absolute
+    path for files outside the workspace (and before {!initialize}). *)
 val rel_path_of_uri : t -> DocumentUri.t -> string
 
 (** {1 Daily notes}

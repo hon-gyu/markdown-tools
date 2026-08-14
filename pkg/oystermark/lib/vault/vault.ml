@@ -69,14 +69,19 @@ let build_index
   { notes = md_entries; files = non_md; dirs }
 ;;
 
-(** Simple build: read all .md files, optionally filter, build index. *)
-let of_root_path ?(skip_expand : bool = false) ?(locs : bool = true) (vault_root : string)
+(** Simple build: read all files not rejected by [exclude], then build the
+    index. [exclude] receives vault-relative file paths. *)
+let of_root_path
+      ?(skip_expand : bool = false)
+      ?(locs : bool = true)
+      ?(exclude : string -> bool = fun _ -> false)
+      (vault_root : string)
   : t
   =
   (* Scan files *)
   let all_files =
     List.filter (Index.list_entries_recursive vault_root ()) ~f:(fun p ->
-      not (String.is_suffix p ~suffix:"/"))
+      not (String.is_suffix p ~suffix:"/") && not (exclude p))
   in
   let (docs : (string * Cmarkit.Doc.t) list) =
     List.filter_map all_files ~f:(fun rel_path ->

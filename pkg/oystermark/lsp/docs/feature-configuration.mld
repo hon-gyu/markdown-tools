@@ -12,10 +12,12 @@ editor settings.
 
 {1:file The file}
 
-[oysterlsp.json], at the vault root. Optional: its absence is not an error and
-not worth a message. This is {b not} {!Oystermark_render.Config}, which configures a
-vault {e build} and is passed by path on the command line; the two have no keys
-in common and are read by different programs.
+[oysterlsp.json], at a project root. Optional at the workspace root: its
+absence is not an error and not worth a message. In a descendant directory its
+presence declares a nested project; see {!page-"feature-projects"}. This is
+{b not} {!Oystermark_render.Config}, which configures a vault {e build} and is
+passed by path on the command line; the two have no keys in common and are read
+by different programs.
 
 {1:schema Schema}
 
@@ -181,8 +183,9 @@ server capabilities would remain restart-only.
 {1:limitations Limitations}
 
 {ul
-  {- The file is looked for at the vault root only: no search upward from the
-     edited file, no per-directory overrides.}
+  {- The file defines one project; it is not a per-directory override and does
+     not inherit from or merge with a parent project's file. Nested project
+     discovery is specified in {!page-"feature-projects"}.}
   {- JSON, so no comments. Consistent with {!Oystermark_render.Config}.}
   {- No environment-variable or command-line source for {e settings}. The one
      argument the binary takes, [--print-default-config], writes a file and

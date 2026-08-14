@@ -51,57 +51,105 @@ type t =
   ; now : unit -> Date.t
     (** The clock, as a dependency: daily-note answers depend on today's date,
           and a test that cannot fix "today" would change meaning overnight. *)
+  ; mutable workspace_root : string option
+  ; project_prefix : string
+  ; mutable excluded_roots : string list
+  ; mutable nested_projects : (string * t) list
   }
 
-let build_vault = Oystermark.Vault.of_root_path ~skip_expand:true
+let path_is_within ~root path =
+  String.equal path root || String.is_prefix path ~prefix:(root ^ "/")
+;;
+
+let build_vault ?(excluded_roots = []) root =
+  Oystermark.Vault.of_root_path
+    ~skip_expand:true
+    ~exclude:(fun path -> List.exists excluded_roots ~f:(fun root -> path_is_within ~root path))
+    root
+;;
 
 (** Today in the machine's own timezone — the real clock, used unless a caller
     substitutes one. *)
 let system_today () : Date.t = Date.today ~zone:(Lazy.force Time_float_unix.Zone.local)
 
-let create ?(now : unit -> Date.t = system_today) () : t =
+let create_project ?(now : unit -> Date.t = system_today) ?(project_prefix = "") () : t =
   { vault = None
   ; open_docs = String.Table.create ()
   ; config = Lsp_config.default
   ; config_warnings = []
   ; daily_table = None
   ; now
+  ; workspace_root = None
+  ; project_prefix
+  ; excluded_roots = []
+  ; nested_projects = []
   }
 ;;
 
-let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+let create ?now () = create_project ?now ()
+
+let initialize_project
+      (t : t)
+      ~(root : string)
+      ~(excluded_roots : string list)
+      ?(init_options : Yojson.Safe.t option)
+      ()
+  =
   let config, warnings = Lsp_config.load ~root ~init_options in
+  t.workspace_root <- Some root;
+  t.excluded_roots <- excluded_roots;
   t.config <- config;
   t.daily_table <- None;
   match config.disable with
-  (* Leaving the vault unbuilt is the whole of the disabling: every handler
-     already answers emptily without one, so there is no second place where
-     the switch has to be remembered.  It also means the vault is never
-     indexed, which is the cost the switch exists to avoid.  See
-     {!page-"feature-configuration".disable}. *)
   | true ->
-    (* Warnings about settings that were never going to take effect would be
-       noise from a server that is doing nothing; the adapter says the one
-       thing worth saying instead. *)
     t.config_warnings <- [];
     t.vault <- None
   | false ->
-    (* The daily-note format is validated here rather than at parse time — it
-       is the one setting whose usability is a property of its {e value} — but
-       it joins the same list, so the user hears about it the same way. *)
     let daily_notes_warning =
       match Lsp_config.daily_notes_settings config with
       | Ok _ -> []
       | Error e -> [ sprintf "daily notes disabled: %s" e ]
     in
     t.config_warnings <- warnings @ daily_notes_warning;
-    t.vault <- Some (build_vault root)
+    t.vault <- Some (build_vault ~excluded_roots root)
+;;
+
+let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+  let project_roots =
+    Oystermark.Vault.Index.list_entries_recursive root ()
+    |> List.filter_map ~f:(fun path ->
+      if String.equal (Filename.basename path) Lsp_config.file_name
+      then Some (Filename.dirname path)
+      else None)
+    |> List.filter ~f:(fun path -> not (String.equal path "."))
+    |> List.dedup_and_sort ~compare:String.compare
+  in
+  initialize_project t ~root ~excluded_roots:project_roots ?init_options ();
+  t.nested_projects
+  <- List.map project_roots ~f:(fun prefix ->
+       let child_root = Filename.concat root prefix in
+       let child_exclusions =
+         List.filter_map project_roots ~f:(fun candidate ->
+           match String.chop_prefix candidate ~prefix:(prefix ^ "/") with
+           | Some relative -> Some relative
+           | None -> None)
+       in
+       let child = create_project ~now:t.now ~project_prefix:prefix () in
+       initialize_project child ~root:child_root ~excluded_roots:child_exclusions ?init_options ();
+       prefix, child);
+  let nested_warnings =
+    List.concat_map t.nested_projects ~f:(fun (prefix, child) ->
+      List.map child.config_warnings ~f:(sprintf "%s/%s" prefix))
+  in
+  t.config_warnings <- t.config_warnings @ nested_warnings
 ;;
 
 (** Whether the configuration turned the server off.  The adapter reports it,
     since a server that answers nothing and says nothing is indistinguishable
     from a broken one.  See {!page-"feature-configuration".disable}. *)
-let disabled (t : t) : bool = t.config.disable
+let disabled (t : t) : bool =
+  t.config.disable && List.for_all t.nested_projects ~f:(fun (_, child) -> child.config.disable)
+;;
 
 (** What the configuration sources asked for and could not have.  Empty when
     the configuration is clean; meaningful only after {!initialize}, which is
@@ -112,7 +160,7 @@ let config_warnings (t : t) : string list = t.config_warnings
 let rebuild_vault (t : t) : unit =
   match t.vault with
   | None -> ()
-  | Some v -> t.vault <- Some (build_vault v.vault_root)
+  | Some v -> t.vault <- Some (build_vault ~excluded_roots:t.excluded_roots v.vault_root)
 ;;
 
 let vault_root (t : t) : string option =
@@ -124,18 +172,22 @@ let vault_root (t : t) : string option =
 
 let rel_path_of_uri (t : t) (uri : DocumentUri.t) : string =
   let file_path = DocumentUri.to_path uri in
-  match t.vault with
+  match t.workspace_root with
   | None -> file_path
-  | Some v ->
-    (match String.chop_prefix file_path ~prefix:(v.vault_root ^ "/") with
+  | Some root ->
+    (match String.chop_prefix file_path ~prefix:(root ^ "/") with
      | Some rel -> rel
      | None -> file_path)
 ;;
 
 let uri_of_rel_path (t : t) (rel_path : string) : DocumentUri.t =
-  match t.vault with
+  match t.workspace_root with
   | None -> DocumentUri.of_path rel_path
-  | Some v -> DocumentUri.of_path (Filename.concat v.vault_root rel_path)
+  | Some root -> DocumentUri.of_path (Filename.concat root rel_path)
+;;
+
+let command_path (t : t) path =
+  if String.is_empty t.project_prefix then path else Filename.concat t.project_prefix path
 ;;
 
 let read_file (t : t) (rel_path : string) : string option =
@@ -239,20 +291,20 @@ let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t 
     links @ command_block_diagnostics content @ toc_diagnostics content
 ;;
 
-let did_open (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
+let did_open_local (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   Hashtbl.set t.open_docs ~key:rel_path ~data:content;
   rebuild_vault t;
   diagnostics t ~rel_path ~content
 ;;
 
-let did_change (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
+let did_change_local (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   Hashtbl.set t.open_docs ~key:rel_path ~data:content;
   diagnostics t ~rel_path ~content
 ;;
 
-let did_close (t : t) ~(rel_path : string) : unit = Hashtbl.remove t.open_docs rel_path
+let did_close_local (t : t) ~(rel_path : string) : unit = Hashtbl.remove t.open_docs rel_path
 
-let did_save (t : t) : (string * Diagnostic.t list) list =
+let did_save_local (t : t) : (string * Diagnostic.t list) list =
   rebuild_vault t;
   match t.vault with
   | None -> []
@@ -268,7 +320,7 @@ let did_save (t : t) : (string * Diagnostic.t list) list =
 (* Features
    ========= *)
 
-let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.t option =
+let hover_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.t option =
   match t.vault with
   | None -> None
   | Some v ->
@@ -299,7 +351,7 @@ let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.
    other handlers that need {!resolve_command} — below the command-block
    section, alongside {!code_action} and {!completion}. *)
 
-let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let references_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Location.t list option
   =
   match t.vault with
@@ -326,7 +378,7 @@ let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
                 ~last_byte:r.last_byte)))
 ;;
 
-let prepare_rename (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let prepare_rename_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Range.t option
   =
   match t.vault with
@@ -346,7 +398,7 @@ let prepare_rename (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
        Some (Range.create ~start:pos ~end_:pos))
 ;;
 
-let rename
+let rename_local
       (t : t)
       ~(rel_path : string)
       ~(line : int)
@@ -417,7 +469,7 @@ let rename
     WorkspaceEdit.create ~documentChanges ()
 ;;
 
-let document_symbol (t : t) ~(rel_path : string) : DocumentSymbol.t list option =
+let document_symbol_local (t : t) ~(rel_path : string) : DocumentSymbol.t list option =
   match t.vault with
   | None -> None
   | Some v ->
@@ -549,7 +601,7 @@ let daily_note_action (t : t) ~(title : string) ~(path : string) : CodeAction.t 
       (Command.create
          ~title
          ~command:daily_note_command
-         ~arguments:[ `String path; `Bool false; `Bool (not exists) ]
+         ~arguments:[ `String (command_path t path); `Bool false; `Bool (not exists) ]
          ())
     ()
 ;;
@@ -589,7 +641,7 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
                   (Command.create
                      ~title
                      ~command:daily_note_command
-                     ~arguments:[ `String path; `Bool false ]
+                     ~arguments:[ `String (command_path t path); `Bool false ]
                      ())
                 ()
             ]
@@ -745,7 +797,7 @@ let lens_of_entry
               Command.create
                 ~title:label
                 ~command:daily_note_command
-                ~arguments:[ `String path; `Bool create ]
+                ~arguments:[ `String (command_path t path); `Bool create ]
                 ()))
          ~data:(`String label)
          ())
@@ -818,7 +870,7 @@ let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens
 
     Command lenses come first: they are the note's control panel, and a count
     is an annotation that should not push it down the response. *)
-let code_lens (t : t) ~(rel_path : string) : CodeLens.t list option =
+let code_lens_local (t : t) ~(rel_path : string) : CodeLens.t list option =
   match t.vault with
   | None -> None
   | Some _ ->
@@ -854,7 +906,7 @@ let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeActio
              (Command.create
                 ~title:label
                 ~command:daily_note_command
-                ~arguments:[ `String path; `Bool false; `Bool create ]
+                ~arguments:[ `String (command_path t path); `Bool false; `Bool create ]
                 ())
            ()
        ])
@@ -951,7 +1003,7 @@ let command_block_definition (t : t) ~(rel_path : string) ~(line : int) : string
     first: it is literal text inside a fence, so the link layer finds nothing
     there, and the note the line names is what a definition means on it.  See
     {!page-"feature-command-block".surfaces}. *)
-let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let definition_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Location.t list option
   =
   match t.vault with
@@ -983,7 +1035,7 @@ let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
 
 (** Handle [workspace/executeCommand].  [None] for an unknown command or
     unusable arguments — an editor is free to send either. *)
-let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
+let execute_command_local (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
   : open_note option
   =
   match command, arguments with
@@ -1111,7 +1163,7 @@ let toc_update_actions
     ]
 ;;
 
-let code_action
+let code_action_local
       (t : t)
       ?(only : CodeActionKind.t list option)
       ~(rel_path : string)
@@ -1214,7 +1266,7 @@ let code_action
     quick_fixes @ toc_fixes @ daily)
 ;;
 
-let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let completion_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : CompletionList.t option
   =
   match t.vault with
@@ -1261,7 +1313,7 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
        |> fun items -> Some (CompletionList.create ~isIncomplete:incomplete ~items ()))
 ;;
 
-let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
+let inlay_hint_local (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
   : InlayHint.t list option
   =
   match t.vault with
@@ -1283,4 +1335,120 @@ let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int
         ~paddingLeft:true
         ())
     |> Option.return
+;;
+
+(* Project routing
+   =============== *)
+
+let route (t : t) (rel_path : string) : t * string =
+  List.filter t.nested_projects ~f:(fun (prefix, _) -> path_is_within ~root:prefix rel_path)
+  |> List.max_elt ~compare:(fun (a, _) (b, _) -> Int.compare (String.length a) (String.length b))
+  |> Option.value_map ~default:(t, rel_path) ~f:(fun (prefix, project) ->
+    let local =
+      if String.equal rel_path prefix
+      then ""
+      else String.chop_prefix_exn rel_path ~prefix:(prefix ^ "/")
+    in
+    project, local)
+;;
+
+let did_open t ~rel_path ~content =
+  let project, rel_path = route t rel_path in
+  did_open_local project ~rel_path ~content
+;;
+
+let did_change t ~rel_path ~content =
+  let project, rel_path = route t rel_path in
+  did_change_local project ~rel_path ~content
+;;
+
+let did_close t ~rel_path =
+  let project, rel_path = route t rel_path in
+  did_close_local project ~rel_path
+;;
+
+let did_save t =
+  let root = did_save_local t in
+  let nested =
+    List.concat_map t.nested_projects ~f:(fun (prefix, project) ->
+      did_save_local project
+      |> List.map ~f:(fun (rel_path, diagnostics) ->
+        Filename.concat prefix rel_path, diagnostics))
+  in
+  List.sort (root @ nested) ~compare:(fun (a, _) (b, _) -> String.compare a b)
+;;
+
+let hover t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  hover_local project ~rel_path ~line ~character
+;;
+
+let references t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  references_local project ~rel_path ~line ~character
+;;
+
+let prepare_rename t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  prepare_rename_local project ~rel_path ~line ~character
+;;
+
+let rename t ~rel_path ~line ~character ~new_name =
+  let project, rel_path = route t rel_path in
+  rename_local project ~rel_path ~line ~character ~new_name
+;;
+
+let document_symbol t ~rel_path =
+  let project, rel_path = route t rel_path in
+  document_symbol_local project ~rel_path
+;;
+
+let code_lens t ~rel_path =
+  let project, rel_path = route t rel_path in
+  code_lens_local project ~rel_path
+;;
+
+let definition t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  definition_local project ~rel_path ~line ~character
+;;
+
+let execute_command t ~command ~arguments =
+  match arguments with
+  | Some (`String path :: rest) ->
+    let project, local_path = route t path in
+    execute_command_local project ~command ~arguments:(Some (`String local_path :: rest))
+  | _ -> execute_command_local t ~command ~arguments
+;;
+
+let code_action
+      t
+      ?only
+      ~rel_path
+      ~start_line
+      ~start_character
+      ~end_line
+      ~end_character
+      ()
+  =
+  let project, rel_path = route t rel_path in
+  code_action_local
+    project
+    ?only
+    ~rel_path
+    ~start_line
+    ~start_character
+    ~end_line
+    ~end_character
+    ()
+;;
+
+let completion t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  completion_local project ~rel_path ~line ~character
+;;
+
+let inlay_hint t ~rel_path ~start_line ~end_line =
+  let project, rel_path = route t rel_path in
+  inlay_hint_local project ~rel_path ~start_line ~end_line
 ;;

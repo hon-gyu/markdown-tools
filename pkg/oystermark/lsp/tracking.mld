@@ -72,6 +72,11 @@ Subsections are encouraged if needed.
 - Implementation: TODO
 - Test: TODO
 
+{1 nested-projects}
+- Spec: {!page-"feature-projects"}
+- Implementation: {!module-Lsp_lib.Server}
+- Test: {!module-Test_lsp.Test_nested_projects}
+
 {1 attribute-anchors}
 - Spec: {!page-"feature-attribute-anchors"}
 - Core: {!Oystermark.Vault.Index.extract_attr_ids} (collection),
