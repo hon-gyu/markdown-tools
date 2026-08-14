@@ -8,12 +8,13 @@ they do not write files or construct LSP messages.
 
 {!Oystermark.Vault.Query} collects authored wikilinks, Markdown links, embeds,
 and images into one located link type carrying both the authored reference and
-its resolved destination. It provides incoming, outgoing, unresolved, and
-graph-statistics queries.
+its resolved destination. It provides the primitives used by vault clients.
 
-Graph statistics distinguish resolved link occurrences from unique directed
-note-to-note edges. Multiple links from one source note to one destination are
-multiple occurrences and one edge.
+The command-line graph statistics count Markdown notes as nodes and resolved
+link occurrences as edges. Each authored occurrence is one edge, including
+embeds and images. An edge whose resolved destination is its source note is
+also counted as a self link. Unresolved occurrences are reported separately
+and are not edges.
 
 Queries must run on documents before embed expansion. Expanded embeds repeat
 another note's syntax in the host document and would therefore manufacture
@@ -37,7 +38,6 @@ The [oystermark-vault] executable exposes the shared services:
 {v
 oystermark-vault unresolved VAULT
 oystermark-vault stats VAULT
-oystermark-vault links VAULT NOTE [--incoming|--outgoing]
 oystermark-vault rename-note VAULT NOTE NEW-NAME [--apply]
 oystermark-vault rename-heading VAULT NOTE HEADING NEW-HEADING [--apply]
 v}

@@ -77,14 +77,6 @@ let collect ~(index : Index.t) ~(source : string) (doc : Cmarkit.Doc.t) : link l
   List.rev (Cmarkit.Folder.fold_doc folder [] doc)
 ;;
 
-type stats =
-  { notes : int
-  ; resolved_link_occurrences : int
-  ; unique_edges : int
-  ; unresolved_links : int
-  }
-[@@deriving sexp]
-
 let destination_path ~source = function
   | Resolve.Note { path }
   | File { path }
@@ -104,31 +96,6 @@ let unresolved ~index ~docs =
     match link.destination with
     | Resolve.Unresolved -> true
     | _ -> false)
-;;
-
-let outgoing ~index ~docs ~note =
-  List.filter (all ~index ~docs) ~f:(fun l -> String.equal l.source note)
-;;
-
-let incoming ~index ~docs ~note =
-  List.filter (all ~index ~docs) ~f:(fun l ->
-    destination_path ~source:l.source l.destination
-    |> Option.value_map ~default:false ~f:(String.equal note))
-;;
-
-let stats ~index ~docs =
-  let links = all ~index ~docs in
-  let resolved =
-    List.filter_map links ~f:(fun l ->
-      destination_path ~source:l.source l.destination
-      |> Option.map ~f:(fun destination -> l.source, destination))
-  in
-  { notes = List.length docs
-  ; resolved_link_occurrences = List.length resolved
-  ; unique_edges =
-      List.dedup_and_sort resolved ~compare:[%compare: string * string] |> List.length
-  ; unresolved_links = List.length links - List.length resolved
-  }
 ;;
 
 let%expect_test "queries distinguish occurrences and edges" =
@@ -153,16 +120,8 @@ let%expect_test "queries distinguish occurrences and edges" =
     ({ notes = files; files = []; dirs = [] } : Index.t)
   in
   let docs = Resolve.resolve_docs docs index in
-  print_s [%sexp (stats ~index ~docs : stats)];
   printf
-    "incoming-b=%d outgoing-a=%d unresolved=%d\n"
-    (List.length (incoming ~index ~docs ~note:"b.md"))
-    (List.length (outgoing ~index ~docs ~note:"a.md"))
+    "unresolved=%d\n"
     (List.length (unresolved ~index ~docs));
-  [%expect
-    {|
-    ((notes 3) (resolved_link_occurrences 3) (unique_edges 2)
-     (unresolved_links 1))
-    incoming-b=2 outgoing-a=3 unresolved=1
-    |}]
+  [%expect {| unresolved=1 |}]
 ;;

@@ -2,7 +2,12 @@
     parsed document.
 
     Used by {!Go_to_definition} and {!Diagnostics}.
-    See {!page-"feature-go-to-definition".link_detection}. *)
+    See {!page-"feature-go-to-definition".link_detection}.
+
+    @meta[
+      ai-disclosure: autonomous
+    ]
+*)
 
 open Core
 
@@ -32,7 +37,9 @@ type located_link = Oystermark.Vault.Query.link =
 
     Requires the document to have been parsed with [~locs:true] so that
     text locations are available on AST nodes. *)
-let collect_links ~index ~rel_path (doc : Cmarkit.Doc.t) : located_link list =
+let collect_links ~(index : Vault.Index.t) ~(rel_path : string) (doc : Cmarkit.Doc.t)
+  : located_link list
+  =
   Trace_core.with_span ~__FILE__ ~__LINE__ "collect_links"
   @@ fun span ->
   let links = Oystermark.Vault.Query.collect ~index ~source:rel_path doc in

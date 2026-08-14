@@ -35,7 +35,7 @@ let print_link root (link : Vault.Query.link) =
     (destination_name ~source:link.source link.destination)
 ;;
 
-let vault_param = Command.Param.(anon ("vault" %: string))
+let (vault_param : string Command.Param.t) = Command.Param.(anon ("vault" %: string))
 
 let unresolved_command =
   Command.basic
@@ -47,16 +47,34 @@ let unresolved_command =
        |> List.iter ~f:(print_link root))
 ;;
 
+type stats =
+  { nodes : int
+  ; edges : int
+  ; self_links : int
+  ; unresolved_links : int
+  }
+
+let stats (vault : Vault.t) =
+  let links = Vault.Query.all ~index:vault.index ~docs:(Vault.docs vault) in
+  let edges, self_links, unresolved_links =
+    List.fold links ~init:(0, 0, 0) ~f:(fun (edges, self_links, unresolved) link ->
+      match Vault.Query.destination_path ~source:link.source link.destination with
+      | None -> edges, self_links, unresolved + 1
+      | Some destination ->
+        edges + 1, self_links + Bool.to_int (String.equal link.source destination), unresolved)
+  in
+  { nodes = List.length vault.index.notes; edges; self_links; unresolved_links }
+;;
+
 let stats_command =
   Command.basic
     ~summary:"Show vault graph statistics"
     (let%map_open.Command root = vault_param in
      fun () ->
-       let vault = load root in
-       let stats = Vault.Query.stats ~index:vault.index ~docs:(Vault.docs vault) in
-       printf "notes\t%d\n" stats.notes;
-       printf "resolved link occurrences\t%d\n" stats.resolved_link_occurrences;
-       printf "unique directed edges\t%d\n" stats.unique_edges;
+       let stats = stats (load root) in
+       printf "nodes\t%d\n" stats.nodes;
+       printf "edges\t%d\n" stats.edges;
+       printf "self links\t%d\n" stats.self_links;
        printf "unresolved links\t%d\n" stats.unresolved_links)
 ;;
 
@@ -69,34 +87,6 @@ let resolve_note (vault : Vault.t) note =
   with
   | Vault.Resolve.Note { path } -> path
   | _ -> failwithf "note not found: %s" note ()
-;;
-
-let links_command =
-  Command.basic
-    ~summary:"List incoming and outgoing links of a note"
-    (let%map_open.Command root = vault_param
-     and note = anon ("note" %: string)
-     and incoming = flag "--incoming" no_arg ~doc:" Show incoming links only"
-     and outgoing = flag "--outgoing" no_arg ~doc:" Show outgoing links only" in
-     fun () ->
-       if incoming && outgoing
-       then failwith "choose at most one of --incoming and --outgoing";
-       let vault = load root in
-       let note = resolve_note vault note in
-       let show label links =
-         printf "%s (%d)\n" label (List.length links);
-         List.iter links ~f:(print_link root)
-       in
-       if not outgoing
-       then
-         show
-           "incoming"
-           (Vault.Query.incoming ~index:vault.index ~docs:(Vault.docs vault) ~note);
-       if not incoming
-       then
-         show
-           "outgoing"
-           (Vault.Query.outgoing ~index:vault.index ~docs:(Vault.docs vault) ~note))
 ;;
 
 let apply_edits content edits =
@@ -212,7 +202,6 @@ let command =
     ~summary:"Inspect and rename notes in an OysterMark vault"
     [ "unresolved", unresolved_command
     ; "stats", stats_command
-    ; "links", links_command
     ; "rename-note", rename_note_command
     ; ( "rename-heading"
       , rename_command
