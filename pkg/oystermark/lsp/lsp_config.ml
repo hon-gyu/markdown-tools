@@ -38,6 +38,9 @@ type t =
   { disable : bool
     (** Turn the server off for this vault: it starts, says so once, and
       offers nothing.  See {!page-"feature-configuration".disable}. *)
+  ; imports : string list
+    (** Descendant project paths whose trees are visible in this project's
+      vault view. See {!page-"feature-projects".imports}. *)
   ; gtd_unresolved_fragment : fragment_behavior
     (** Fragment behavior for {!Go_to_definition}. *)
   ; diag_unresolved_fragment : fragment_behavior
@@ -97,6 +100,7 @@ let default_daily_notes =
     Hover content is capped at 2 000 bytes, and image previews are off. *)
 let default =
   { disable = false
+  ; imports = []
   ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
@@ -133,6 +137,7 @@ module Partial = struct
 
   type t =
     { disable : bool option
+    ; imports : string list option
     ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
@@ -147,6 +152,7 @@ module Partial = struct
 
   let empty =
     { disable = None
+    ; imports = None
     ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
@@ -166,6 +172,7 @@ module Partial = struct
   let merge ~(lower : t) ~(upper : t) : t =
     let pick u l = Option.first_some u l in
     { disable = pick upper.disable lower.disable
+    ; imports = pick upper.imports lower.imports
     ; gtd_unresolved_fragment =
         pick upper.gtd_unresolved_fragment lower.gtd_unresolved_fragment
     ; diag_unresolved_fragment =
@@ -195,6 +202,7 @@ end
     record fields it builds are unambiguously {!t}'s. *)
 let resolve (p : Partial.t) : resolved =
   { disable = Option.value p.disable ~default:default.disable
+  ; imports = Option.value p.imports ~default:default.imports
   ; gtd_unresolved_fragment =
       Option.value p.gtd_unresolved_fragment ~default:default.gtd_unresolved_fragment
   ; diag_unresolved_fragment =
@@ -273,6 +281,19 @@ let parse_bool (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t) : bool optio
     None
 ;;
 
+let parse_string_list (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t)
+  : string list option
+  =
+  match j with
+  | `List values ->
+    List.filter_mapi values ~f:(fun i value ->
+      parse_string w ~key:(sprintf "%s[%d]" key i) value)
+    |> Option.return
+  | got ->
+    Warnings.bad_value w ~key ~expected:"an array of non-empty strings" got;
+    None
+;;
+
 let parse_fragment_behavior (w : Warnings.t) ~(key : string) (j : Yojson.Safe.t)
   : fragment_behavior option
   =
@@ -337,6 +358,9 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
        a server at all.  See {!page-"feature-configuration".disable}. *)
     | "disable" ->
       acc := { !acc with Partial.disable = parse_bool w ~key value };
+      true
+    | "imports" ->
+      acc := { !acc with Partial.imports = parse_string_list w ~key value };
       true
     | "dailyNotes" ->
       acc := { !acc with Partial.daily_notes = parse_daily_notes w value };
@@ -440,6 +464,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     {!page-"feature-configuration".schema_file}. *)
 let known_keys : string list =
   [ "disable"
+  ; "imports"
   ; "dailyNotes.format"
   ; "dailyNotes.folder"
   ; "dailyNotes.template"
@@ -485,6 +510,7 @@ let to_json (t : t) : Yojson.Safe.t =
   in
   `Assoc
     [ "disable", `Bool t.disable
+    ; "imports", `List (List.map t.imports ~f:(fun path -> `String path))
     ; ( "dailyNotes"
       , `Assoc
           ([ "format", `String t.daily_notes.format ]

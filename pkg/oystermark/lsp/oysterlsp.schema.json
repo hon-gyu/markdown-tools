@@ -15,6 +15,16 @@
       "default": false,
       "description": "Turn the server off for this vault. It still starts — a client spawns it and this file is only read afterwards — but it indexes nothing and answers every request emptily, saying so once at startup. Every other setting in this file is then irrelevant, and warnings about them are suppressed."
     },
+    "imports": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Descendant OysterMark project paths to include in this project's vault view, relative to this project root. Importing selectively removes that project's subtree from pruning; ordinary exact and subpath link resolution then applies over the combined view."
+    },
     "dailyNotes": {
       "type": "object",
       "additionalProperties": false,

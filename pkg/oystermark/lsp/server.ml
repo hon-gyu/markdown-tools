@@ -51,57 +51,154 @@ type t =
   ; now : unit -> Date.t
     (** The clock, as a dependency: daily-note answers depend on today's date,
           and a test that cannot fix "today" would change meaning overnight. *)
+  ; mutable workspace_root : string option
+  ; project_prefix : string
+  ; mutable nested_roots : string list
+  ; mutable imported_roots : string list
+  ; mutable nested_projects : (string * t) list
   }
 
-let build_vault = Oystermark.Vault.of_root_path ~skip_expand:true
+let path_is_within ~root path =
+  String.equal path root || String.is_prefix path ~prefix:(root ^ "/")
+;;
+
+let deepest_root roots path =
+  List.filter roots ~f:(fun root -> path_is_within ~root path)
+  |> List.max_elt ~compare:(fun a b -> Int.compare (String.length a) (String.length b))
+;;
+
+let build_vault ?(nested_roots = []) ?(imported_roots = []) root =
+  Oystermark.Vault.of_root_path
+    ~skip_expand:true
+    ~exclude:(fun path ->
+      deepest_root nested_roots path
+      |> Option.value_map ~default:false ~f:(fun owner ->
+        not (List.mem imported_roots owner ~equal:String.equal)))
+    root
+;;
+
+let normalize_import path =
+  if Filename.is_absolute path
+  then Error "must be relative"
+  else (
+    let components =
+      String.split path ~on:'/'
+      |> List.filter ~f:(fun component ->
+        not (String.is_empty component || String.equal component "."))
+    in
+    if List.is_empty components
+    then Error "must name a descendant project"
+    else if List.exists components ~f:(String.equal "..")
+    then Error "must not contain .."
+    else Ok (String.concat ~sep:"/" components))
+;;
+
+let validate_imports ~project_roots imports =
+  List.fold imports ~init:([], []) ~f:(fun (accepted, warnings) import ->
+    match normalize_import import with
+    | Error reason -> accepted, sprintf "imports: %S %s" import reason :: warnings
+    | Ok normalized when not (List.mem project_roots normalized ~equal:String.equal) ->
+      ( accepted
+      , sprintf "imports: %S does not name a descendant project" import :: warnings )
+    | Ok normalized when List.mem accepted normalized ~equal:String.equal ->
+      accepted, sprintf "imports: duplicate project %S" normalized :: warnings
+    | Ok normalized -> normalized :: accepted, warnings)
+  |> fun (accepted, warnings) -> List.rev accepted, List.rev warnings
+;;
 
 (** Today in the machine's own timezone — the real clock, used unless a caller
     substitutes one. *)
 let system_today () : Date.t = Date.today ~zone:(Lazy.force Time_float_unix.Zone.local)
 
-let create ?(now : unit -> Date.t = system_today) () : t =
+let create_project ?(now : unit -> Date.t = system_today) ?(project_prefix = "") () : t =
   { vault = None
   ; open_docs = String.Table.create ()
   ; config = Lsp_config.default
   ; config_warnings = []
   ; daily_table = None
   ; now
+  ; workspace_root = None
+  ; project_prefix
+  ; nested_roots = []
+  ; imported_roots = []
+  ; nested_projects = []
   }
 ;;
 
-let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+let create ?now () = create_project ?now ()
+
+let initialize_project
+      (t : t)
+      ~(root : string)
+      ~(nested_roots : string list)
+      ?(init_options : Yojson.Safe.t option)
+      ()
+  =
   let config, warnings = Lsp_config.load ~root ~init_options in
-  t.config <- config;
+  let imported_roots, import_warnings =
+    validate_imports ~project_roots:nested_roots config.imports
+  in
+  t.workspace_root <- Some root;
+  t.nested_roots <- nested_roots;
+  t.imported_roots <- imported_roots;
+  t.config <- { config with imports = imported_roots };
   t.daily_table <- None;
   match config.disable with
-  (* Leaving the vault unbuilt is the whole of the disabling: every handler
-     already answers emptily without one, so there is no second place where
-     the switch has to be remembered.  It also means the vault is never
-     indexed, which is the cost the switch exists to avoid.  See
-     {!page-"feature-configuration".disable}. *)
   | true ->
-    (* Warnings about settings that were never going to take effect would be
-       noise from a server that is doing nothing; the adapter says the one
-       thing worth saying instead. *)
     t.config_warnings <- [];
     t.vault <- None
   | false ->
-    (* The daily-note format is validated here rather than at parse time — it
-       is the one setting whose usability is a property of its {e value} — but
-       it joins the same list, so the user hears about it the same way. *)
     let daily_notes_warning =
       match Lsp_config.daily_notes_settings config with
       | Ok _ -> []
       | Error e -> [ sprintf "daily notes disabled: %s" e ]
     in
-    t.config_warnings <- warnings @ daily_notes_warning;
-    t.vault <- Some (build_vault root)
+    t.config_warnings <- warnings @ import_warnings @ daily_notes_warning;
+    t.vault <- Some (build_vault ~nested_roots ~imported_roots root)
+;;
+
+let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
+  let project_roots =
+    Oystermark.Vault.Index.list_entries_recursive root ()
+    |> List.filter_map ~f:(fun path ->
+      if String.equal (Filename.basename path) Lsp_config.file_name
+      then Some (Filename.dirname path)
+      else None)
+    |> List.filter ~f:(fun path -> not (String.equal path "."))
+    |> List.dedup_and_sort ~compare:String.compare
+  in
+  initialize_project t ~root ~nested_roots:project_roots ?init_options ();
+  t.nested_projects
+  <- List.map project_roots ~f:(fun prefix ->
+       let child_root = Filename.concat root prefix in
+       let child_nested_roots =
+         List.filter_map project_roots ~f:(fun candidate ->
+           match String.chop_prefix candidate ~prefix:(prefix ^ "/") with
+           | Some relative -> Some relative
+           | None -> None)
+       in
+       let child = create_project ~now:t.now ~project_prefix:prefix () in
+       initialize_project
+         child
+         ~root:child_root
+         ~nested_roots:child_nested_roots
+         ?init_options
+         ();
+       prefix, child);
+  let nested_warnings =
+    List.concat_map t.nested_projects ~f:(fun (prefix, child) ->
+      List.map child.config_warnings ~f:(sprintf "%s/%s" prefix))
+  in
+  t.config_warnings <- t.config_warnings @ nested_warnings
 ;;
 
 (** Whether the configuration turned the server off.  The adapter reports it,
     since a server that answers nothing and says nothing is indistinguishable
     from a broken one.  See {!page-"feature-configuration".disable}. *)
-let disabled (t : t) : bool = t.config.disable
+let disabled (t : t) : bool =
+  t.config.disable
+  && List.for_all t.nested_projects ~f:(fun (_, child) -> child.config.disable)
+;;
 
 (** What the configuration sources asked for and could not have.  Empty when
     the configuration is clean; meaningful only after {!initialize}, which is
@@ -112,7 +209,13 @@ let config_warnings (t : t) : string list = t.config_warnings
 let rebuild_vault (t : t) : unit =
   match t.vault with
   | None -> ()
-  | Some v -> t.vault <- Some (build_vault v.vault_root)
+  | Some v ->
+    t.vault
+    <- Some
+         (build_vault
+            ~nested_roots:t.nested_roots
+            ~imported_roots:t.imported_roots
+            v.vault_root)
 ;;
 
 let vault_root (t : t) : string option =
@@ -124,18 +227,22 @@ let vault_root (t : t) : string option =
 
 let rel_path_of_uri (t : t) (uri : DocumentUri.t) : string =
   let file_path = DocumentUri.to_path uri in
-  match t.vault with
+  match t.workspace_root with
   | None -> file_path
-  | Some v ->
-    (match String.chop_prefix file_path ~prefix:(v.vault_root ^ "/") with
+  | Some root ->
+    (match String.chop_prefix file_path ~prefix:(root ^ "/") with
      | Some rel -> rel
      | None -> file_path)
 ;;
 
 let uri_of_rel_path (t : t) (rel_path : string) : DocumentUri.t =
-  match t.vault with
+  match t.workspace_root with
   | None -> DocumentUri.of_path rel_path
-  | Some v -> DocumentUri.of_path (Filename.concat v.vault_root rel_path)
+  | Some root -> DocumentUri.of_path (Filename.concat root rel_path)
+;;
+
+let command_path (t : t) path =
+  if String.is_empty t.project_prefix then path else Filename.concat t.project_prefix path
 ;;
 
 let read_file (t : t) (rel_path : string) : string option =
@@ -239,20 +346,22 @@ let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t 
     links @ command_block_diagnostics content @ toc_diagnostics content
 ;;
 
-let did_open (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
+let did_open_local (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   Hashtbl.set t.open_docs ~key:rel_path ~data:content;
   rebuild_vault t;
   diagnostics t ~rel_path ~content
 ;;
 
-let did_change (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
+let did_change_local (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   Hashtbl.set t.open_docs ~key:rel_path ~data:content;
   diagnostics t ~rel_path ~content
 ;;
 
-let did_close (t : t) ~(rel_path : string) : unit = Hashtbl.remove t.open_docs rel_path
+let did_close_local (t : t) ~(rel_path : string) : unit =
+  Hashtbl.remove t.open_docs rel_path
+;;
 
-let did_save (t : t) : (string * Diagnostic.t list) list =
+let did_save_local (t : t) : (string * Diagnostic.t list) list =
   rebuild_vault t;
   match t.vault with
   | None -> []
@@ -268,7 +377,9 @@ let did_save (t : t) : (string * Diagnostic.t list) list =
 (* Features
    ========= *)
 
-let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.t option =
+let hover_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+  : Hover.t option
+  =
   match t.vault with
   | None -> None
   | Some v ->
@@ -299,34 +410,7 @@ let hover (t : t) ~(rel_path : string) ~(line : int) ~(character : int) : Hover.
    other handlers that need {!resolve_command} — below the command-block
    section, alongside {!code_action} and {!completion}. *)
 
-let references (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
-  : Location.t list option
-  =
-  match t.vault with
-  | None -> None
-  | Some v ->
-    let refs =
-      Feature.Find_references.find_references
-        ~index:v.index
-        ~docs:(Oystermark.Vault.docs v)
-        ~rel_path
-        ~content:(disk_content t rel_path)
-        ~line
-        ~character
-        ()
-    in
-    Some
-      (List.map refs ~f:(fun (r : Feature.Find_references.reference) ->
-         Location.create
-           ~uri:(uri_of_rel_path t r.rel_path)
-           ~range:
-             (range_of_bytes
-                (disk_content t r.rel_path)
-                ~first_byte:r.first_byte
-                ~last_byte:r.last_byte)))
-;;
-
-let prepare_rename (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let prepare_rename_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Range.t option
   =
   match t.vault with
@@ -346,78 +430,7 @@ let prepare_rename (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
        Some (Range.create ~start:pos ~end_:pos))
 ;;
 
-let rename
-      (t : t)
-      ~(rel_path : string)
-      ~(line : int)
-      ~(character : int)
-      ~(new_name : string)
-  : WorkspaceEdit.t
-  =
-  match t.vault with
-  | None -> WorkspaceEdit.create ()
-  | Some v ->
-    let content = disk_content t rel_path in
-    let edits =
-      Feature.Rename.rename
-        ~index:v.index
-        ~docs:(Oystermark.Vault.docs v)
-        ~read_file:(read_file t)
-        ~rel_path
-        ~content
-        ~line
-        ~character
-        ~new_name
-        ()
-    in
-    let text_document_edits =
-      List.group edits ~break:(fun a b -> not (String.equal a.rel_path b.rel_path))
-      |> List.filter_map ~f:(function
-        | [] -> None
-        | { Feature.Rename.rel_path; _ } :: _ as edits ->
-          let content = disk_content t rel_path in
-          let textDocument =
-            OptionalVersionedTextDocumentIdentifier.create
-              ~uri:(uri_of_rel_path t rel_path)
-              ()
-          in
-          let edits =
-            List.map edits ~f:(fun (edit : Feature.Rename.edit) ->
-              `TextEdit
-                (TextEdit.create
-                   ~range:
-                     (range_of_bytes
-                        content
-                        ~first_byte:edit.first_byte
-                        ~last_byte:edit.last_byte)
-                   ~newText:edit.new_text))
-          in
-          Some (`TextDocumentEdit (TextDocumentEdit.create ~edits ~textDocument)))
-    in
-    let documentChanges =
-      match
-        Feature.Find_references.detect_target
-          ~index:v.index
-          ~rel_path
-          ~content
-          ~line
-          ~character
-      with
-      | Some (Path_only { path }) when Feature.Rename.valid_note_name new_name ->
-        let new_path = Feature.Rename.renamed_note_path ~path ~new_name in
-        let rename_file =
-          RenameFile.create
-            ~oldUri:(uri_of_rel_path t path)
-            ~newUri:(uri_of_rel_path t new_path)
-            ()
-        in
-        text_document_edits @ [ `RenameFile rename_file ]
-      | _ -> text_document_edits
-    in
-    WorkspaceEdit.create ~documentChanges ()
-;;
-
-let document_symbol (t : t) ~(rel_path : string) : DocumentSymbol.t list option =
+let document_symbol_local (t : t) ~(rel_path : string) : DocumentSymbol.t list option =
   match t.vault with
   | None -> None
   | Some v ->
@@ -549,7 +562,7 @@ let daily_note_action (t : t) ~(title : string) ~(path : string) : CodeAction.t 
       (Command.create
          ~title
          ~command:daily_note_command
-         ~arguments:[ `String path; `Bool false; `Bool (not exists) ]
+         ~arguments:[ `String (command_path t path); `Bool false; `Bool (not exists) ]
          ())
     ()
 ;;
@@ -589,7 +602,7 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
                   (Command.create
                      ~title
                      ~command:daily_note_command
-                     ~arguments:[ `String path; `Bool false ]
+                     ~arguments:[ `String (command_path t path); `Bool false ]
                      ())
                 ()
             ]
@@ -745,7 +758,7 @@ let lens_of_entry
               Command.create
                 ~title:label
                 ~command:daily_note_command
-                ~arguments:[ `String path; `Bool create ]
+                ~arguments:[ `String (command_path t path); `Bool create ]
                 ()))
          ~data:(`String label)
          ())
@@ -818,14 +831,16 @@ let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens
 
     Command lenses come first: they are the note's control panel, and a count
     is an annotation that should not push it down the response. *)
-let code_lens (t : t) ~(rel_path : string) : CodeLens.t list option =
+let code_lens_local ?(include_references = true) (t : t) ~(rel_path : string)
+  : CodeLens.t list option
+  =
   match t.vault with
   | None -> None
   | Some _ ->
     let content = buffer_content t rel_path in
-    (Command_block.entries content
-     |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content))
-    @ reference_lenses t ~rel_path ~content
+    ((Command_block.entries content
+      |> List.filter_map ~f:(lens_of_entry t ~rel_path ~content))
+     @ if include_references then reference_lenses t ~rel_path ~content else [])
     |> Option.return
 ;;
 
@@ -854,7 +869,7 @@ let command_block_actions (t : t) ~(rel_path : string) ~(line : int) : CodeActio
              (Command.create
                 ~title:label
                 ~command:daily_note_command
-                ~arguments:[ `String path; `Bool false; `Bool create ]
+                ~arguments:[ `String (command_path t path); `Bool false; `Bool create ]
                 ())
            ()
        ])
@@ -951,7 +966,7 @@ let command_block_definition (t : t) ~(rel_path : string) ~(line : int) : string
     first: it is literal text inside a fence, so the link layer finds nothing
     there, and the note the line names is what a definition means on it.  See
     {!page-"feature-command-block".surfaces}. *)
-let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let definition_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : Location.t list option
   =
   match t.vault with
@@ -983,7 +998,10 @@ let definition (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
 
 (** Handle [workspace/executeCommand].  [None] for an unknown command or
     unusable arguments — an editor is free to send either. *)
-let execute_command (t : t) ~(command : string) ~(arguments : Yojson.Safe.t list option)
+let execute_command_local
+      (t : t)
+      ~(command : string)
+      ~(arguments : Yojson.Safe.t list option)
   : open_note option
   =
   match command, arguments with
@@ -1111,7 +1129,7 @@ let toc_update_actions
     ]
 ;;
 
-let code_action
+let code_action_local
       (t : t)
       ?(only : CodeActionKind.t list option)
       ~(rel_path : string)
@@ -1214,7 +1232,7 @@ let code_action
     quick_fixes @ toc_fixes @ daily)
 ;;
 
-let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
+let completion_local (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
   : CompletionList.t option
   =
   match t.vault with
@@ -1261,7 +1279,7 @@ let completion (t : t) ~(rel_path : string) ~(line : int) ~(character : int)
        |> fun items -> Some (CompletionList.create ~isIncomplete:incomplete ~items ()))
 ;;
 
-let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
+let inlay_hint_local (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int)
   : InlayHint.t list option
   =
   match t.vault with
@@ -1283,4 +1301,356 @@ let inlay_hint (t : t) ~(rel_path : string) ~(start_line : int) ~(end_line : int
         ~paddingLeft:true
         ())
     |> Option.return
+;;
+
+(* Project routing
+   =============== *)
+
+let route (t : t) (rel_path : string) : t * string =
+  List.filter t.nested_projects ~f:(fun (prefix, _) ->
+    path_is_within ~root:prefix rel_path)
+  |> List.max_elt ~compare:(fun (a, _) (b, _) ->
+    Int.compare (String.length a) (String.length b))
+  |> Option.value_map ~default:(t, rel_path) ~f:(fun (prefix, project) ->
+    let local =
+      if String.equal rel_path prefix
+      then ""
+      else String.chop_prefix_exn rel_path ~prefix:(prefix ^ "/")
+    in
+    project, local)
+;;
+
+let projects (t : t) = t :: List.map t.nested_projects ~f:snd
+
+let absolute_path (project : t) rel_path =
+  Option.value_map project.workspace_root ~default:rel_path ~f:(fun root ->
+    Filename.concat root rel_path)
+;;
+
+let local_path (project : t) absolute =
+  Option.bind project.workspace_root ~f:(fun root ->
+    if String.equal absolute root
+    then Some ""
+    else String.chop_prefix absolute ~prefix:(root ^ "/"))
+;;
+
+let vault_contains (project : t) path =
+  match project.vault with
+  | None -> false
+  | Some vault ->
+    List.exists vault.index.notes ~f:(fun note -> String.equal note.rel_path path)
+    || List.exists vault.index.files ~f:(fun file -> String.equal file.rel_path path)
+;;
+
+let target_path : Feature.Find_references.target -> string = function
+  | Path_only { path }
+  | Path_heading { path; _ }
+  | Path_block { path; _ }
+  | Path_attr { path; _ } -> path
+;;
+
+let target_with_path (target : Feature.Find_references.target) path =
+  match target with
+  | Path_only _ -> Feature.Find_references.Path_only { path }
+  | Path_heading { slug; _ } -> Path_heading { path; slug }
+  | Path_block { block_id; _ } -> Path_block { path; block_id }
+  | Path_attr { id; _ } -> Path_attr { path; id }
+;;
+
+let target_in_project ~source_project target project =
+  let absolute = absolute_path source_project (target_path target) in
+  local_path project absolute
+  |> Option.filter ~f:(vault_contains project)
+  |> Option.map ~f:(target_with_path target)
+;;
+
+let collect_project_references t ~source_project target =
+  projects t
+  |> List.concat_map ~f:(fun project ->
+    match project.vault, target_in_project ~source_project target project with
+    | Some vault, Some target ->
+      Feature.Find_references.scan_vault ~docs:(Oystermark.Vault.docs vault) target
+      |> List.map ~f:(fun reference -> project, reference)
+    | _ -> [])
+  |> List.dedup_and_sort ~compare:(fun (pa, a) (pb, b) ->
+    [%compare: string * int * int]
+      (absolute_path pa a.rel_path, a.first_byte, a.last_byte)
+      (absolute_path pb b.rel_path, b.first_byte, b.last_byte))
+;;
+
+let global_reference_lenses t project ~rel_path ~content =
+  if not project.config.code_lens_references
+  then []
+  else (
+    let targets =
+      (0, Reference_counts.File, Feature.Find_references.Path_only { path = rel_path })
+      :: (Reference_counts.headings_in_range
+            ~content
+            ~range_start_line:0
+            ~range_end_line:Int.max_value
+          |> List.map ~f:(fun (line, _, slug) ->
+            ( line
+            , Reference_counts.Heading { slug }
+            , Feature.Find_references.Path_heading { path = rel_path; slug } )))
+    in
+    List.filter_map targets ~f:(fun (line, kind, target) ->
+      let refs =
+        collect_project_references t ~source_project:project target
+        |> List.filter ~f:(fun (_, reference) ->
+          project.config.code_lens_count_toc_links || not reference.in_toc)
+      in
+      match refs with
+      | [] -> None
+      | refs ->
+        let target_path = absolute_path project rel_path in
+        let fake_refs =
+          List.map refs ~f:(fun (owner, reference) ->
+            { reference with rel_path = absolute_path owner reference.rel_path })
+        in
+        let entry : Reference_counts.entry =
+          { line
+          ; end_character = 0
+          ; rel_path = target_path
+          ; refs = fake_refs
+          ; target = kind
+          }
+        in
+        let at = Position.create ~line ~character:0 in
+        let locations =
+          List.map refs ~f:(fun (owner, reference) ->
+            let path = absolute_path owner reference.rel_path in
+            Location.create
+              ~uri:(DocumentUri.of_path path)
+              ~range:
+                (range_of_bytes
+                   (In_channel.read_all path)
+                   ~first_byte:reference.first_byte
+                   ~last_byte:reference.last_byte)
+            |> Location.yojson_of_t)
+        in
+        let command = project.config.code_lens_show_references_command in
+        Some
+          (CodeLens.create
+             ~range:(Range.create ~start:at ~end_:at)
+             ~command:
+               (Command.create
+                  ~title:(Reference_counts.lens_title entry)
+                  ~command
+                  ?arguments:
+                    (if String.is_empty command
+                     then None
+                     else
+                       Some
+                         [ DocumentUri.yojson_of_t (DocumentUri.of_path target_path)
+                         ; Position.yojson_of_t at
+                         ; `List locations
+                         ])
+                  ())
+             ())))
+;;
+
+let did_open t ~rel_path ~content =
+  let project, rel_path = route t rel_path in
+  did_open_local project ~rel_path ~content
+;;
+
+let did_change t ~rel_path ~content =
+  let project, rel_path = route t rel_path in
+  did_change_local project ~rel_path ~content
+;;
+
+let did_close t ~rel_path =
+  let project, rel_path = route t rel_path in
+  did_close_local project ~rel_path
+;;
+
+let did_save t =
+  let root = did_save_local t in
+  let nested =
+    List.concat_map t.nested_projects ~f:(fun (prefix, project) ->
+      did_save_local project
+      |> List.map ~f:(fun (rel_path, diagnostics) ->
+        Filename.concat prefix rel_path, diagnostics))
+  in
+  List.sort (root @ nested) ~compare:(fun (a, _) (b, _) -> String.compare a b)
+;;
+
+let hover t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  hover_local project ~rel_path ~line ~character
+;;
+
+let references t ~rel_path ~line ~character =
+  let source_project, source_rel_path = route t rel_path in
+  match source_project.vault with
+  | None -> None
+  | Some source_vault ->
+    (match
+       Feature.Find_references.detect_target
+         ~index:source_vault.index
+         ~rel_path:source_rel_path
+         ~content:(disk_content source_project source_rel_path)
+         ~line
+         ~character
+     with
+     | None -> Some []
+     | Some target ->
+       collect_project_references t ~source_project target
+       |> List.map ~f:(fun (project, reference) ->
+         let path = absolute_path project reference.rel_path in
+         let content = In_channel.read_all path in
+         Location.create
+           ~uri:(DocumentUri.of_path path)
+           ~range:
+             (range_of_bytes
+                content
+                ~first_byte:reference.first_byte
+                ~last_byte:reference.last_byte))
+       |> Option.return)
+;;
+
+let prepare_rename t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  prepare_rename_local project ~rel_path ~line ~character
+;;
+
+let rename t ~rel_path ~line ~character ~new_name =
+  let source_project, source_rel_path = route t rel_path in
+  match source_project.vault with
+  | None -> WorkspaceEdit.create ()
+  | Some source_vault ->
+    let content = disk_content source_project source_rel_path in
+    (match
+       Feature.Find_references.detect_target
+         ~index:source_vault.index
+         ~rel_path:source_rel_path
+         ~content
+         ~line
+         ~character
+     with
+     | None -> WorkspaceEdit.create ()
+     | Some target ->
+       let edits =
+         projects t
+         |> List.concat_map ~f:(fun project ->
+           match project.vault, target_in_project ~source_project target project with
+           | Some vault, Some target ->
+             (match
+                Feature.Rename.plan_target
+                  ~index:vault.index
+                  ~docs:(Oystermark.Vault.docs vault)
+                  ~read_file:(read_file project)
+                  target
+                  ~new_name
+              with
+              | Error _ -> []
+              | Ok change -> List.map change.edits ~f:(fun edit -> project, edit))
+           | _ -> [])
+         |> List.dedup_and_sort ~compare:(fun (pa, a) (pb, b) ->
+           [%compare: string * int * int * string]
+             (absolute_path pa a.rel_path, a.first_byte, a.last_byte, a.new_text)
+             (absolute_path pb b.rel_path, b.first_byte, b.last_byte, b.new_text))
+       in
+       let text_document_edits =
+         List.group edits ~break:(fun (pa, a) (pb, b) ->
+           not (String.equal (absolute_path pa a.rel_path) (absolute_path pb b.rel_path)))
+         |> List.filter_map ~f:(function
+           | [] -> None
+           | (project, first) :: _ as edits ->
+             let path = absolute_path project first.rel_path in
+             let content = In_channel.read_all path in
+             let textDocument =
+               OptionalVersionedTextDocumentIdentifier.create
+                 ~uri:(DocumentUri.of_path path)
+                 ()
+             in
+             let edits =
+               List.map edits ~f:(fun (_, edit) ->
+                 `TextEdit
+                   (TextEdit.create
+                      ~range:
+                        (range_of_bytes
+                           content
+                           ~first_byte:edit.first_byte
+                           ~last_byte:edit.last_byte)
+                      ~newText:edit.new_text))
+             in
+             Some (`TextDocumentEdit (TextDocumentEdit.create ~edits ~textDocument)))
+       in
+       let documentChanges =
+         match target with
+         | Path_only { path } when Feature.Rename.valid_note_name new_name ->
+           let absolute = absolute_path source_project path in
+           let owner, owner_path =
+             match t.workspace_root with
+             | None -> source_project, path
+             | Some root ->
+               let workspace_path =
+                 String.chop_prefix absolute ~prefix:(root ^ "/")
+                 |> Option.value ~default:absolute
+               in
+               route t workspace_path
+           in
+           let new_path = Feature.Rename.renamed_note_path ~path:owner_path ~new_name in
+           text_document_edits
+           @ [ `RenameFile
+                 (RenameFile.create
+                    ~oldUri:(DocumentUri.of_path absolute)
+                    ~newUri:(DocumentUri.of_path (absolute_path owner new_path))
+                    ())
+             ]
+         | _ -> text_document_edits
+       in
+       WorkspaceEdit.create ~documentChanges ())
+;;
+
+let document_symbol t ~rel_path =
+  let project, rel_path = route t rel_path in
+  document_symbol_local project ~rel_path
+;;
+
+let code_lens t ~rel_path =
+  let project, rel_path = route t rel_path in
+  match code_lens_local ~include_references:false project ~rel_path with
+  | None -> None
+  | Some command_lenses ->
+    let content = buffer_content project rel_path in
+    Some (command_lenses @ global_reference_lenses t project ~rel_path ~content)
+;;
+
+let definition t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  definition_local project ~rel_path ~line ~character
+;;
+
+let execute_command t ~command ~arguments =
+  match arguments with
+  | Some (`String path :: rest) ->
+    let project, local_path = route t path in
+    execute_command_local project ~command ~arguments:(Some (`String local_path :: rest))
+  | _ -> execute_command_local t ~command ~arguments
+;;
+
+let code_action t ?only ~rel_path ~start_line ~start_character ~end_line ~end_character ()
+  =
+  let project, rel_path = route t rel_path in
+  code_action_local
+    project
+    ?only
+    ~rel_path
+    ~start_line
+    ~start_character
+    ~end_line
+    ~end_character
+    ()
+;;
+
+let completion t ~rel_path ~line ~character =
+  let project, rel_path = route t rel_path in
+  completion_local project ~rel_path ~line ~character
+;;
+
+let inlay_hint t ~rel_path ~start_line ~end_line =
+  let project, rel_path = route t rel_path in
+  inlay_hint_local project ~rel_path ~start_line ~end_line
 ;;

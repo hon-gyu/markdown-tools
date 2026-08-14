@@ -1,0 +1,212 @@
+{0 Nested projects}
+
+An editor workspace may contain more than one OysterMark project. Projects are
+ownership boundaries: each Markdown document belongs to exactly one project,
+and vault operations do not implicitly cross from one project into another.
+
+{1:roots Project roots}
+
+The workspace root is always a project root, whether or not it contains an
+[oysterlsp.json]. Any descendant directory containing an [oysterlsp.json] is
+the root of a nested project.
+
+For example:
+
+{v
+./oysterlsp.json
+./a/oysterlsp.json
+./a/note-in-a.md
+./note-b.md
+./note-c.md
+v}
+
+defines two projects. The outer project owns [note-b.md] and [note-c.md]. The
+project rooted at [a] owns [a/note-in-a.md].
+
+A document is owned by its {b nearest ancestor project root}. Equivalently,
+project discovery starts at a root and prunes every subtree rooted at another
+project. A directory without an [oysterlsp.json] is an ordinary directory and
+remains in its nearest ancestor project.
+
+This rule applies to all files used by the vault, not only Markdown notes. An
+asset below [a] belongs to the project rooted at [a] and is absent from the
+outer project's index.
+
+{1:configuration Configuration}
+
+Each project has one configuration. Its [oysterlsp.json], when present, is
+read from the project root and overrides client [initializationOptions] field
+by field as specified in {!page-"feature-configuration"}. Configuration is
+project-scoped: it is neither inherited from the parent project nor merged
+according to the edited document's directory.
+
+The workspace-root project is the sole exception to requiring a marker: it
+uses [initializationOptions] and defaults when no root [oysterlsp.json] exists.
+
+{1:visibility Link visibility}
+
+Links resolve only against the source document's owning project. Project
+boundaries are symmetric:
+
+{ul
+  {- An outer note cannot resolve a note or asset owned by a nested project.}
+  {- A nested note cannot resolve a note or asset owned by an outer project.}
+  {- Sibling projects cannot resolve each other's notes or assets.}
+}
+
+This remains true when the authored target contains a relative path crossing
+the boundary. If that target would exist only in another project, it is
+unresolved in the source project. External links with a URI scheme retain
+their ordinary non-vault meaning.
+
+{1:imports Imports}
+
+A project may selectively restore visibility into a descendant project by
+listing its project-relative path:
+
+{[
+  {
+    "imports": ["./a"]
+  }
+]}
+
+An import makes the imported project's directly owned tree part of the
+importer's vault {e view}. It is equivalent to not pruning that project root,
+except that projects nested beneath the imported project remain pruned unless
+they too are explicitly imported. Imports are therefore direct rather than
+transitive.
+
+Imported files keep their paths relative to the importing project. With the
+example in {!section-roots}, [a/note-in-a.md] enters the outer index under that
+path. Ordinary resolution is unchanged and runs over the combined view:
+
+{ul
+  {- [ [[a/note-in-a]] ] is an exact path match;}
+  {- [ [[note-in-a]] ] may find it through the existing ordered-component
+     subpath match.}
+}
+
+Imports do not introduce aliases, namespaces, or a second resolution pass.
+Imported candidates participate in the same ranking as locally owned files.
+This deliberately restores the resolution behavior the containing vault had
+before the subtree became a project.
+
+Import paths are resolved relative to the importing project root. A usable
+path must normalize to a discovered descendant project root. Absolute paths,
+paths containing [..], duplicate normalized paths, the project itself, and
+paths that do not name a project are rejected and reported as configuration
+warnings. Import changes take effect after restart.
+
+Visibility is directional. If the outer project imports [a], an outer note
+may resolve [a/note-in-a.md]. A note owned by [a] cannot import or resolve an
+outer-project note: parent and sibling imports are not supported. Importing
+changes visibility, not ownership or configuration.
+
+{2:ancestor-imports Potential ancestor imports}
+
+{b Not supported}: importing a parent project, for example ["imports":
+[".."]]. The current implementation rejects every import containing [..],
+even when normalization would land on a discovered ancestor project. This is
+reported as a configuration warning rather than silently ignored.
+
+If ancestor imports are supported later, they cannot be implemented merely by
+stopping subtree pruning: a child project must instead merge a view of its
+parent's directly owned files. Imported paths should remain relative to the
+importer, and an exact local path should win over imported candidates.
+
+For example:
+
+{v
+./oysterlsp.json
+./a.md
+./d.md
+./b/oysterlsp.json
+./b/c.md
+./b/d.md
+v}
+
+If [b] imported its parent, the prospective importer-relative paths would be:
+
+{ul
+  {- [d.md] for [b/d.md];}
+  {- [../d.md] for the outer [d.md];}
+  {- [../a.md] for the outer [a.md].}
+}
+
+Under that potential behavior, [ [[d]] ] in [b/c.md] would resolve to the
+local [b/d.md], while [ [[../d]] ] would resolve to the outer [d.md]. The two
+files must not be flattened into one [d.md] namespace, since that would make
+resolution depend on index order. Imported parent candidates would enter the
+existing subpath ranking only when no exact local path matched.
+
+This subsection records a possible extension, not accepted syntax or current
+behavior.
+
+{1:operations Vault operations}
+
+Every vault-derived feature uses the source or target document's owning
+project and its index. In particular:
+
+{ul
+  {- completion offers only members of that project;}
+  {- go-to-definition and hover do not enter another project;}
+  {- unresolved-link diagnostics treat a cross-boundary vault target like any
+     other target absent from the project;}
+  {- backlinks, find-references, reference counts, and graph statistics see
+     only edges whose occurrences belong to that project;}
+  {- rename edits references and files only within one project;}
+  {- create-note and daily-note operations create files only within their
+     project root.}
+}
+
+For an importing project, "that project" above means its combined vault view.
+Creation and daily-note operations remain confined to the requesting project's
+owned tree and never create through an import.
+
+Reverse queries cross the visibility edge. References and backlinks to an
+imported note include occurrences in every loaded importing project. Rename
+updates the owner project and every loaded importer that can see the target;
+duplicate edits arising because the same physical document occurs in several
+views are applied once.
+
+These constraints keep the graph internally consistent. In particular, a
+reference cannot appear in one project's outgoing links while being invisible
+to the destination project's backlinks or rename operation.
+
+{1:routing Request routing}
+
+The server maintains independent vault, index, configuration, and derived
+state for each discovered project. An LSP request is routed by document URI to
+the deepest project root that is an ancestor of that document. A URI below the
+workspace root but outside every nested project therefore uses the
+workspace-root project.
+
+Open buffers belong to the same project as their filesystem path. Unsaved
+contents may replace that project's indexed document, but do not change its
+ownership or become visible to another project.
+
+{1:lifecycle Lifecycle}
+
+Project roots are discovered when the server initializes. Adding, removing,
+or moving an [oysterlsp.json] changes ownership of a subtree and therefore
+requires a server restart. Editing an existing configuration file likewise
+takes effect after restart, as specified in
+{!page-"feature-configuration".reload}.
+
+Future file watching must rebuild both affected projects atomically: no
+request may observe the same document in both the old and new owner indexes.
+
+{1:workspace-folders Workspace folders}
+
+Nested projects describe ownership within one initialized workspace root.
+They do not by themselves specify LSP [workspaceFolders] support. A future
+multi-root server applies the same rules independently to each workspace
+folder and must choose the deepest matching project root when routing a URI.
+
+{1:implementation Implementation}
+
+{!Lsp_lib.Server.initialize} discovers project markers and constructs one
+pruned vault state per project. Document handlers route through the project
+boundary in {!module-Lsp_lib.Server}. Focused ownership, configuration,
+definition, and reference tests are in
+{!module-Test_lsp.Test_nested_projects}.
