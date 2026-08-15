@@ -36,7 +36,6 @@ type note_entry =
   ; birthtime : (int * int * int) option (** created date YYYY/MM/DD, when available *)
   ; mtime : (int * int * int) option (** modified date YYYY/MM/DD, when available *)
   ; doc : Cmarkit.Doc.t
-  (* anchors *)
   ; headings : heading_entry list
   ; blocks : block_entry list (** blocks with caret id *)
   ; attrs : attr_entry list (** djot inline and block attributes *)

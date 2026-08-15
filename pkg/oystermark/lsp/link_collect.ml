@@ -4,9 +4,9 @@
     Used by {!Go_to_definition} and {!Diagnostics}.
     See {!page-"feature-go-to-definition".link_detection}.
 
-    @meta[
+    {@meta[
       ai-disclosure: autonomous
-    ]
+    ]}
 *)
 
 open Core
