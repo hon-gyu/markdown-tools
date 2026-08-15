@@ -1,34 +1,46 @@
-(** Unified internal link reference extracted from both wikilinks and markdown links. *)
+(** Unified internal link reference extracted from both wikilinks and markdown links, abstracting away source syntax. *)
 
 open Core
 open Parse
 
 type fragment =
-  | Heading of string list (** Headings *)
-  | Block_ref of string (** Block id *)
+  | Hash_path of string list (** May resolves to headings, or Djot attribute anchors (when length = 1). Non-empty *)
+  | Caret_id of string (** Obsidian block id *)
 [@@deriving sexp]
 
+(**
+  | Target | Fragment | Meaning |
+  |---|---|---|
+  | `Some target` | `None` | Another note or asset |
+  | `Some target` | `Some fragment` | An anchor in another note |
+  | `None` | `Some fragment` | An anchor in the current note |
+  | `None` | `None` | Current note or normalized empty reference |
+*)
 type t =
-  { target : string option (** Target file path *)
+  { target : string option
+    (** Authored target name or path. [None] means the current note. *)
   ; fragment : fragment option
   }
 [@@deriving sexp]
+
+let to_markdown_link (t : t) : Cmarkit.Inline.Link.t = failwith "TODO"
+let to_markdown_link_text (t : t) : string = failwith "TODO"
+
+let of_wikilink (w : Cmarkit.Inline.Wikilink.t) : t =
+  let fragment =
+    match Cmarkit.Inline.Wikilink.fragment w with
+    | None -> None
+    | Some (Cmarkit.Inline.Wikilink.Heading hs) -> Some (Hash_path hs)
+    | Some (Cmarkit.Inline.Wikilink.Block_ref s) -> Some (Caret_id s)
+  in
+  { target = Cmarkit.Inline.Wikilink.target w; fragment }
+;;
 
 let is_external (s : string) : bool =
   String.is_prefix s ~prefix:"http://"
   || String.is_prefix s ~prefix:"https://"
   || String.is_prefix s ~prefix:"mailto:"
   || String.is_prefix s ~prefix:"ftp://"
-;;
-
-let of_wikilink (w : Cmarkit.Inline.Wikilink.t) : t =
-  let fragment =
-    match Cmarkit.Inline.Wikilink.fragment w with
-    | None -> None
-    | Some (Cmarkit.Inline.Wikilink.Heading hs) -> Some (Heading hs)
-    | Some (Cmarkit.Inline.Wikilink.Block_ref s) -> Some (Block_ref s)
-  in
-  { target = Cmarkit.Inline.Wikilink.target w; fragment }
 ;;
 
 let percent_decode (s : string) : string =
@@ -66,7 +78,9 @@ let of_cmark_dest (dest : string) : t option =
 
 let of_cmark_reference (ref : Cmarkit.Inline.Link.reference) : t option =
   match ref with
-  | `Ref _ -> None
+  | `Ref _ ->
+    (* TODO: we should support this case? *)
+    None
   | `Inline (ld, _ld_meta) ->
     (match Cmarkit.Link_definition.dest ld with
      | None ->
