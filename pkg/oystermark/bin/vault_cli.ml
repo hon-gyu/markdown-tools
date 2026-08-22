@@ -5,34 +5,49 @@ module Vault = Oystermark.Vault
 
 let load root = Vault.of_root_path ~skip_expand:true root
 
-let kind_name = function
-  | Vault.Query.Link -> "link"
-  | Embed -> "embed"
-  | Image -> "image"
+let is_image_target target =
+  let target = String.lowercase target in
+  List.exists [ ".png"; ".jpg"; ".jpeg"; ".gif"; ".svg"; ".webp" ] ~f:(fun ext ->
+    String.is_suffix target ~suffix:ext)
 ;;
 
-let destination_name ~source target =
-  match Vault.Query.destination_path ~source target with
-  | Some path -> path
-  | None -> "<unresolved>"
+let links index =
+  Vault.Index.notes index
+  |> List.concat_map ~f:(fun note ->
+    let source = Vault.Index.Note.path note in
+    Vault.Index.Note.links note
+    |> List.map ~f:(fun link ->
+      source, link, Vault.Index.resolve index source link.reference))
 ;;
 
-let line_number root (link : Vault.Query.link) =
-  let content = In_channel.read_all (Filename.concat root link.source) in
-  1
-  + String.fold
-      (String.prefix content (Int.min link.first_byte (String.length content)))
-      ~init:0
-      ~f:(fun n c -> if Char.equal c '\n' then n + 1 else n)
+let kind_name (_, (link : Vault.Index.Link.t), resolution) =
+  match link.kind, resolution with
+  | Vault.Index.Link.Link, _ -> "link"
+  | Embed, Ok (Vault.Index.Note _ | Anchor _) -> "embed"
+  | Embed, Ok (Vault.Index.Asset _) -> "image"
+  | Embed, Error _ ->
+    (match link.reference.target with
+     | Some target when is_image_target target -> "image"
+     | _ -> "embed")
 ;;
 
-let print_link root (link : Vault.Query.link) =
+let destination_name (_, _, resolution) =
+  match resolution with
+  | Ok target -> Vault.Index.target_path target
+  | Error _ -> "<unresolved>"
+;;
+
+let line_number (_, (link : Vault.Index.Link.t), _) =
+  fst (Cmarkit.Textloc.first_line link.loc)
+;;
+
+let print_link ((source, _, _) as occurrence) =
   printf
     "%s:%d\t%s\t%s\n"
-    link.source
-    (line_number root link)
-    (kind_name link.kind)
-    (destination_name ~source:link.source link.destination)
+    source
+    (line_number occurrence)
+    (kind_name occurrence)
+    (destination_name occurrence)
 ;;
 
 let (vault_param : string Command.Param.t) = Command.Param.(anon ("vault" %: string))
@@ -43,8 +58,9 @@ let unresolved_command =
     (let%map_open.Command root = vault_param in
      fun () ->
        let vault = load root in
-       Vault.Query.unresolved ~index:vault.index ~docs:(Vault.docs vault)
-       |> List.iter ~f:(print_link root))
+       links vault.index
+       |> List.filter ~f:(fun (_, _, resolution) -> Result.is_error resolution)
+       |> List.iter ~f:print_link)
 ;;
 
 type stats =
@@ -55,15 +71,25 @@ type stats =
   }
 
 let stats (vault : Vault.t) =
-  let links = Vault.Query.all ~index:vault.index ~docs:(Vault.docs vault) in
+  let links = links vault.index in
   let edges, self_links, unresolved_links =
-    List.fold links ~init:(0, 0, 0) ~f:(fun (edges, self_links, unresolved) link ->
-      match Vault.Query.destination_path ~source:link.source link.destination with
-      | None -> edges, self_links, unresolved + 1
-      | Some destination ->
-        edges + 1, self_links + Bool.to_int (String.equal link.source destination), unresolved)
+    List.fold
+      links
+      ~init:(0, 0, 0)
+      ~f:(fun (edges, self_links, unresolved) (source, _, resolution) ->
+        match resolution with
+        | Error _ -> edges, self_links, unresolved + 1
+        | Ok target ->
+          let destination = Vault.Index.target_path target in
+          ( edges + 1
+          , self_links + Bool.to_int (String.equal source destination)
+          , unresolved ))
   in
-  { nodes = List.length (Vault.Index.notes vault.index); edges; self_links; unresolved_links }
+  { nodes = List.length (Vault.Index.notes vault.index)
+  ; edges
+  ; self_links
+  ; unresolved_links
+  }
 ;;
 
 let stats_command =
@@ -80,12 +106,9 @@ let stats_command =
 
 let resolve_note (vault : Vault.t) note =
   match
-    Vault.Resolve.resolve
-      { Vault.Link_ref.target = Some note; fragment = None }
-      ""
-      vault.index
+    Vault.Index.resolve vault.index "__cli__.md" { target = Some note; fragment = None }
   with
-  | Vault.Resolve.Note { path } -> path
+  | Ok (Vault.Index.Note path) -> path
   | _ -> failwithf "note not found: %s" note ()
 ;;
 
@@ -193,8 +216,7 @@ let heading_target (vault : Vault.t) path heading =
   let heading =
     Vault.Index.Note.headings entry
     |> List.map ~f:fst
-    |> List.find ~f:(fun h ->
-      String.equal h.text heading || String.equal h.slug heading)
+    |> List.find ~f:(fun h -> String.equal h.text heading || String.equal h.slug heading)
     |> Option.value_exn ~message:(sprintf "heading not found in %s: %s" path heading)
   in
   ({ path; subject = Heading { slug = heading.slug } } : Vault.Rename.target)

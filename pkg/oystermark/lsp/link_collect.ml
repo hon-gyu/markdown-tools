@@ -13,17 +13,21 @@ open Core
 
 (** How the source syntax consumes its target. This lets diagnostics
     distinguish navigation links from transclusions and media. *)
-type kind = Oystermark.Vault.Query.kind =
+type kind =
   | Link
   | Embed
   | Image
 [@@deriving sexp, equal, compare]
 
-let is_image_target = Oystermark.Vault.Query.is_image_target
+let is_image_target target =
+  let target = String.lowercase target in
+  List.exists [ ".png"; ".jpg"; ".jpeg"; ".gif"; ".svg"; ".webp" ] ~f:(fun ext ->
+    String.is_suffix target ~suffix:ext)
+;;
 
 (** A link found in the AST together with its byte range.
     [first_byte] and [last_byte] are 0-based absolute byte positions. *)
-type located_link = Oystermark.Vault.Query.link =
+type located_link =
   { source : string
   ; destination : Oystermark.Vault.Resolve.target
   ; reference : Oystermark.Vault.Link_ref.t
@@ -42,7 +46,31 @@ let collect_links ~(index : Vault.Index.t) ~(rel_path : string) (doc : Cmarkit.D
   =
   Trace_core.with_span ~__FILE__ ~__LINE__ "collect_links"
   @@ fun span ->
-  let links = Oystermark.Vault.Query.collect ~index ~source:rel_path doc in
+  let module Index = Oystermark.Vault.Index in
+  let file_stat : Index.file_stat = { rel_path; birthtime = None; mtime = None } in
+  let note = Index.Note.of_doc_exn file_stat doc in
+  let links =
+    Index.Note.links note
+    |> List.map ~f:(fun link ->
+      let resolution = Index.resolve index rel_path link.reference in
+      let kind =
+        match link.kind, resolution with
+        | Index.Link.Link, _ -> Link
+        | Embed, Ok (Index.Note _ | Anchor _) -> Embed
+        | Embed, Ok (Index.Asset _) -> Image
+        | Embed, Error _ ->
+          (match link.reference.target with
+           | Some target when is_image_target target -> Image
+           | _ -> Embed)
+      in
+      { source = rel_path
+      ; destination = Oystermark.Vault.Resolve.resolve link.reference rel_path index
+      ; reference = link.reference
+      ; kind
+      ; first_byte = Cmarkit.Textloc.first_byte link.loc
+      ; last_byte = Cmarkit.Textloc.last_byte link.loc
+      })
+  in
   Trace_core.add_data_to_span span [ "num_links", `Int (List.length links) ];
   links
 ;;

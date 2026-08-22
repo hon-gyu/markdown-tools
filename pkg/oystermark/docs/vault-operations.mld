@@ -6,13 +6,13 @@ they do not write files or construct LSP messages.
 
 {1 Links and graph queries}
 
-{!Oystermark.Vault.Query} collects authored wikilinks, Markdown links, embeds,
-and images into one located link type carrying both the authored reference and
-its resolved destination. It provides the primitives used by vault clients.
+{!Oystermark.Vault.Index.Note.links} collects authored link occurrences in a
+note. {!Oystermark.Vault.Index.resolve} resolves each occurrence against an
+index snapshot. Together they provide the primitives used by vault clients.
 
 The command-line graph statistics count Markdown notes as nodes and resolved
 link occurrences as edges. Each authored occurrence is one edge, including
-embeds and images. An edge whose resolved destination is its source note is
+embeds. An edge whose resolved destination is its source note is
 also counted as a self link. Unresolved occurrences are reported separately
 and are not edges.
 

@@ -623,7 +623,7 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
     reachable wherever that capability is missing.  It is also, independently,
     an ordinary thing to want in a note.
 
-    The link is the note's base name: [resolve_file] matches a path
+    The link is the note's base name: [Index.resolve] matches a path
     subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a
     nested format without the writer spelling out the folders.  See
     {!page-"feature-daily-notes".link}. *)

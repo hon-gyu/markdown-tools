@@ -78,7 +78,7 @@ let t s = Some s
 let h hs = Some (hs, `Heading)
 let b id = Some ([ id ], `Block_ref)
 
-let%expect_test "resolve_file" =
+let%expect_test "path resolution" =
   let cases =
     [ "exact match", make_link_ref (t "Note 1") None
     ; "exact with ext", make_link_ref (t "Note 1.md") None
@@ -162,7 +162,7 @@ let%expect_test "resolve_note_vs_asset_priority" =
     |}]
 ;;
 
-let%expect_test "resolve_headings_note2" =
+let%expect_test "heading resolution in note 2" =
   let cases =
     [ "single heading", make_link_ref (t "Note 2") (h [ "Some level 2 title" ])
     ; ( "nested heading"
@@ -204,7 +204,7 @@ let%expect_test "resolve_headings_note2" =
     |}]
 ;;
 
-let%expect_test "resolve_headings_note1" =
+let%expect_test "heading resolution in note 1" =
   let cases =
     [ "L2", make_link_ref (t "Note 1") (h [ "L2" ])
     ; "L2 L3", make_link_ref (t "Note 1") (h [ "L2"; "L3" ])

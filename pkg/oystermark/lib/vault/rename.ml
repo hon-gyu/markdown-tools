@@ -52,25 +52,27 @@ let renamed_note_path ~path ~new_name =
   Filename.concat (Filename.dirname path) new_name
 ;;
 
-let destination_path ~source = Query.destination_path ~source
+let destination_path (_, _, resolution) =
+  Result.ok resolution |> Option.map ~f:Index.target_path
+;;
 
-let matches { path; subject } (link : Query.link) =
+let matches { path; subject } ((_, _, resolution) as link) =
   let same_path =
-    destination_path ~source:link.source link.destination
-    |> Option.value_map ~default:false ~f:(String.equal path)
+    destination_path link |> Option.value_map ~default:false ~f:(String.equal path)
   in
   same_path
   &&
-  match subject, link.destination with
-  | Note, _ -> true
-  | ( Heading { slug }
-    , (Resolve.Heading { slug = found; _ } | Curr_heading { slug = found; _ }) ) ->
-    String.equal slug found
-  | Block { id }, (Resolve.Block { block_id; _ } | Curr_block { block_id; _ }) ->
-    String.equal id block_id
-  | Attr { id }, (Resolve.Attr { id = found; _ } | Curr_attr { id = found; _ }) ->
-    String.equal id found
-  | (Heading _ | Block _ | Attr _), _ -> false
+  match subject, resolution with
+  | Note, Ok _ -> true
+  | Heading { slug }, Ok (Index.Anchor { anchor = { value = Heading h; _ }; _ }) ->
+    String.equal slug h.slug
+  | Block { id }, Ok (Index.Anchor { anchor = { value = Block b; _ }; _ }) ->
+    String.equal id b.id && Index.equal_referenceable_block_kind b.kind Obsidian_caret
+  | Attr { id }, Ok (Index.Anchor { anchor = { value = Block b; _ }; _ }) ->
+    String.equal id b.id && Index.equal_referenceable_block_kind b.kind Djot_attr
+  | Attr { id }, Ok (Index.Anchor { anchor = { value = Inline a; _ }; _ }) ->
+    String.equal id a.id
+  | _ -> false
 ;;
 
 (** {1 Link destination edits} *)
@@ -104,14 +106,16 @@ let destination_bounds slice =
       `Markdown, start, finish start)
 ;;
 
-let reference_edit ~read_file { subject; _ } ~new_name (link : Query.link) =
-  read_file link.source
+let reference_edit ~read_file { subject; _ } ~new_name (source, (link : Index.Link.t), _) =
+  let first_byte = Cmarkit.Textloc.first_byte link.loc in
+  let last_byte = Cmarkit.Textloc.last_byte link.loc in
+  read_file source
   |> Option.bind ~f:(fun content ->
-    let len = link.last_byte - link.first_byte + 1 in
-    if link.first_byte < 0 || len <= 0 || link.first_byte + len > String.length content
+    let len = last_byte - first_byte + 1 in
+    if first_byte < 0 || len <= 0 || first_byte + len > String.length content
     then None
     else (
-      let slice = String.sub content ~pos:link.first_byte ~len in
+      let slice = String.sub content ~pos:first_byte ~len in
       destination_bounds slice
       |> Option.bind ~f:(fun (style, start, stop) ->
         let destination = String.sub slice ~pos:start ~len:(stop - start) in
@@ -143,9 +147,9 @@ let reference_edit ~read_file { subject; _ } ~new_name (link : Query.link) =
             | `Markdown -> String.substr_replace_all replacement ~pattern:" " ~with_:"%20"
           in
           Some
-            { rel_path = link.source
-            ; first_byte = link.first_byte + start
-            ; last_byte = link.first_byte + start + target_stop
+            { rel_path = source
+            ; first_byte = first_byte + start
+            ; last_byte = first_byte + start + target_stop
             ; new_text = replacement
             }
         | Heading _ | Block _ | Attr _ ->
@@ -161,9 +165,9 @@ let reference_edit ~read_file { subject; _ } ~new_name (link : Query.link) =
               | `Wikilink -> new_name
               | `Markdown -> String.substr_replace_all new_name ~pattern:" " ~with_:"%20"
             in
-            { rel_path = link.source
-            ; first_byte = link.first_byte + start + hash + 1 + marker_length
-            ; last_byte = link.first_byte + stop
+            { rel_path = source
+            ; first_byte = first_byte + start + hash + 1 + marker_length
+            ; last_byte = first_byte + stop
             ; new_text = replacement
             }))))
 ;;
@@ -232,14 +236,14 @@ let definition_edit ~index ~read_file { path; subject } ~new_name =
         Index.Note.anchors note
         |> List.find_map ~f:(fun anchor ->
           match anchor.value with
-          | Index.Block { id = found; kind = Obsidian_caret } when String.equal found id ->
-            Some anchor.loc
+          | Index.Block { id = found; kind = Obsidian_caret } when String.equal found id
+            -> Some anchor.loc
           | _ -> None)
       | Attr { id } ->
         Index.Note.anchors note
         |> List.find_map ~f:(fun anchor ->
           match anchor.value with
-          | Index.Block { id = found; kind = Djot_attr } | Inline { id = found }
+          | (Index.Block { id = found; kind = Djot_attr } | Inline { id = found })
             when String.equal found id -> Some anchor.loc
           | _ -> None)
     in
@@ -298,6 +302,20 @@ let definition_edit ~index ~read_file { path; subject } ~new_name =
 
 (** {1 Change planning} *)
 
+let resolved_links_of_docs index docs =
+  List.concat_map docs ~f:(fun (source, doc) ->
+    let file_stat =
+      Index.find_note index source
+      |> Option.value_map
+           ~default:
+             ({ rel_path = source; birthtime = None; mtime = None } : Index.file_stat)
+           ~f:Index.Note.file_stat
+    in
+    Index.Note.of_doc_exn file_stat doc
+    |> Index.Note.links
+    |> List.map ~f:(fun link -> source, link, Index.resolve index source link.reference))
+;;
+
 let plan ~index ~docs ~read_file ({ path; subject } as target) ~new_name =
   let valid =
     match subject with
@@ -309,7 +327,7 @@ let plan ~index ~docs ~read_file ({ path; subject } as target) ~new_name =
   then Error "invalid new name"
   else (
     let edits =
-      Query.all ~index ~docs
+      resolved_links_of_docs index docs
       |> List.filter ~f:(matches target)
       |> List.filter_map ~f:(reference_edit ~read_file target ~new_name)
     in
