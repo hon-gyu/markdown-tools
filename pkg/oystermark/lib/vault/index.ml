@@ -344,82 +344,86 @@ let find_asset (index : t) (path : Path.t) : Asset.t option =
   Map.find index.assets_by_path path
 ;;
 
-let is_path_subsequence ~haystack ~needle =
-  let rec loop hs = function
-    | [] -> true
-    | n :: ns ->
-      (match List.drop_while hs ~f:(fun h -> not (String.equal h n)) with
-       | [] -> false
-       | _ :: hs -> loop hs ns)
-  in
-  loop haystack needle
-;;
+module Resolve_ = struct
+  let is_path_subsequence ~haystack ~needle =
+    let rec loop hs = function
+      | [] -> true
+      | n :: ns ->
+        (match List.drop_while hs ~f:(fun h -> not (String.equal h n)) with
+         | [] -> false
+         | _ :: hs -> loop hs ns)
+    in
+    loop haystack needle
+  ;;
 
-let match_rank ~source_dir p =
-  ( List.length (String.split p ~on:'/')
-  , if String.equal (Filename.dirname p) source_dir then 0 else 1 )
-;;
+  let match_rank ~source_dir p =
+    ( List.length (String.split p ~on:'/')
+    , if String.equal (Filename.dirname p) source_dir then 0 else 1 )
+  ;;
 
-let resolve_path index ~source target =
-  let normalized = if String.mem target '.' then target else target ^ ".md" in
-  let paths = Map.keys index.notes_by_path @ Map.keys index.assets_by_path in
-  match List.find paths ~f:(String.equal normalized) with
-  | Some p -> Some p
-  | None ->
-    let needle = String.split normalized ~on:'/' in
-    let source_dir = Filename.dirname source in
-    List.filter paths ~f:(fun p ->
-      is_path_subsequence ~haystack:(String.split p ~on:'/') ~needle)
-    |> List.min_elt ~compare:(fun a b ->
-      [%compare: int * int] (match_rank ~source_dir a) (match_rank ~source_dir b))
-;;
+  let resolve_path index ~source target =
+    let normalized = if String.mem target '.' then target else target ^ ".md" in
+    let paths = Map.keys index.notes_by_path @ Map.keys index.assets_by_path in
+    match List.find paths ~f:(String.equal normalized) with
+    | Some p -> Some p
+    | None ->
+      let needle = String.split normalized ~on:'/' in
+      let source_dir = Filename.dirname source in
+      List.filter paths ~f:(fun p ->
+        is_path_subsequence ~haystack:(String.split p ~on:'/') ~needle)
+      |> List.min_elt ~compare:(fun a b ->
+        [%compare: int * int] (match_rank ~source_dir a) (match_rank ~source_dir b))
+  ;;
 
-let heading_matches h q =
-  String.equal h.text q || String.equal h.slug (Common.heading_id_of_text q)
-;;
+  let heading_matches h q =
+    String.equal h.text q || String.equal h.slug (Common.heading_id_of_text q)
+  ;;
 
-let resolve_heading anchors query =
-  let hs =
-    List.filter_map anchors ~f:(fun a ->
-      match a.Anchor.value with
-      | Heading h -> Some (h, a)
-      | _ -> None)
-    |> Array.of_list
-  in
-  let qs = Array.of_list query in
-  let rec search hi qi prev =
-    if hi >= Array.length hs || qi >= Array.length qs
-    then None
-    else (
-      let h, a = hs.(hi) in
-      if heading_matches h qs.(qi) && h.level > prev
-      then
-        if qi = Array.length qs - 1
-        then Some a
-        else
-          Option.first_some (search (hi + 1) (qi + 1) h.level) (search (hi + 1) qi prev)
-      else search (hi + 1) qi prev)
-  in
-  if Array.is_empty qs then None else search 0 0 0
-;;
+  let resolve_heading anchors query =
+    let hs =
+      List.filter_map anchors ~f:(fun a ->
+        match a.Anchor.value with
+        | Heading h -> Some (h, a)
+        | _ -> None)
+      |> Array.of_list
+    in
+    let qs = Array.of_list query in
+    let rec search hi qi prev =
+      if hi >= Array.length hs || qi >= Array.length qs
+      then None
+      else (
+        let h, a = hs.(hi) in
+        if heading_matches h qs.(qi) && h.level > prev
+        then
+          if qi = Array.length qs - 1
+          then Some a
+          else
+            Option.first_some (search (hi + 1) (qi + 1) h.level) (search (hi + 1) qi prev)
+        else search (hi + 1) qi prev)
+    in
+    if Array.is_empty qs then None else search 0 0 0
+  ;;
 
-let resolve_fragment note = function
-  | Link_ref.Hash_path hs ->
-    Option.first_some
-      (resolve_heading (Note.anchors note) hs)
-      (match hs with
-       | [ id ] ->
-         List.find (Note.anchors note) ~f:(fun a ->
-           match a.value with
-           | Block { id = x; kind = Djot_attr } | Inline { id = x } -> String.equal x id
-           | _ -> false)
-       | _ -> None)
-  | Link_ref.Caret_id id ->
-    List.find (Note.anchors note) ~f:(fun a ->
-      match a.value with
-      | Block { id = x; kind = Obsidian_caret } -> String.equal x id
-      | _ -> false)
-;;
+  let resolve_fragment note = function
+    | Link_ref.Hash_path hs ->
+      Option.first_some
+        (resolve_heading (Note.anchors note) hs)
+        (match hs with
+         | [ id ] ->
+           List.find (Note.anchors note) ~f:(fun a ->
+             match a.value with
+             | Block { id = x; kind = Djot_attr } | Inline { id = x } -> String.equal x id
+             | _ -> false)
+         | _ -> None)
+    | Link_ref.Caret_id id ->
+      List.find (Note.anchors note) ~f:(fun a ->
+        match a.value with
+        | Block { id = x; kind = Obsidian_caret } -> String.equal x id
+        | _ -> false)
+  ;;
+end
+
+open Resolve_
 
 (** Resolve an authored reference related to a [source] note.
 
