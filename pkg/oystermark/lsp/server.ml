@@ -159,7 +159,7 @@ let initialize_project
 
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
   let project_roots =
-    Oystermark.Vault.Index.list_entries_recursive root ()
+    Oystermark.Vault.Fs_utils.walk ~root ()
     |> List.filter_map ~f:(fun path ->
       if String.equal (Filename.basename path) Lsp_config.file_name
       then Some (Filename.dirname path)
@@ -1338,8 +1338,8 @@ let vault_contains (project : t) path =
   match project.vault with
   | None -> false
   | Some vault ->
-    List.exists vault.index.notes ~f:(fun note -> String.equal note.rel_path path)
-    || List.exists vault.index.files ~f:(fun file -> String.equal file.rel_path path)
+    Option.is_some (Oystermark.Vault.Index.find_note vault.index path)
+    || Option.is_some (Oystermark.Vault.Index.find_asset vault.index path)
 ;;
 
 let target_path : Feature.Find_references.target -> string = function

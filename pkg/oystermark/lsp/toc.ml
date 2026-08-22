@@ -174,14 +174,14 @@ let entries ~(doc : Cmarkit.Doc.t) ~(regions : region list) : entry list =
     List.exists regions ~f:(fun r ->
       r.body_first_byte <= first_byte && first_byte < r.body_last_byte)
   in
-  Oystermark.Vault.Index.extract_headings doc
-  |> List.filter_map ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
-    let located_inside =
-      match h.loc with
-      | Some tl when not (Cmarkit.Textloc.is_none tl) ->
-        inside (Cmarkit.Textloc.first_byte tl)
-      | _ -> false
-    in
+  let module Index = Oystermark.Vault.Index in
+  let file_stat : Index.file_stat =
+    { rel_path = "__toc__.md"; birthtime = None; mtime = None }
+  in
+  Index.Note.of_doc_exn file_stat doc
+  |> Index.Note.headings
+  |> List.filter_map ~f:(fun (h, loc) ->
+    let located_inside = inside (Cmarkit.Textloc.first_byte loc) in
     if located_inside || String.is_empty (String.strip h.text)
     then None
     else Some { text = h.text; level = h.level; slug = h.slug })

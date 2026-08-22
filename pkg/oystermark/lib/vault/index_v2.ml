@@ -35,10 +35,10 @@ module Path = struct
   let of_string : string -> (t, Error.t) result =
     fun s ->
     let cs = String.split s ~on:'/' in
-    if String.is_empty s then Error "vault path must not be empty"
-    else if String.is_prefix s ~prefix:"/" then Error "vault path must be relative"
+    if String.is_empty s then Error (Error.of_string "vault path must not be empty")
+    else if String.is_prefix s ~prefix:"/" then Error (Error.of_string "vault path must be relative")
     else if List.exists cs ~f:(fun c -> String.is_empty c || String.equal c "." || String.equal c "..")
-    then Error "vault path contains an empty, . or .. component"
+    then Error (Error.of_string "vault path contains an empty, . or .. component")
     else Ok s
   let to_string : t -> string = Fun.id
   let dirname : t -> t option = fun t -> Option.map (String.rsplit2 t ~on:'/') ~f:fst
@@ -107,6 +107,7 @@ module Link = struct
     | Link
     | Embed
     | Image
+  [@@deriving sexp, equal, compare]
 
   type t =
     { reference : Link_ref.t

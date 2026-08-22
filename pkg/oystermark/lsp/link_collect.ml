@@ -73,7 +73,7 @@ let%test_module "collect_links" =
     let show text =
       let doc = Lsp_util.parse_doc text in
       let index =
-        Oystermark.Vault.build_index ~md_docs:[ "test.md", doc ] ~other_files:[] ~dirs:[]
+        Oystermark.Vault.build_index ~md_docs:[ "test.md", doc ] ~other_files:[]
       in
       let links = collect_links ~index ~rel_path:"test.md" doc in
       List.iter links ~f:(fun ll ->
@@ -130,7 +130,7 @@ let%test_module "find_at_offset" =
     let find text offset =
       let doc = Lsp_util.parse_doc text in
       let index =
-        Oystermark.Vault.build_index ~md_docs:[ "test.md", doc ] ~other_files:[] ~dirs:[]
+        Oystermark.Vault.build_index ~md_docs:[ "test.md", doc ] ~other_files:[]
       in
       let links = collect_links ~index ~rel_path:"test.md" doc in
       find_at_offset links offset

@@ -6,212 +6,37 @@ module Resolve = Vault.Resolve
 
 (* Vault index modelled after the tt vault to cover behaviors documented in Note 1.md. *)
 let test_index : Index.t =
-  { notes =
-      [ { rel_path = "Note 1.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings =
-            [ { text = "Level 3 title"; level = 3; slug = "level-3-title"; loc = None }
-            ; { text = "Level 4 title"; level = 4; slug = "level-4-title"; loc = None }
-            ; { text = "Example (level 3)"
-              ; level = 3
-              ; slug = "example-level-3"
-              ; loc = None
-              }
-            ; { text = "L2"; level = 2; slug = "l2"; loc = None }
-            ; { text = "L3"; level = 3; slug = "l3"; loc = None }
-            ; { text = "L4"; level = 4; slug = "l4"; loc = None }
-            ; { text = "Another L3"; level = 3; slug = "another-l3"; loc = None }
-            ]
-        ; blocks = [ { id = "para1"; loc = None }; { id = "block-2"; loc = None } ]
-        ; attrs = []
-        }
-      ; { rel_path = "Note 2.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings =
-            [ { text = "Some level 2 title"
-              ; level = 2
-              ; slug = "some-level-2-title"
-              ; loc = None
-              }
-            ; { text = "L4"; level = 4; slug = "l4"; loc = None }
-            ; { text = "Level 3 title"; level = 3; slug = "level-3-title"; loc = None }
-            ; { text = "Another level 2 title"
-              ; level = 2
-              ; slug = "another-level-2-title"
-              ; loc = None
-              }
-            ]
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Three laws of motion.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "().md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "ww.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Figure1.jpg"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Figure1.jpg.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Figure1.jpg.md.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Figure1.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Figure1^2.jpg"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "image.png"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "empty_video.mp4"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "unsupported_text_file.txt"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "a.joiwduvqneoi"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Something"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Something.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "Note 1"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "indir_same_name.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "dir/indir_same_name.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "dir/indir2.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "dir/inner_dir/note_in_inner_dir.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "dir/inner_dir/deep.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = [ { id = "deep1"; loc = None } ]
-        ; attrs = []
-        }
+  Vault.build_index
+    ~md_docs:
+      [ ( "Note 1.md"
+        , Parse.of_string ~locs:true
+            "### Level 3 title\n#### Level 4 title\n### Example (level 3)\n## L2\n### L3\n#### L4\n### Another L3\n\npara ^para1\n\nblock ^block-2\n" )
+      ; ( "Note 2.md"
+        , Parse.of_string ~locs:true
+            "## Some level 2 title\n#### L4\n### Level 3 title\n## Another level 2 title\n" )
+      ; "Three laws of motion.md", Parse.of_string ~locs:true ""
+      ; "().md", Parse.of_string ~locs:true ""
+      ; "ww.md", Parse.of_string ~locs:true ""
+      ; "Figure1.jpg.md", Parse.of_string ~locs:true ""
+      ; "Figure1.jpg.md.md", Parse.of_string ~locs:true ""
+      ; "Figure1.md", Parse.of_string ~locs:true ""
+      ; "Something.md", Parse.of_string ~locs:true ""
+      ; "indir_same_name.md", Parse.of_string ~locs:true ""
+      ; "dir/indir_same_name.md", Parse.of_string ~locs:true ""
+      ; "dir/indir2.md", Parse.of_string ~locs:true ""
+      ; "dir/inner_dir/note_in_inner_dir.md", Parse.of_string ~locs:true ""
+      ; "dir/inner_dir/deep.md", Parse.of_string ~locs:true "deep ^deep1\n"
       ]
-  ; files = []
-  ; dirs = []
-  }
+    ~other_files:
+      [ "Figure1.jpg"
+      ; "Figure1^2.jpg"
+      ; "image.png"
+      ; "empty_video.mp4"
+      ; "unsupported_text_file.txt"
+      ; "a.joiwduvqneoi"
+      ; "Something"
+      ; "Note 1"
+      ]
 ;;
 
 let make_link_ref
@@ -223,10 +48,10 @@ let make_link_ref
   ; fragment =
       (match fragment with
        | None -> None
-       | Some (headings, `Heading) -> Some (Heading headings)
+       | Some (headings, `Heading) -> Some (Hash_path headings)
        | Some (block_id, `Block_ref) ->
          (match block_id with
-          | [ block_id ] -> Some (Block_ref block_id)
+          | [ block_id ] -> Some (Caret_id block_id)
           | _ -> invalid_arg "should only exists one block id"))
   }
 ;;
@@ -353,20 +178,29 @@ let%expect_test "resolve_headings_note2" =
   resolve_and_print cases;
   [%expect
     {|
-    ┌───────────────────────┬────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────┐
-    │ name                  │ input                                                                  │ result                                                               │
-    ├───────────────────────┼────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
-    │ single heading        │ ((target ("Note 2")) (fragment ((Heading ("Some level 2 title")))))    │ (Heading (path "Note 2.md") (heading "Some level 2 title") (level 2) │
-    │                       │                                                                        │  (slug some-level-2-title))                                          │
-    │ nested heading        │ ((target ("Note 2"))                                                   │ (Heading (path "Note 2.md") (heading "Level 3 title") (level 3)      │
-    │                       │  (fragment ((Heading ("Some level 2 title" "Level 3 title")))))        │  (slug level-3-title))                                               │
-    │ nested skip level     │ ((target ("Note 2")) (fragment ((Heading ("Some level 2 title" L4))))) │ (Heading (path "Note 2.md") (heading L4) (level 4) (slug l4))        │
-    │ L3 directly           │ ((target ("Note 2")) (fragment ((Heading ("Level 3 title")))))         │ (Heading (path "Note 2.md") (heading "Level 3 title") (level 3)      │
-    │                       │                                                                        │  (slug level-3-title))                                               │
-    │ L4 directly           │ ((target ("Note 2")) (fragment ((Heading (L4)))))                      │ (Heading (path "Note 2.md") (heading L4) (level 4) (slug l4))        │
-    │ random -> fallback    │ ((target ("Note 2")) (fragment ((Heading (random)))))                  │ (Note (path "Note 2.md"))                                            │
-    │ random#L3 -> fallback │ ((target ("Note 2")) (fragment ((Heading (random "Level 3 title")))))  │ (Note (path "Note 2.md"))                                            │
-    └───────────────────────┴────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+    ┌───────────────────────┬──────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+    │ name                  │ input                                                                    │ result                                                                       │
+    ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+    │ single heading        │ ((target ("Note 2")) (fragment ((Hash_path ("Some level 2 title")))))    │ (Heading (path "Note 2.md") (heading "Some level 2 title") (level 2)         │
+    │                       │                                                                          │  (slug some-level-2-title)                                                   │
+    │                       │                                                                          │  (loc ((first_byte 0) (last_byte 20) (first_line (1 0)) (last_line (1 0))))) │
+    │ nested heading        │ ((target ("Note 2"))                                                     │ (Heading (path "Note 2.md") (heading "Level 3 title") (level 3)              │
+    │                       │  (fragment ((Hash_path ("Some level 2 title" "Level 3 title")))))        │  (slug level-3-title)                                                        │
+    │                       │                                                                          │  (loc                                                                        │
+    │                       │                                                                          │   ((first_byte 30) (last_byte 46) (first_line (3 30)) (last_line (3 30)))))  │
+    │ nested skip level     │ ((target ("Note 2")) (fragment ((Hash_path ("Some level 2 title" L4))))) │ (Heading (path "Note 2.md") (heading L4) (level 4) (slug l4)                 │
+    │                       │                                                                          │  (loc                                                                        │
+    │                       │                                                                          │   ((first_byte 22) (last_byte 28) (first_line (2 22)) (last_line (2 22)))))  │
+    │ L3 directly           │ ((target ("Note 2")) (fragment ((Hash_path ("Level 3 title")))))         │ (Heading (path "Note 2.md") (heading "Level 3 title") (level 3)              │
+    │                       │                                                                          │  (slug level-3-title)                                                        │
+    │                       │                                                                          │  (loc                                                                        │
+    │                       │                                                                          │   ((first_byte 30) (last_byte 46) (first_line (3 30)) (last_line (3 30)))))  │
+    │ L4 directly           │ ((target ("Note 2")) (fragment ((Hash_path (L4)))))                      │ (Heading (path "Note 2.md") (heading L4) (level 4) (slug l4)                 │
+    │                       │                                                                          │  (loc                                                                        │
+    │                       │                                                                          │   ((first_byte 22) (last_byte 28) (first_line (2 22)) (last_line (2 22)))))  │
+    │ random -> fallback    │ ((target ("Note 2")) (fragment ((Hash_path (random)))))                  │ Unresolved                                                                   │
+    │ random#L3 -> fallback │ ((target ("Note 2")) (fragment ((Hash_path (random "Level 3 title")))))  │ Unresolved                                                                   │
+    └───────────────────────┴──────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
 
@@ -386,18 +220,26 @@ let%expect_test "resolve_headings_note1" =
   resolve_and_print cases;
   [%expect
     {|
-    ┌──────────────────────────────┬───────────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────┐
-    │ name                         │ input                                                             │ result                                                        │
-    ├──────────────────────────────┼───────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
-    │ L2                           │ ((target ("Note 1")) (fragment ((Heading (L2)))))                 │ (Heading (path "Note 1.md") (heading L2) (level 2) (slug l2)) │
-    │ L2 L3                        │ ((target ("Note 1")) (fragment ((Heading (L2 L3)))))              │ (Heading (path "Note 1.md") (heading L3) (level 3) (slug l3)) │
-    │ L2 L4                        │ ((target ("Note 1")) (fragment ((Heading (L2 L4)))))              │ (Heading (path "Note 1.md") (heading L4) (level 4) (slug l4)) │
-    │ L2 L3 L4                     │ ((target ("Note 1")) (fragment ((Heading (L2 L3 L4)))))           │ (Heading (path "Note 1.md") (heading L4) (level 4) (slug l4)) │
-    │ L2 L4 L3 -> fallback         │ ((target ("Note 1")) (fragment ((Heading (L2 L4 L3)))))           │ (Note (path "Note 1.md"))                                     │
-    │ L2 L4 Another L3 -> fallback │ ((target ("Note 1")) (fragment ((Heading (L2 L4 "Another L3"))))) │ (Note (path "Note 1.md"))                                     │
-    │ NoSuch -> fallback           │ ((target ("Note 1")) (fragment ((Heading (NoSuch)))))             │ (Note (path "Note 1.md"))                                     │
-    │ heading unresolved file      │ ((target (nonexistent)) (fragment ((Heading (L2)))))              │ Unresolved                                                    │
-    └──────────────────────────────┴───────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
+    ┌──────────────────────────────┬─────────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+    │ name                         │ input                                                               │ result                                                                      │
+    ├──────────────────────────────┼─────────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+    │ L2                           │ ((target ("Note 1")) (fragment ((Hash_path (L2)))))                 │ (Heading (path "Note 1.md") (heading L2) (level 2) (slug l2)                │
+    │                              │                                                                     │  (loc                                                                       │
+    │                              │                                                                     │   ((first_byte 59) (last_byte 63) (first_line (4 59)) (last_line (4 59))))) │
+    │ L2 L3                        │ ((target ("Note 1")) (fragment ((Hash_path (L2 L3)))))              │ (Heading (path "Note 1.md") (heading L3) (level 3) (slug l3)                │
+    │                              │                                                                     │  (loc                                                                       │
+    │                              │                                                                     │   ((first_byte 65) (last_byte 70) (first_line (5 65)) (last_line (5 65))))) │
+    │ L2 L4                        │ ((target ("Note 1")) (fragment ((Hash_path (L2 L4)))))              │ (Heading (path "Note 1.md") (heading L4) (level 4) (slug l4)                │
+    │                              │                                                                     │  (loc                                                                       │
+    │                              │                                                                     │   ((first_byte 72) (last_byte 78) (first_line (6 72)) (last_line (6 72))))) │
+    │ L2 L3 L4                     │ ((target ("Note 1")) (fragment ((Hash_path (L2 L3 L4)))))           │ (Heading (path "Note 1.md") (heading L4) (level 4) (slug l4)                │
+    │                              │                                                                     │  (loc                                                                       │
+    │                              │                                                                     │   ((first_byte 72) (last_byte 78) (first_line (6 72)) (last_line (6 72))))) │
+    │ L2 L4 L3 -> fallback         │ ((target ("Note 1")) (fragment ((Hash_path (L2 L4 L3)))))           │ Unresolved                                                                  │
+    │ L2 L4 Another L3 -> fallback │ ((target ("Note 1")) (fragment ((Hash_path (L2 L4 "Another L3"))))) │ Unresolved                                                                  │
+    │ NoSuch -> fallback           │ ((target ("Note 1")) (fragment ((Hash_path (NoSuch)))))             │ Unresolved                                                                  │
+    │ heading unresolved file      │ ((target (nonexistent)) (fragment ((Hash_path (L2)))))              │ Unresolved                                                                  │
+    └──────────────────────────────┴─────────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
 
@@ -413,15 +255,21 @@ let%expect_test "resolve_blocks" =
   resolve_and_print cases;
   [%expect
     {|
-    ┌─────────────────────────────┬────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────┐
-    │ name                        │ input                                                  │ result                                                │
-    ├─────────────────────────────┼────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────┤
-    │ block found                 │ ((target ("Note 1")) (fragment ((Block_ref para1))))   │ (Block (path "Note 1.md") (block_id para1))           │
-    │ block with hyphen           │ ((target ("Note 1")) (fragment ((Block_ref block-2)))) │ (Block (path "Note 1.md") (block_id block-2))         │
-    │ block not found -> fallback │ ((target ("Note 1")) (fragment ((Block_ref nope))))    │ (Note (path "Note 1.md"))                             │
-    │ block in deep file          │ ((target (deep)) (fragment ((Block_ref deep1))))       │ (Block (path dir/inner_dir/deep.md) (block_id deep1)) │
-    │ block in unresolved file    │ ((target (nonexistent)) (fragment ((Block_ref x))))    │ Unresolved                                            │
-    └─────────────────────────────┴────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────┘
+    ┌─────────────────────────────┬───────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+    │ name                        │ input                                                 │ result                                                                       │
+    ├─────────────────────────────┼───────────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+    │ block found                 │ ((target ("Note 1")) (fragment ((Caret_id para1))))   │ (Block (path "Note 1.md") (block_id para1)                                   │
+    │                             │                                                       │  (loc                                                                        │
+    │                             │                                                       │   ((first_byte 96) (last_byte 106) (first_line (9 96)) (last_line (9 96))))) │
+    │ block with hyphen           │ ((target ("Note 1")) (fragment ((Caret_id block-2)))) │ (Block (path "Note 1.md") (block_id block-2)                                 │
+    │                             │                                                       │  (loc                                                                        │
+    │                             │                                                       │   ((first_byte 109) (last_byte 122) (first_line (11 109))                    │
+    │                             │                                                       │    (last_line (11 109)))))                                                   │
+    │ block not found -> fallback │ ((target ("Note 1")) (fragment ((Caret_id nope))))    │ Unresolved                                                                   │
+    │ block in deep file          │ ((target (deep)) (fragment ((Caret_id deep1))))       │ (Block (path dir/inner_dir/deep.md) (block_id deep1)                         │
+    │                             │                                                       │  (loc ((first_byte 0) (last_byte 10) (first_line (1 0)) (last_line (1 0))))) │
+    │ block in unresolved file    │ ((target (nonexistent)) (fragment ((Caret_id x))))    │ Unresolved                                                                   │
+    └─────────────────────────────┴───────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
 
@@ -439,17 +287,23 @@ let%expect_test "resolve_self_references" =
   resolve_and_print cases;
   [%expect
     {|
-    ┌─────────────────────────┬───────────────────────────────────────────────┬─────────────────────────────────────────────────┐
-    │ name                    │ input                                         │ result                                          │
-    ├─────────────────────────┼───────────────────────────────────────────────┼─────────────────────────────────────────────────┤
-    │ [[]] -> curr file       │ ((target ()) (fragment ()))                   │ Curr_file                                       │
-    │ [[#L2]]                 │ ((target ()) (fragment ((Heading (L2)))))     │ (Curr_heading (heading L2) (level 2) (slug l2)) │
-    │ [[#L2#L3]]              │ ((target ()) (fragment ((Heading (L2 L3)))))  │ (Curr_heading (heading L3) (level 3) (slug l3)) │
-    │ [[#^para1]]             │ ((target ()) (fragment ((Block_ref para1))))  │ (Curr_block (block_id para1))                   │
-    │ [[#NoSuch]] -> fallback │ ((target ()) (fragment ((Heading (NoSuch))))) │ Curr_file                                       │
-    │ [[#^nope]] -> fallback  │ ((target ()) (fragment ((Block_ref nope))))   │ Curr_file                                       │
-    │ [[#]] empty heading     │ ((target ()) (fragment ()))                   │ Curr_file                                       │
-    └─────────────────────────┴───────────────────────────────────────────────┴─────────────────────────────────────────────────┘
+    ┌─────────────────────────┬─────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────┐
+    │ name                    │ input                                           │ result                                                                       │
+    ├─────────────────────────┼─────────────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────┤
+    │ [[]] -> curr file       │ ((target ()) (fragment ()))                     │ Curr_file                                                                    │
+    │ [[#L2]]                 │ ((target ()) (fragment ((Hash_path (L2)))))     │ (Curr_heading (heading L2) (level 2) (slug l2)                               │
+    │                         │                                                 │  (loc                                                                        │
+    │                         │                                                 │   ((first_byte 59) (last_byte 63) (first_line (4 59)) (last_line (4 59)))))  │
+    │ [[#L2#L3]]              │ ((target ()) (fragment ((Hash_path (L2 L3)))))  │ (Curr_heading (heading L3) (level 3) (slug l3)                               │
+    │                         │                                                 │  (loc                                                                        │
+    │                         │                                                 │   ((first_byte 65) (last_byte 70) (first_line (5 65)) (last_line (5 65)))))  │
+    │ [[#^para1]]             │ ((target ()) (fragment ((Caret_id para1))))     │ (Curr_block (block_id para1)                                                 │
+    │                         │                                                 │  (loc                                                                        │
+    │                         │                                                 │   ((first_byte 96) (last_byte 106) (first_line (9 96)) (last_line (9 96))))) │
+    │ [[#NoSuch]] -> fallback │ ((target ()) (fragment ((Hash_path (NoSuch))))) │ Unresolved                                                                   │
+    │ [[#^nope]] -> fallback  │ ((target ()) (fragment ((Caret_id nope))))      │ Unresolved                                                                   │
+    │ [[#]] empty heading     │ ((target ()) (fragment ()))                     │ Curr_file                                                                    │
+    └─────────────────────────┴─────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
 
@@ -462,11 +316,11 @@ let%expect_test "resolve_asset_with_fragment" =
   resolve_and_print cases;
   [%expect
     {|
-    ┌───────────────────────────┬─────────────────────────────────────────────────────┬───────────────────────────┐
-    │ name                      │ input                                               │ result                    │
-    ├───────────────────────────┼─────────────────────────────────────────────────────┼───────────────────────────┤
-    │ Figure1.jpg#2 -> fallback │ ((target (Figure1.jpg)) (fragment ((Heading (2))))) │ (File (path Figure1.jpg)) │
-    │ Note 2## -> empty heading │ ((target ("Note 2")) (fragment ()))                 │ (Note (path "Note 2.md")) │
-    └───────────────────────────┴─────────────────────────────────────────────────────┴───────────────────────────┘
+    ┌───────────────────────────┬───────────────────────────────────────────────────────┬───────────────────────────┐
+    │ name                      │ input                                                 │ result                    │
+    ├───────────────────────────┼───────────────────────────────────────────────────────┼───────────────────────────┤
+    │ Figure1.jpg#2 -> fallback │ ((target (Figure1.jpg)) (fragment ((Hash_path (2))))) │ Unresolved                │
+    │ Note 2## -> empty heading │ ((target ("Note 2")) (fragment ()))                   │ (Note (path "Note 2.md")) │
+    └───────────────────────────┴───────────────────────────────────────────────────────┴───────────────────────────┘
     |}]
 ;;

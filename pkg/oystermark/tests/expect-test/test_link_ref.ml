@@ -78,32 +78,32 @@ let%expect_test "wikilink_link_refs" =
   print_cases cases;
   [%expect
     {|
-    ┌───────────────────────┬─────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┐
-    │ name                  │ input                                       │ link_ref                                                            │
-    ├───────────────────────┼─────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
-    │ basic note            │ [[Three laws of motion]]                    │ ((target ("Three laws of motion")) (fragment ()))                   │
-    │ with ext              │ [[Three laws of motion.md]]                 │ ((target ("Three laws of motion.md")) (fragment ()))                │
-    │ with pipe             │ [[Note 2 | Note two]]                       │ ((target ("Note 2")) (fragment ()))                                 │
-    │ self heading          │ [[#Level 3 title]]                          │ ((target ()) (fragment ((Heading ("Level 3 title")))))              │
-    │ cross heading         │ [[Note 2#Some level 2 title]]               │ ((target ("Note 2")) (fragment ((Heading ("Some level 2 title"))))) │
-    │ nested heading        │ [[Note 2#Some level 2 title#Level 3 title]] │ ((target ("Note 2"))                                                │
-    │                       │                                             │  (fragment ((Heading ("Some level 2 title" "Level 3 title")))))     │
-    │ block ref             │ [[Note 2#^blockid]]                         │ ((target ("Note 2")) (fragment ((Block_ref blockid))))              │
-    │ empty [[]]            │ [[]]                                        │ ((target ()) (fragment ()))                                         │
-    │ empty heading [[#]]   │ [[#]]                                       │ ((target ()) (fragment ()))                                         │
-    │ empty heading other   │ [[Note 2##]]                                │ ((target ("Note 2")) (fragment ()))                                 │
-    │ hash collapse         │ [[###L2#L4]]                                │ ((target ()) (fragment ((Heading (L2 L4)))))                        │
-    │ hash collapse 2       │ [[##L2######L4]]                            │ ((target ()) (fragment ((Heading (L2 L4)))))                        │
-    │ hash collapse invalid │ [[##L2#####L4#L3]]                          │ ((target ()) (fragment ((Heading (L2 L4 L3)))))                     │
-    │ pipe + heading        │ [[#L2 | #L4]]                               │ ((target ()) (fragment ((Heading (L2)))))                           │
-    │ multi pipe            │ [[Note 2 | 2 | 3]]                          │ ((target ("Note 2")) (fragment ()))                                 │
-    │ asset jpg             │ [[Figure1.jpg]]                             │ ((target (Figure1.jpg)) (fragment ()))                              │
-    │ asset with hash       │ [[Figure1.jpg#2]]                           │ ((target (Figure1.jpg)) (fragment ((Heading (2)))))                 │
-    │ asset .md suffix      │ [[Figure1.jpg.md]]                          │ ((target (Figure1.jpg.md)) (fragment ()))                           │
-    │ asset hash in name    │ [[Figure1#2.jpg]]                           │ ((target (Figure1)) (fragment ((Heading (2.jpg)))))                 │
-    │ embed                 │ ![[Figure1.jpg]]                            │ ((target (Figure1.jpg)) (fragment ()))                              │
-    │ asset block ref       │ [[Figure1^2.jpg]]                           │ ((target (Figure1^2.jpg)) (fragment ()))                            │
-    └───────────────────────┴─────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+    ┌───────────────────────┬─────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐
+    │ name                  │ input                                       │ link_ref                                                              │
+    ├───────────────────────┼─────────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+    │ basic note            │ [[Three laws of motion]]                    │ ((target ("Three laws of motion")) (fragment ()))                     │
+    │ with ext              │ [[Three laws of motion.md]]                 │ ((target ("Three laws of motion.md")) (fragment ()))                  │
+    │ with pipe             │ [[Note 2 | Note two]]                       │ ((target ("Note 2")) (fragment ()))                                   │
+    │ self heading          │ [[#Level 3 title]]                          │ ((target ()) (fragment ((Hash_path ("Level 3 title")))))              │
+    │ cross heading         │ [[Note 2#Some level 2 title]]               │ ((target ("Note 2")) (fragment ((Hash_path ("Some level 2 title"))))) │
+    │ nested heading        │ [[Note 2#Some level 2 title#Level 3 title]] │ ((target ("Note 2"))                                                  │
+    │                       │                                             │  (fragment ((Hash_path ("Some level 2 title" "Level 3 title")))))     │
+    │ block ref             │ [[Note 2#^blockid]]                         │ ((target ("Note 2")) (fragment ((Caret_id blockid))))                 │
+    │ empty [[]]            │ [[]]                                        │ ((target ()) (fragment ()))                                           │
+    │ empty heading [[#]]   │ [[#]]                                       │ ((target ()) (fragment ()))                                           │
+    │ empty heading other   │ [[Note 2##]]                                │ ((target ("Note 2")) (fragment ()))                                   │
+    │ hash collapse         │ [[###L2#L4]]                                │ ((target ()) (fragment ((Hash_path (L2 L4)))))                        │
+    │ hash collapse 2       │ [[##L2######L4]]                            │ ((target ()) (fragment ((Hash_path (L2 L4)))))                        │
+    │ hash collapse invalid │ [[##L2#####L4#L3]]                          │ ((target ()) (fragment ((Hash_path (L2 L4 L3)))))                     │
+    │ pipe + heading        │ [[#L2 | #L4]]                               │ ((target ()) (fragment ((Hash_path (L2)))))                           │
+    │ multi pipe            │ [[Note 2 | 2 | 3]]                          │ ((target ("Note 2")) (fragment ()))                                   │
+    │ asset jpg             │ [[Figure1.jpg]]                             │ ((target (Figure1.jpg)) (fragment ()))                                │
+    │ asset with hash       │ [[Figure1.jpg#2]]                           │ ((target (Figure1.jpg)) (fragment ((Hash_path (2)))))                 │
+    │ asset .md suffix      │ [[Figure1.jpg.md]]                          │ ((target (Figure1.jpg.md)) (fragment ()))                             │
+    │ asset hash in name    │ [[Figure1#2.jpg]]                           │ ((target (Figure1)) (fragment ((Hash_path (2.jpg)))))                 │
+    │ embed                 │ ![[Figure1.jpg]]                            │ ((target (Figure1.jpg)) (fragment ()))                                │
+    │ asset block ref       │ [[Figure1^2.jpg]]                           │ ((target (Figure1^2.jpg)) (fragment ()))                              │
+    └───────────────────────┴─────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
     |}]
 ;;
 
@@ -124,19 +124,19 @@ let%expect_test "markdown_link_link_refs" =
   print_cases cases;
   [%expect
     {|
-    ┌────────────────────────┬────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┐
-    │ name                   │ input                                  │ link_ref                                                            │
-    ├────────────────────────┼────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
-    │ percent encoded spaces │ [x](Three%20laws%20of%20motion.md)     │ ((target ("Three laws of motion.md")) (fragment ()))                │
-    │ same file heading      │ [x](#Level%203%20title)                │ ((target ()) (fragment ((Heading ("Level 3 title")))))              │
-    │ cross file heading     │ [x](Note%202#Some%20level%202%20title) │ ((target ("Note 2")) (fragment ((Heading ("Some level 2 title"))))) │
-    │ just target            │ [x](ww)                                │ ((target (ww)) (fragment ()))                                       │
-    │ hash in heading        │ [x](##L2######L4)                      │ ((target ()) (fragment ((Heading (L2 L4)))))                        │
-    │ hash collapse          │ [x](##L2#####L4#L3)                    │ ((target ()) (fragment ((Heading (L2 L4 L3)))))                     │
-    │ external https         │ [x](https://example.com)               │ <none>                                                              │
-    │ external http          │ [x](http://example.com)                │ <none>                                                              │
-    │ external mailto        │ [x](mailto:a@b.com)                    │ <none>                                                              │
-    │ empty dest [www]()     │ [www]()                                │ ((target ()) (fragment ()))                                         │
-    └────────────────────────┴────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+    ┌────────────────────────┬────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐
+    │ name                   │ input                                  │ link_ref                                                              │
+    ├────────────────────────┼────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+    │ percent encoded spaces │ [x](Three%20laws%20of%20motion.md)     │ ((target ("Three laws of motion.md")) (fragment ()))                  │
+    │ same file heading      │ [x](#Level%203%20title)                │ ((target ()) (fragment ((Hash_path ("Level 3 title")))))              │
+    │ cross file heading     │ [x](Note%202#Some%20level%202%20title) │ ((target ("Note 2")) (fragment ((Hash_path ("Some level 2 title"))))) │
+    │ just target            │ [x](ww)                                │ ((target (ww)) (fragment ()))                                         │
+    │ hash in heading        │ [x](##L2######L4)                      │ ((target ()) (fragment ((Hash_path (L2 L4)))))                        │
+    │ hash collapse          │ [x](##L2#####L4#L3)                    │ ((target ()) (fragment ((Hash_path (L2 L4 L3)))))                     │
+    │ external https         │ [x](https://example.com)               │ <none>                                                                │
+    │ external http          │ [x](http://example.com)                │ <none>                                                                │
+    │ external mailto        │ [x](mailto:a@b.com)                    │ <none>                                                                │
+    │ empty dest [www]()     │ [www]()                                │ ((target ()) (fragment ()))                                           │
+    └────────────────────────┴────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
     |}]
 ;;

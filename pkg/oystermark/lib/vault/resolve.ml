@@ -1,6 +1,7 @@
 (** Link resolution algorithm: resolves link references against a vault index. *)
 
 open Core
+module Index = Index
 
 type textloc = Cmarkit.Textloc.t
 
@@ -147,15 +148,22 @@ let resolve_file ~(source : string) (files : string list) (target_str : string)
     explicit [{#id}] when the heading carries one ([ [[note#section-one]] ]).
     Completion inserts the identifier form, so a link it wrote must resolve.
     See {!page-"feature-go-to-definition".heading_lookup}. *)
-let heading_matches (h : Index.heading_entry) (q : string) : bool =
+type heading_entry =
+  { text : string
+  ; level : int
+  ; slug : string
+  ; loc : textloc option
+  }
+
+let heading_matches (h : heading_entry) (q : string) : bool =
   String.equal h.text q || String.equal h.slug (Parse.Common.heading_id_of_text q)
 ;;
 
 (** Resolve a heading query (list of heading texts or ids) against document
     headings.  Finds a subsequence where levels strictly increase
     (backtracking). *)
-let resolve_headings (headings : Index.heading_entry list) (query : string list)
-  : Index.heading_entry option
+let resolve_headings (headings : heading_entry list) (query : string list)
+  : heading_entry option
   =
   let headings_arr = Array.of_list headings in
   let n_headings = Array.length headings_arr in
@@ -190,15 +198,20 @@ let resolve_headings (headings : Index.heading_entry list) (query : string list)
 (** Resolve a fragment string against a file's explicit attribute ids
     ([{#id}]). Exact string comparison; first match in document order wins.
     See {!page-"feature-attribute-anchors".resolution}. *)
-let resolve_attr (attrs : Index.attr_entry list) (id : string) : Index.attr_entry option =
-  List.find attrs ~f:(fun (a : Index.attr_entry) -> String.equal a.id id)
+type attr_entry =
+  { id : string
+  ; loc : textloc option
+  }
+
+let resolve_attr (attrs : attr_entry list) (id : string) : attr_entry option =
+  List.find attrs ~f:(fun (a : attr_entry) -> String.equal a.id id)
 ;;
 
 (** A heading fragment ([#frag]) that matched no heading may still name an
     attribute id, but only when it is a single flat component — a multi-level
     heading query ([#a#b]) can never be an attribute id. *)
-let resolve_attr_of_heading_query (attrs : Index.attr_entry list) (hs : string list)
-  : Index.attr_entry option
+let resolve_attr_of_heading_query (attrs : attr_entry list) (hs : string list)
+  : attr_entry option
   =
   match hs with
   | [ frag ] -> resolve_attr attrs frag
@@ -207,70 +220,22 @@ let resolve_attr_of_heading_query (attrs : Index.attr_entry list) (hs : string l
 
 (** Resolve a link reference against the vault index. *)
 let resolve (link_ref : Link_ref.t) (curr_file : string) (index : Index.t) : target =
-  (* TODO(refactor): the matches be re-written to use Let_syntax? *)
-  let current_entry =
-    List.find index.notes ~f:(fun f -> String.equal f.rel_path curr_file)
-  in
-  match link_ref.target with
-  | None ->
-    (* Self-reference: fragment only *)
-    (match link_ref.fragment with
-     | None -> Curr_file
-     | Some (Link_ref.Heading hs) ->
-       (match current_entry with
-        | Some entry ->
-          (match resolve_headings entry.headings hs with
-           | Some h ->
-             Curr_heading
-               { heading = h.text; level = h.level; slug = h.slug; loc = h.loc }
-           | None ->
-             (match resolve_attr_of_heading_query entry.attrs hs with
-              | Some a -> Curr_attr { id = a.id; loc = a.loc }
-              | None -> Curr_file))
-        | None -> Curr_file)
-     | Some (Link_ref.Block_ref bid) ->
-       (match current_entry with
-        | Some entry ->
-          (match List.find entry.blocks ~f:(fun b -> String.equal b.id bid) with
-           | Some b -> Curr_block { block_id = bid; loc = b.loc }
-           | None ->
-             (match resolve_attr entry.attrs bid with
-              | Some a -> Curr_attr { id = a.id; loc = a.loc }
-              | None -> Curr_file))
-        | None -> Curr_file))
-  | Some target_str ->
-    let paths =
-      List.map index.notes ~f:(fun note -> note.rel_path)
-      @ List.map index.files ~f:(fun file -> file.rel_path)
-    in
-    (match resolve_file ~source:curr_file paths target_str with
-     | None -> Unresolved
-     | Some path ->
-       let file_or_note (path : string) : target =
-         if String.is_suffix path ~suffix:".md" then Note { path } else File { path }
-       in
-       let note =
-         List.find index.notes ~f:(fun note -> String.equal note.rel_path path)
-       in
-       (match link_ref.fragment, note with
-        | None, _ -> file_or_note path
-        | Some _, None -> File { path }
-        | Some (Link_ref.Heading hs), Some file ->
-          (match resolve_headings file.headings hs with
-           | Some h ->
-             Heading
-               { path; heading = h.text; level = h.level; slug = h.slug; loc = h.loc }
-           | None ->
-             (match resolve_attr_of_heading_query file.attrs hs with
-              | Some a -> Attr { path; id = a.id; loc = a.loc }
-              | None -> file_or_note path))
-        | Some (Link_ref.Block_ref bid), Some file ->
-          (match List.find file.blocks ~f:(fun b -> String.equal b.id bid) with
-           | Some b -> Block { path; block_id = bid; loc = b.loc }
-           | None ->
-             (match resolve_attr file.attrs bid with
-              | Some a -> Attr { path; id = a.id; loc = a.loc }
-              | None -> file_or_note path))))
+  let current path = Option.is_none link_ref.target && String.equal curr_file path in
+  match Index.resolve index curr_file link_ref with
+  | Error _ -> Unresolved
+  | Ok (Index.Note path) -> if current path then Curr_file else Note { path }
+  | Ok (Index.Asset path) -> File { path }
+  | Ok (Index.Anchor { note_path = path; anchor }) ->
+    let loc = Some anchor.loc in
+    (match anchor.value with
+     | Index.Heading heading ->
+       if current path
+       then Curr_heading { heading = heading.text; level = heading.level; slug = heading.slug; loc }
+       else Heading { path; heading = heading.text; level = heading.level; slug = heading.slug; loc }
+     | Index.Block { id; kind = Obsidian_caret } ->
+       if current path then Curr_block { block_id = id; loc } else Block { path; block_id = id; loc }
+     | Index.Block { id; kind = Djot_attr } | Index.Inline { id } ->
+       if current path then Curr_attr { id; loc } else Attr { path; id; loc })
 ;;
 
 (** Build a [Cmarkit.Mapper.t] that resolves links against the vault index. *)
@@ -378,7 +343,7 @@ let%expect_test "ranking multiple subsequence matches" =
    identifier (derived slug, or the explicit [{#id}] of [Custom], whose slug is
    [pinned]).  See {!page-"feature-go-to-definition".heading_lookup}. *)
 let%expect_test "heading fragment: text and identifier spellings" =
-  let headings : Index.heading_entry list =
+  let headings : heading_entry list =
     [ { text = "Alpha 2"; level = 1; slug = "alpha-2"; loc = None }
     ; { text = "Beta Two"; level = 2; slug = "beta-two"; loc = None }
     ; { text = "Custom"; level = 1; slug = "pinned"; loc = None }

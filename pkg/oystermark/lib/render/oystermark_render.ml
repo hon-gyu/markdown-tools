@@ -30,13 +30,12 @@ let render_vault
       (vault_root : string)
   : (string * string) list
   =
-  let all_entries = Vault.Index.list_entries_recursive vault_root () in
+  let all_entries = Vault.Fs_utils.walk ~root:vault_root () in
   (* Stage 1: discover *)
   let discovered =
     List.filter all_entries ~f:(fun p -> pipeline.on_discover p all_entries)
   in
   let is_dir (p : string) : bool = String.is_suffix p ~suffix:"/" in
-  let dirs : string list = List.filter discovered ~f:is_dir in
   (* Stage 2: parse — only .md files go through on_parse *)
   let parsed : (string * Cmarkit.Doc.t) list =
     List.concat_map discovered ~f:(fun rel_path ->
@@ -54,7 +53,7 @@ let render_vault
     List.filter discovered ~f:(fun p ->
       (not (String.is_suffix p ~suffix:".md")) && not (is_dir p))
   in
-  let index = Vault.build_index ~md_docs ~other_files ~dirs in
+  let index = Vault.build_index ~md_docs ~other_files in
   let resolved : (string * Cmarkit.Doc.t) list =
     Vault.Resolve.resolve_docs md_docs index
   in

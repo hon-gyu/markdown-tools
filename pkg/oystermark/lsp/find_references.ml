@@ -72,28 +72,28 @@ let detect_target
     (match resolved with
      | Oystermark.Vault.Resolve.Note { path } | File { path } ->
        (match link_ref.fragment with
-        | Some (Oystermark.Vault.Link_ref.Heading hs) ->
+        | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
           let slug =
             String.concat
               ~sep:"-"
               (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path; slug })
-        | Some (Block_ref bid) -> Some (Path_block { path; block_id = bid })
+        | Some (Caret_id bid) -> Some (Path_block { path; block_id = bid })
         | None -> Some (Path_only { path }))
      | Heading { path; slug; _ } -> Some (Path_heading { path; slug })
      | Block { path; block_id } -> Some (Path_block { path; block_id })
      | Attr { path; id; _ } -> Some (Path_attr { path; id })
      | Curr_file ->
        (match link_ref.fragment with
-        | Some (Oystermark.Vault.Link_ref.Heading hs) ->
+        | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
           let slug =
             String.concat
               ~sep:"-"
               (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
           in
           Some (Path_heading { path = rel_path; slug })
-        | Some (Block_ref bid) -> Some (Path_block { path = rel_path; block_id = bid })
+        | Some (Caret_id bid) -> Some (Path_block { path = rel_path; block_id = bid })
         | None -> Some (Path_only { path = rel_path }))
      | Curr_heading { slug; _ } -> Some (Path_heading { path = rel_path; slug })
      | Curr_block { block_id } -> Some (Path_block { path = rel_path; block_id })
@@ -349,7 +349,7 @@ module For_test = struct
       List.filter_map files ~f:(fun (p, _) ->
         if not (String.is_suffix p ~suffix:".md") then Some p else None)
     in
-    let index = Oystermark.Vault.build_index ~md_docs ~other_files ~dirs:[] in
+    let index = Oystermark.Vault.build_index ~md_docs ~other_files in
     let resolved_docs = Oystermark.Vault.Resolve.resolve_docs md_docs index in
     index, resolved_docs
   ;;

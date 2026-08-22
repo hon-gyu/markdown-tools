@@ -3,72 +3,13 @@ open Oystermark
 open Oystermark_render
 
 let test_index : Vault.Index.t =
-  { notes =
-      [ { rel_path = "Note 1.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings =
-            [ { text = "Level 3 title"; level = 3; slug = "level-3-title"; loc = None }
-            ; { text = "L2"; level = 2; slug = "l2"; loc = None }
-            ; { text = "L3"; level = 3; slug = "l3"; loc = None }
-            ]
-        ; blocks = [ { id = "para1"; loc = None }; { id = "block-2"; loc = None } ]
-        ; attrs = []
-        }
-      ; { rel_path = "Note 2.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings =
-            [ { text = "Some heading"; level = 2; slug = "some-heading"; loc = None } ]
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "image.png"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "video.mp4"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "audio.mp3"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "doc.pdf"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = []
-        ; attrs = []
-        }
-      ; { rel_path = "dir/deep.md"
-        ; birthtime = None
-        ; mtime = None
-        ; doc = Parse.of_string ""
-        ; headings = []
-        ; blocks = [ { id = "d1"; loc = None } ]
-        ; attrs = []
-        }
+  Vault.build_index
+    ~md_docs:
+      [ "Note 1.md", Parse.of_string ~locs:true "### Level 3 title\n\n## L2\n\n### L3\n\npara ^para1\n\nblock ^block-2\n"
+      ; "Note 2.md", Parse.of_string ~locs:true "## Some heading\n"
+      ; "dir/deep.md", Parse.of_string ~locs:true "deep ^d1\n"
       ]
-  ; files = []
-  ; dirs = []
-  }
+    ~other_files:[ "image.png"; "video.mp4"; "audio.mp3"; "doc.pdf" ]
 ;;
 
 let render ?(curr_file = "Note 1.md") (md : string) : unit =

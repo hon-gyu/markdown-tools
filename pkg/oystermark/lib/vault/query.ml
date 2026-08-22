@@ -1,6 +1,7 @@
 (** Read-only queries over a resolved vault snapshot. *)
 
 open Core
+module Index = Index
 
 type kind =
   | Link
@@ -105,19 +106,9 @@ let%expect_test "queries distinguish occurrences and edges" =
       ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
   in
   let index =
-    let files =
-      List.map docs ~f:(fun (rel_path, doc) ->
-        ({ Index.rel_path
-         ; birthtime = None
-         ; mtime = None
-         ; doc
-         ; headings = Index.extract_headings doc
-         ; blocks = Index.extract_block_ids doc
-         ; attrs = Index.extract_attr_ids doc
-         }
-         : Index.note_entry))
-    in
-    ({ notes = files; files = []; dirs = [] } : Index.t)
+    List.fold docs ~init:Index.empty ~f:(fun index (rel_path, doc) ->
+      let file_stat : Index.file_stat = { rel_path; birthtime = None; mtime = None } in
+      Index.set_note index (Index.Note.of_doc_exn file_stat doc))
   in
   let docs = Resolve.resolve_docs docs index in
   printf

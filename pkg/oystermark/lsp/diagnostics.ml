@@ -19,7 +19,7 @@ type diagnostic =
 
     Such an id reaches the collection below twice: once as the heading's slug,
     which the parser resolves from the attribute, and once as the attribute
-    line {!Oystermark.Vault.Index.extract_attr_ids} sees.  One authored anchor
+    line {!Oystermark.Vault.Index.Note.anchors} sees.  One authored anchor
     is not a collision, so the heading occurrence is dropped and the attribute
     line — the better place to jump to — is kept.  A genuine collision between
     the same id written twice is still two attribute occurrences.
@@ -48,30 +48,21 @@ let mirrored_heading_slugs (doc : Cmarkit.Doc.t) : String.Set.t =
     See {!page-"feature-diagnostics".duplicate_ids}. *)
 let collect_anchor_occurrences (doc : Cmarkit.Doc.t) : (string * (int * int)) list =
   let mirrored = mirrored_heading_slugs doc in
-  let range_of_loc (loc : Cmarkit.Textloc.t option) : (int * int) option =
-    match loc with
-    | Some tl when not (Cmarkit.Textloc.is_none tl) ->
-      Some (Cmarkit.Textloc.first_byte tl, Cmarkit.Textloc.last_byte tl)
-    | _ -> None
+  let module Index = Oystermark.Vault.Index in
+  let file_stat : Index.file_stat =
+    { rel_path = "__diagnostics__.md"; birthtime = None; mtime = None }
   in
-  let headings =
-    Oystermark.Vault.Index.extract_headings doc
-    |> List.filter_map ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
-      if Set.mem mirrored h.slug
-      then None
-      else Option.map (range_of_loc h.loc) ~f:(fun r -> h.slug, r))
-  in
-  let blocks =
-    Oystermark.Vault.Index.extract_block_ids doc
-    |> List.filter_map ~f:(fun (b : Oystermark.Vault.Index.block_entry) ->
-      Option.map (range_of_loc b.loc) ~f:(fun r -> b.id, r))
-  in
-  let attrs =
-    Oystermark.Vault.Index.extract_attr_ids doc
-    |> List.filter_map ~f:(fun (a : Oystermark.Vault.Index.attr_entry) ->
-      Option.map (range_of_loc a.loc) ~f:(fun r -> a.id, r))
-  in
-  headings @ blocks @ attrs
+  Index.Note.of_doc_exn file_stat doc
+  |> Index.Note.anchors
+  |> List.filter_map ~f:(fun anchor ->
+    let id =
+      match anchor.value with
+      | Index.Heading h when Set.mem mirrored h.slug -> None
+      | Index.Heading h -> Some h.slug
+      | Index.Block { id; _ } | Index.Inline { id } -> Some id
+    in
+    Option.map id ~f:(fun id ->
+      id, (Cmarkit.Textloc.first_byte anchor.loc, Cmarkit.Textloc.last_byte anchor.loc)))
 ;;
 
 (** Diagnostics for anchor ids that occur more than once in [doc]: every
@@ -131,8 +122,8 @@ let compute
         in
         let fragment_str =
           match ll.reference.fragment with
-          | Some (Oystermark.Vault.Link_ref.Heading h) -> "#" ^ String.concat ~sep:"#" h
-          | Some (Block_ref b) -> "#^" ^ b
+          | Some (Oystermark.Vault.Link_ref.Hash_path h) -> "#" ^ String.concat ~sep:"#" h
+          | Some (Caret_id b) -> "#^" ^ b
           | None -> ""
         in
         let category =
@@ -176,7 +167,7 @@ let%test_module "compute" =
         List.filter_map files ~f:(fun (p, _) ->
           if not (String.is_suffix p ~suffix:".md") then Some p else None)
       in
-      Oystermark.Vault.build_index ~md_docs ~other_files ~dirs:[]
+      Oystermark.Vault.build_index ~md_docs ~other_files
     ;;
 
     let files =

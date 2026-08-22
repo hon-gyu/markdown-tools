@@ -380,7 +380,7 @@ let hover
          | Some file_content ->
            let body =
              match link_ref.fragment with
-             | Some (Oystermark.Vault.Link_ref.Heading hs) ->
+             | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
                (* Fragment present but resolve fell back — try to find section. *)
                let slug =
                  String.concat
@@ -388,7 +388,7 @@ let hover
                    (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
                in
                Option.value (heading_section ~slug file_content) ~default:file_content
-             | Some (Block_ref bid) ->
+             | Some (Caret_id bid) ->
                (match extract_block ~block_id:bid file_content with
                 | Some p -> p
                 | None -> file_content)
@@ -424,14 +424,14 @@ let hover
       | Curr_file ->
         let body =
           match link_ref.fragment with
-          | Some (Oystermark.Vault.Link_ref.Heading hs) ->
+          | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
             let slug =
               String.concat
                 ~sep:"-"
                 (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
             in
             Option.value (heading_section ~slug content) ~default:content
-          | Some (Block_ref bid) ->
+          | Some (Caret_id bid) ->
             (match extract_block ~block_id:bid content with
              | Some p -> p
              | None -> content)
@@ -775,7 +775,7 @@ let%test_module "hover" =
         List.filter_map files ~f:(fun (p, _) ->
           if String.is_suffix p ~suffix:".md" then None else Some p)
       in
-      Oystermark.Vault.build_index ~md_docs ~other_files ~dirs:[]
+      Oystermark.Vault.build_index ~md_docs ~other_files
     ;;
 
     let index = make_index files

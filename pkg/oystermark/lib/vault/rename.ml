@@ -2,6 +2,7 @@
     moves; clients decide how to apply or encode them. *)
 
 open Core
+module Index = Index
 
 (** {1 Rename target} *)
 
@@ -216,20 +217,31 @@ let attr_id_offset ~(id : string) line =
 ;;
 
 let definition_edit ~index ~read_file { path; subject } ~new_name =
-  List.find index.Index.notes ~f:(fun f -> String.equal f.rel_path path)
-  |> Option.bind ~f:(fun file ->
+  Index.find_note index path
+  |> Option.bind ~f:(fun note ->
     let loc =
       match subject with
       | Note -> None
       | Heading { slug } ->
-        List.find file.headings ~f:(fun h -> String.equal h.slug slug)
-        |> Option.bind ~f:(fun h -> h.loc)
+        Index.Note.anchors note
+        |> List.find_map ~f:(fun anchor ->
+          match anchor.value with
+          | Index.Heading heading when String.equal heading.slug slug -> Some anchor.loc
+          | _ -> None)
       | Block { id } ->
-        List.find file.blocks ~f:(fun b -> String.equal b.id id)
-        |> Option.bind ~f:(fun b -> b.loc)
+        Index.Note.anchors note
+        |> List.find_map ~f:(fun anchor ->
+          match anchor.value with
+          | Index.Block { id = found; kind = Obsidian_caret } when String.equal found id ->
+            Some anchor.loc
+          | _ -> None)
       | Attr { id } ->
-        List.find file.attrs ~f:(fun a -> String.equal a.id id)
-        |> Option.bind ~f:(fun a -> a.loc)
+        Index.Note.anchors note
+        |> List.find_map ~f:(fun anchor ->
+          match anchor.value with
+          | Index.Block { id = found; kind = Djot_attr } | Inline { id = found }
+            when String.equal found id -> Some anchor.loc
+          | _ -> None)
     in
     loc
     |> Option.bind ~f:(fun loc ->
@@ -318,19 +330,9 @@ let%expect_test "plan note and heading renames" =
     List.map files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
   in
   let index =
-    let entries =
-      List.map md_docs ~f:(fun (rel_path, doc) ->
-        ({ Index.rel_path
-         ; birthtime = None
-         ; mtime = None
-         ; doc
-         ; headings = Index.extract_headings doc
-         ; blocks = Index.extract_block_ids doc
-         ; attrs = Index.extract_attr_ids doc
-         }
-         : Index.note_entry))
-    in
-    ({ notes = entries; files = []; dirs = [] } : Index.t)
+    List.fold md_docs ~init:Index.empty ~f:(fun index (rel_path, doc) ->
+      let file_stat : Index.file_stat = { rel_path; birthtime = None; mtime = None } in
+      Index.set_note index (Index.Note.of_doc_exn file_stat doc))
   in
   let docs = Resolve.resolve_docs md_docs index in
   let read_file path = List.Assoc.find files ~equal:String.equal path in

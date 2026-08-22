@@ -11,7 +11,7 @@ open Oystermark_render
     [max_depth] controls embed recursion depth. *)
 let render ?(max_depth = 5) (files : (string * string) list) (target : string) : unit =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] ~dirs:[] in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
   let resolved = Vault.Resolve.resolve_docs docs index in
   let expanded = Vault.Embed.expand_docs ~max_depth resolved in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
@@ -262,7 +262,7 @@ let render_reversed ?(max_depth = 5) (files : (string * string) list) (target : 
   : unit
   =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] ~dirs:[] in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
   let resolved = Vault.Resolve.resolve_docs docs index in
   let expanded = Vault.Embed.expand_docs ~max_depth resolved in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in

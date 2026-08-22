@@ -73,54 +73,23 @@ let of_loc (loc : Cmarkit.Textloc.t option) : (int * int * int * int) option =
     block it attributes: the parser spans the specifier, so nothing here has
     to guess where it was written. *)
 let of_doc (doc : Cmarkit.Doc.t) : t list =
-  let headings =
-    Oystermark.Vault.Index.extract_headings doc
-    |> List.filter_map ~f:(fun (h : Oystermark.Vault.Index.heading_entry) ->
-      of_loc h.loc
-      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
-        { kind = Heading h.level
-        ; id = h.slug
-        ; text = h.text
-        ; first_line
-        ; last_line
-        ; first_byte
-        ; last_byte
-        }))
+  let module Index = Oystermark.Vault.Index in
+  let file_stat : Index.file_stat =
+    { rel_path = "__lsp__.md"; birthtime = None; mtime = None }
   in
-  let blocks =
-    Oystermark.Vault.Index.extract_block_ids doc
-    |> List.filter_map ~f:(fun (b : Oystermark.Vault.Index.block_entry) ->
-      of_loc b.loc
-      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
-        { kind = Block
-        ; id = b.id
-        ; text = ""
-        ; first_line
-        ; last_line
-        ; first_byte
-        ; last_byte
-        }))
-  in
-  let attrs =
-    Oystermark.Vault.Index.extract_attr_ids doc
-    |> List.filter_map ~f:(fun (a : Oystermark.Vault.Index.attr_entry) ->
-      of_loc a.loc
-      |> Option.map ~f:(fun (first_line, last_line, first_byte, last_byte) ->
-        { kind = Attr
-        ; id = a.id
-        ; text = ""
-        ; first_line
-        ; last_line
-        ; first_byte
-        ; last_byte
-        }))
-  in
-  List.sort
-    (headings @ blocks @ attrs)
-    ~compare:(fun a b ->
-      match Int.compare a.first_byte b.first_byte with
-      | 0 -> Int.compare a.last_byte b.last_byte
-      | c -> c)
+  Index.Note.of_doc_exn file_stat doc
+  |> Index.Note.anchors
+  |> List.map ~f:(fun anchor ->
+    let first_line, last_line, first_byte, last_byte =
+      Option.value_exn (of_loc (Some anchor.loc))
+    in
+    let kind, id, text =
+      match anchor.value with
+      | Index.Heading h -> Heading h.level, h.slug, h.text
+      | Index.Block { id; kind = Obsidian_caret } -> Block, id, ""
+      | Index.Block { id; kind = Djot_attr } | Index.Inline { id } -> Attr, id, ""
+    in
+    { kind; id; text; first_line; last_line; first_byte; last_byte })
 ;;
 
 let of_content (content : string) : t list = of_doc (Lsp_util.parse_doc content)

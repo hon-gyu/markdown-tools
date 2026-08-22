@@ -46,18 +46,18 @@ let event_of_loc ~name ~kind = function
       }
 ;;
 
-let events (entry : Oystermark.Vault.Index.note_entry) =
-  let headings =
-    List.filter_map entry.headings ~f:(fun h ->
-      event_of_loc ~name:h.text ~kind:(Heading h.level) h.loc)
-  in
-  let blocks =
-    List.filter_map entry.blocks ~f:(fun b ->
-      event_of_loc ~name:("^" ^ b.id) ~kind:Block_id b.loc)
-  in
-  let attrs =
-    List.filter_map entry.attrs ~f:(fun a ->
-      event_of_loc ~name:("#" ^ a.id) ~kind:Attribute_id a.loc)
+let events (entry : Oystermark.Vault.Index.Note.t) =
+  let module Index = Oystermark.Vault.Index in
+  let headings, blocks, attrs =
+    Index.Note.anchors entry
+    |> List.fold ~init:([], [], []) ~f:(fun (headings, blocks, attrs) anchor ->
+      match anchor.value with
+      | Index.Heading h ->
+        Option.to_list (event_of_loc ~name:h.text ~kind:(Heading h.level) (Some anchor.loc)) @ headings, blocks, attrs
+      | Index.Block { id; kind = Obsidian_caret } ->
+        headings, Option.to_list (event_of_loc ~name:("^" ^ id) ~kind:Block_id (Some anchor.loc)) @ blocks, attrs
+      | Index.Block { id; kind = Djot_attr } | Index.Inline { id } ->
+        headings, blocks, Option.to_list (event_of_loc ~name:("#" ^ id) ~kind:Attribute_id (Some anchor.loc)) @ attrs)
   in
   List.sort
     (headings @ blocks @ attrs)
@@ -71,7 +71,7 @@ let events (entry : Oystermark.Vault.Index.note_entry) =
       | c -> c)
 ;;
 
-let symbols ~(entry : Oystermark.Vault.Index.note_entry) ~(content_length : int)
+let symbols ~(entry : Oystermark.Vault.Index.Note.t) ~(content_length : int)
   : symbol list
   =
   let roots_rev = ref [] in
@@ -114,7 +114,7 @@ let symbols ~(entry : Oystermark.Vault.Index.note_entry) ~(content_length : int)
 ;;
 
 let document_outline ~(index : Oystermark.Vault.Index.t) ~rel_path ~content =
-  List.find index.notes ~f:(fun entry -> String.equal entry.rel_path rel_path)
+  Oystermark.Vault.Index.find_note index rel_path
   |> Option.value_map ~default:[] ~f:(fun entry ->
     symbols ~entry ~content_length:(String.length content))
 ;;

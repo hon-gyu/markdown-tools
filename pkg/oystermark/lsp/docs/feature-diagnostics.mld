@@ -57,9 +57,7 @@ than once in a file makes every [#id] reference to it ambiguous.
 {ul
   {- The document's anchors are collected from the freshly-parsed content
      (not the stale index entry) via
-     {!Oystermark.Vault.Index.extract_headings},
-     {!Oystermark.Vault.Index.extract_block_ids}, and
-     {!Oystermark.Vault.Index.extract_attr_ids}.}
+     {!Oystermark.Vault.Index.Note.anchors}.}
   {- Anchors are grouped by id string. Any id occurring {e more than
      once} is a duplicate.}
   {- {b Every} occurrence of a duplicated id gets its own diagnostic (not

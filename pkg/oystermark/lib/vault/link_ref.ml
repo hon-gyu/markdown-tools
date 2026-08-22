@@ -6,7 +6,7 @@ open Parse
 type fragment =
   | Hash_path of string list (** May resolves to headings, or Djot attribute anchors (when length = 1). Non-empty *)
   | Caret_id of string (** Obsidian block id *)
-[@@deriving sexp]
+[@@deriving sexp, equal, compare]
 
 (**
   | Target | Fragment | Meaning |
@@ -21,7 +21,7 @@ type t =
     (** Authored target name or path. [None] means the current note. *)
   ; fragment : fragment option
   }
-[@@deriving sexp]
+[@@deriving sexp, equal, compare]
 
 let to_markdown_link (t : t) : Cmarkit.Inline.Link.t = failwith "TODO"
 let to_markdown_link_text (t : t) : string = failwith "TODO"

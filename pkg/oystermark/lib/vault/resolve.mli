@@ -1,4 +1,5 @@
 open Core
+module Index = Index
 
 type target =
   | Note of { path : string }

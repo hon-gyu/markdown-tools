@@ -1,4 +1,5 @@
 module Index = Index
+module Fs_utils = Fs_utils
 module Link_ref = Link_ref
 module Resolve = Resolve
 module Embed = Embed
@@ -8,116 +9,60 @@ open Core
 
 type t =
   { vault_root : string
-  ; index : Index.t (** index of all files in the vault *)
-  ; vault_meta : Cmarkit.Meta.t (** metadata slot *)
+  ; index : Index.t
+  ; vault_meta : Cmarkit.Meta.t
   }
 
-let docs (vault : t) : (string * Cmarkit.Doc.t) list =
-  vault.index.notes |> List.map ~f:(fun note -> note.rel_path, note.doc)
-;;
+let docs vault =
+  Index.notes vault.index |> List.map ~f:(fun note -> Index.Note.path note, Index.Note.doc note)
 
-(** Replace the note documents while keeping the index as the vault's single
-    source of truth. Existing filesystem dates are retained by path. *)
-let with_docs (vault : t) (docs : (string * Cmarkit.Doc.t) list) : t =
-  let notes =
-    List.map docs ~f:(fun (rel_path, doc) ->
-      let birthtime, mtime =
-        List.find vault.index.notes ~f:(fun note -> String.equal note.rel_path rel_path)
-        |> Option.value_map ~default:(None, None) ~f:(fun note ->
-          note.birthtime, note.mtime)
+let file_stat ?(birthtime = None) ?(mtime = None) rel_path : Index.file_stat =
+  { rel_path; birthtime; mtime }
+
+let build_index ~md_docs ~other_files =
+  let index =
+    List.fold md_docs ~init:Index.empty ~f:(fun index (path, doc) ->
+      Index.set_note index (Index.Note.of_doc_exn (file_stat path) doc))
+  in
+  List.fold other_files ~init:index ~f:(fun index path ->
+    Index.set_asset index (Index.Asset.create (file_stat path)))
+
+(** Replace note documents while retaining file dates and non-note assets. *)
+let with_docs vault docs =
+  let index =
+    List.fold docs ~init:Index.empty ~f:(fun index (path, doc) ->
+      let stat =
+        Index.find_note vault.index path
+        |> Option.value_map ~default:(file_stat path) ~f:Index.Note.file_stat
       in
-      ({ rel_path
-       ; birthtime
-       ; mtime
-       ; doc
-       ; headings = Index.extract_headings doc
-       ; blocks = Index.extract_block_ids doc
-       ; attrs = Index.extract_attr_ids doc
-       }
-       : Index.note_entry))
+      Index.set_note index (Index.Note.of_doc_exn stat doc))
   in
-  { vault with index = { vault.index with notes } }
-;;
+  let index = List.fold (Index.assets vault.index) ~init:index ~f:Index.set_asset in
+  { vault with index }
 
-(** Build an index from a list of [(rel_path, doc)] pairs
-    plus a list of non-md relative paths. *)
-let build_index
-      ~(md_docs : (string * Cmarkit.Doc.t) list)
-      ~(other_files : string list)
-      ~(dirs : string list)
-  : Index.t
-  =
-  let md_entries =
-    List.map md_docs ~f:(fun (rel_path, doc) ->
-      let headings = Index.extract_headings doc in
-      let blocks = Index.extract_block_ids doc in
-      let attrs = Index.extract_attr_ids doc in
-      ({ rel_path
-       ; birthtime = None
-       ; mtime = None
-       ; doc
-       ; headings
-       ; blocks
-       ; attrs
-       }
-       : Index.note_entry))
-  in
-  let non_md =
-    List.map other_files ~f:(fun rel_path ->
-      ({ rel_path; birthtime = None; mtime = None } : Index.non_md_entry))
-  in
-  { notes = md_entries; files = non_md; dirs }
-;;
-
-(** Simple build: read all files not rejected by [exclude], then build the
-    index. [exclude] receives vault-relative file paths. *)
-let of_root_path
-      ?(skip_expand : bool = false)
-      ?(locs : bool = true)
-      ?(exclude : string -> bool = fun _ -> false)
-      (vault_root : string)
-  : t
-  =
-  (* Scan files *)
-  let all_files =
-    List.filter (Index.list_entries_recursive vault_root ()) ~f:(fun p ->
-      not (String.is_suffix p ~suffix:"/") && not (exclude p))
-  in
-  let (docs : (string * Cmarkit.Doc.t) list) =
-    List.filter_map all_files ~f:(fun rel_path ->
-      if String.is_suffix rel_path ~suffix:".md"
-      then (
-        let full_path = Filename.concat vault_root rel_path in
-        let content = In_channel.read_all full_path in
-        let parsed = Parse.of_string ~locs content in
-        Some (rel_path, parsed))
+let of_root_path ?(skip_expand = false) ?(locs = true) ?(exclude = fun _ -> false) vault_root =
+  (* CR: should we remove ~locs altogether? *)
+  if not locs then invalid_arg "Vault.of_root_path: Vault.Index requires source locations";
+  let entries = List.filter (Fs_utils.walk ~root:vault_root ()) ~f:(fun p -> not (exclude p)) in
+  let files = List.filter entries ~f:(fun p -> not (String.is_suffix p ~suffix:"/")) in
+  let parsed_docs =
+    List.filter_map files ~f:(fun path ->
+      if String.is_suffix path ~suffix:".md"
+      then Some (path, Parse.of_string ~locs:true (In_channel.read_all (Filename.concat vault_root path)))
       else None)
   in
-  let other_files =
-    List.filter all_files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))
-  in
-  (* Build index *)
-  let index = build_index ~md_docs:docs ~other_files ~dirs:[] in
-  (* Resolve *)
-  let resolved_docs : (string * Cmarkit.Doc.t) list = Resolve.resolve_docs docs index in
-  let index = build_index ~md_docs:resolved_docs ~other_files ~dirs:[] in
-  if skip_expand
-  then { vault_root; index; vault_meta = Cmarkit.Meta.none }
-  else (
-    let expanded_docs : (string * Cmarkit.Doc.t) list = Embed.expand_docs resolved_docs in
-    let index = build_index ~md_docs:expanded_docs ~other_files ~dirs:[] in
-    { vault_root; index; vault_meta = Cmarkit.Meta.none })
-;;
+  let other_files = List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md")) in
+  let index = build_index ~md_docs:parsed_docs ~other_files in
+  let resolved_docs = Resolve.resolve_docs parsed_docs index in
+  let index = build_index ~md_docs:resolved_docs ~other_files in
+  let vault = { vault_root; index; vault_meta = Cmarkit.Meta.none } in
+  if skip_expand then vault else with_docs vault (Embed.expand_docs resolved_docs)
 
-(** [of_inmem_files] creates a vault from a list of in-memory files.
-  @param files A list of (path, content) pairs representing the files to include in the vault.
-*)
-let of_inmem_files ?(vault_root = "/tmp_vault") (files : (string * string) list) : t =
-  let docs =
-    List.map files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
-  in
-  let index = build_index ~md_docs:docs ~other_files:[] ~dirs:[] in
-  let resolved_docs = Resolve.resolve_docs docs index in
-  let index = build_index ~md_docs:resolved_docs ~other_files:[] ~dirs:[] in
-  { vault_root; index; vault_meta = Cmarkit.Meta.none }
-;;
+let of_inmem_files ?(vault_root = "/tmp_vault") files =
+  let parsed_docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content) in
+  let index = build_index ~md_docs:parsed_docs ~other_files:[] in
+  let resolved_docs = Resolve.resolve_docs parsed_docs index in
+  { vault_root
+  ; index = build_index ~md_docs:resolved_docs ~other_files:[]
+  ; vault_meta = Cmarkit.Meta.none
+  }

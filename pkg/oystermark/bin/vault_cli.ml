@@ -63,7 +63,7 @@ let stats (vault : Vault.t) =
       | Some destination ->
         edges + 1, self_links + Bool.to_int (String.equal link.source destination), unresolved)
   in
-  { nodes = List.length vault.index.notes; edges; self_links; unresolved_links }
+  { nodes = List.length (Vault.Index.notes vault.index); edges; self_links; unresolved_links }
 ;;
 
 let stats_command =
@@ -187,10 +187,13 @@ let rename_note_command =
 
 let heading_target (vault : Vault.t) path heading =
   let entry =
-    List.find_exn vault.index.notes ~f:(fun entry -> String.equal entry.rel_path path)
+    Vault.Index.find_note vault.index path
+    |> Option.value_exn ~message:(sprintf "note not found: %s" path)
   in
   let heading =
-    List.find entry.headings ~f:(fun h ->
+    Vault.Index.Note.headings entry
+    |> List.map ~f:fst
+    |> List.find ~f:(fun h ->
       String.equal h.text heading || String.equal h.slug heading)
     |> Option.value_exn ~message:(sprintf "heading not found in %s: %s" path heading)
   in
