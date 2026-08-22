@@ -1,5 +1,8 @@
-(** Note embedding: expand embed wikilinks and markdown image links as AST
-    transclusion.
+(** {0 Note embedding: expand embed wikilinks and markdown image links as AST transclusion}
+
+    {@meta[
+    ai-disclosure: autonomous
+    ]}
 
     Supported embed sources:
     - {b Cmarkit.Inline.Wikilink embeds}: [!\[\[NOTE\]\]] syntax (parsed as {!Cmarkit.Inline.Wikilink.t}
@@ -414,6 +417,8 @@ let reverse_embed_doc (doc : Cmarkit.Doc.t) : Cmarkit.Doc.t =
   in
   Cmarkit.Mapper.map_doc mapper doc
 ;;
+
+(** {1 Tests} *)
 
 module For_test = struct
   let parse_blocks (md : string) : Cmarkit.Block.t list =

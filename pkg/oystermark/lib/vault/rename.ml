@@ -1,5 +1,12 @@
-(** Vault-wide rename planning.  This module describes byte edits and file
-    moves; clients decide how to apply or encode them. *)
+(** {0 Vault-wide rename planning}
+
+  This describes byte edits and file
+  moves; clients decide how to apply or encode them.
+
+  {@meta[
+  ai-disclosure: autonomous
+  ]}
+*)
 
 open Core
 module Index = Index
