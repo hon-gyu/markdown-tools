@@ -64,19 +64,13 @@ let go_to_definition
     Trace_core.add_data_to_span _sp [ "result", `String "no_link_at_cursor" ];
     None
   | Some link_ref ->
-    let target = Oystermark.Vault.Resolve.resolve link_ref rel_path index in
+    let target = Oystermark.Vault.Index.resolve index rel_path link_ref in
     let resolution_tag =
       match target with
-      | Oystermark.Vault.Resolve.Note _ -> "note"
-      | File _ -> "file"
-      | Heading _ -> "heading"
-      | Block _ -> "block"
-      | Attr _ -> "attr"
-      | Curr_file -> "curr_file"
-      | Curr_heading _ -> "curr_heading"
-      | Curr_block _ -> "curr_block"
-      | Curr_attr _ -> "curr_attr"
-      | Unresolved -> "unresolved"
+      | Ok (Oystermark.Vault.Index.Note _) -> "note"
+      | Ok (Asset _) -> "file"
+      | Ok (Anchor _) -> "anchor"
+      | Error _ -> "unresolved"
     in
     Trace_core.add_data_to_span _sp [ "resolution", `String resolution_tag ];
     (* Cross-file: read the target so its column is UTF-16-encoded; degrade to a
@@ -94,23 +88,16 @@ let go_to_definition
       Some { path = rel_path; line; character }
     in
     (match target with
-     | Oystermark.Vault.Resolve.Note { path } | File { path } ->
-       (* File found but fragment (if any) wasn't resolved — resolve fell back to the note. *)
-       (match config.gtd_unresolved_fragment, link_ref.fragment with
-        | Strict, Some _ -> None
-        | _ -> Some { path; line = 0; character = 0 })
-     | Heading { path; loc; _ } -> cross ~path loc
-     | Block { path; loc; _ } -> cross ~path loc
-     | Attr { path; loc; _ } -> cross ~path loc
-     | Curr_file ->
-       (* Self-reference but fragment (if any) wasn't resolved. *)
-       (match config.gtd_unresolved_fragment, link_ref.fragment with
-        | Strict, Some _ -> None
-        | _ -> Some { path = rel_path; line = 0; character = 0 })
-     | Curr_heading { loc; _ } -> self loc
-     | Curr_block { loc; _ } -> self loc
-     | Curr_attr { loc; _ } -> self loc
-     | Unresolved -> None)
+     | Ok (Oystermark.Vault.Index.Note path | Asset path) ->
+       Some { path; line = 0; character = 0 }
+     | Ok (Anchor { note_path = path; anchor }) ->
+       if String.equal path rel_path
+       then self (Some anchor.loc)
+       else cross ~path (Some anchor.loc)
+     | Error (Missing_anchor path)
+       when Lsp_config.equal_fragment_behavior config.gtd_unresolved_fragment Fallback ->
+       Some { path; line = 0; character = 0 }
+     | Error (Missing_anchor _ | Missing_path) -> None)
 ;;
 
 (** {1:test Test} *)

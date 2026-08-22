@@ -105,13 +105,11 @@ let compute
          to Note/File/Curr_file instead of Heading/Block/Curr_heading/Curr_block).
          See {!page-"feature-diagnostics".resolution_check}. *)
       let is_unresolved =
-        match target, ll.reference.fragment with
-        | Oystermark.Vault.Resolve.Unresolved, _ -> true
-        | (Note _ | File _), Some _ ->
+        match target with
+        | Error (Oystermark.Vault.Index.Missing_anchor _) ->
           Lsp_config.equal_fragment_behavior config.diag_unresolved_fragment Strict
-        | Curr_file, Some _ ->
-          Lsp_config.equal_fragment_behavior config.diag_unresolved_fragment Strict
-        | _ -> false
+        | Error Oystermark.Vault.Index.Missing_path -> true
+        | Ok _ -> false
       in
       if is_unresolved
       then (

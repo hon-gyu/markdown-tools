@@ -20,6 +20,11 @@ let strip_md_ext (path : string) : string =
 
 let spf = Printf.sprintf
 
+let make_wikilink ~target ~fragment ~display ~embed =
+  let wikilink = Parse.Common.wikilink_of_fields ~target ~fragment ~display ~embed in
+  Cmarkit.Inline.Ext_wikilink (wikilink, Cmarkit.Meta.none)
+;;
+
 (** Intermediate TOC tree: a list of entries, each either a leaf file or a
     directory containing a subtree. *)
 type toc_entry =
@@ -200,18 +205,7 @@ let toc_cmark_list
   in
   let make_leaf_wl ~(full_path : string) ~(display : string option) : Cmarkit.Inline.t =
     let target : string option = Some (strip_md_ext full_path) in
-    let note_path : string =
-      if String.is_suffix full_path ~suffix:".md"
-      then full_path
-      else full_path ^ "/index.md"
-    in
-    let resolved_target : Vault.Resolve.target = Note { path = note_path } in
-    Vault.Resolve.make_wikilink
-      ~target
-      ~fragment:None
-      ~display
-      ~embed:false
-      ~resolved_target
+    make_wikilink ~target ~fragment:None ~display ~embed:false
   in
   let rec render_entries ~(prefix : string) (entries : toc_entry list) : Cmarkit.Block.t =
     let items : Cmarkit.Block.List_item.t Cmarkit.node list =
@@ -323,23 +317,16 @@ let title (ctx : Vault.t) : html list =
 ;;
 
 module Backlink = struct
-  (** Path that a resolved target points to. *)
-  let path_of_resolved (target : Vault.Resolve.target) : string option =
-    match target with
-    | Vault.Resolve.Note { path } -> Some path
-    | Vault.Resolve.File { path } -> Some path
-    | Vault.Resolve.Heading { path; _ } -> Some path
-    | Vault.Resolve.Block { path; _ } -> Some path
-    | Vault.Resolve.Attr { path; _ } -> Some path
-    | Vault.Resolve.Curr_file
-    | Vault.Resolve.Curr_heading _
-    | Vault.Resolve.Curr_block _
-    | Vault.Resolve.Curr_attr _
-    | Vault.Resolve.Unresolved -> None
+  let resolves_to ~index ~source target_path link_ref =
+    match Vault.Index.resolve index source link_ref with
+    | Ok target -> String.equal (Vault.Index.target_path target) target_path
+    | Error _ -> false
   ;;
 
   (** Check whether an inline tree contains a resolved link to [target_path]. *)
-  let inline_links_to (target_path : string) (inline : Cmarkit.Inline.t) : bool =
+  let inline_links_to ~index ~source (target_path : string) (inline : Cmarkit.Inline.t)
+    : bool
+    =
     let folder =
       Cmarkit.Folder.make
         ~inline:(fun _f acc (i : Cmarkit.Inline.t) ->
@@ -347,26 +334,21 @@ module Backlink = struct
           then Cmarkit.Folder.ret true
           else (
             match i with
-            | Cmarkit.Inline.Link (_, meta) | Cmarkit.Inline.Image (_, meta) ->
-              (match Cmarkit.Meta.find Vault.Resolve.resolved_key meta with
-               | Some resolved ->
-                 (match path_of_resolved resolved with
-                  | Some p when String.equal p target_path -> Cmarkit.Folder.ret true
-                  | _ -> Cmarkit.Folder.default)
-               | None -> Cmarkit.Folder.default)
+            | Cmarkit.Inline.Link (link, _) | Cmarkit.Inline.Image (link, _) ->
+              (match
+                 Vault.Link_ref.of_cmark_reference (Cmarkit.Inline.Link.reference link)
+               with
+               | Some link_ref when resolves_to ~index ~source target_path link_ref ->
+                 Cmarkit.Folder.ret true
+               | _ -> Cmarkit.Folder.default)
             | _ -> Cmarkit.Folder.default))
         ~inline_ext_default:(fun _f acc i ->
           if acc
           then acc
           else (
             match i with
-            | Cmarkit.Inline.Ext_wikilink (_, meta) ->
-              (match Cmarkit.Meta.find Vault.Resolve.resolved_key meta with
-               | Some resolved ->
-                 (match path_of_resolved resolved with
-                  | Some p when String.equal p target_path -> true
-                  | _ -> acc)
-               | None -> acc)
+            | Cmarkit.Inline.Ext_wikilink (w, _) ->
+              resolves_to ~index ~source target_path (Vault.Link_ref.of_wikilink w)
             | _ -> acc))
         ~block_ext_default:(fun _f acc _b -> acc)
         ()
@@ -374,61 +356,32 @@ module Backlink = struct
     Cmarkit.Folder.fold_inline folder false inline
   ;;
 
-  (** Check whether a block contains a resolved link to [target_path]. *)
-  let block_links_to (target_path : string) (block : Cmarkit.Block.t) : bool =
-    let folder =
-      Cmarkit.Folder.make
-        ~inline:(fun _f acc (i : Cmarkit.Inline.t) ->
-          if acc
-          then Cmarkit.Folder.ret true
-          else (
-            match i with
-            | Cmarkit.Inline.Link (_, meta) | Cmarkit.Inline.Image (_, meta) ->
-              (match Cmarkit.Meta.find Vault.Resolve.resolved_key meta with
-               | Some resolved ->
-                 (match path_of_resolved resolved with
-                  | Some p when String.equal p target_path -> Cmarkit.Folder.ret true
-                  | _ -> Cmarkit.Folder.default)
-               | None -> Cmarkit.Folder.default)
-            | _ -> Cmarkit.Folder.default))
-        ~inline_ext_default:(fun _f acc i ->
-          if acc
-          then acc
-          else (
-            match i with
-            | Cmarkit.Inline.Ext_wikilink (_, meta) ->
-              (match Cmarkit.Meta.find Vault.Resolve.resolved_key meta with
-               | Some resolved ->
-                 (match path_of_resolved resolved with
-                  | Some p when String.equal p target_path -> true
-                  | _ -> acc)
-               | None -> acc)
-            | _ -> acc))
-        ~block_ext_default:(fun _f acc _b -> acc)
-        ()
-    in
-    Cmarkit.Folder.fold_block folder false block
-  ;;
-
   (** Render a single block to HTML using the oystermark renderer. *)
-  let render_block (block : Cmarkit.Block.t) : string =
+  let render_block ~resolve (block : Cmarkit.Block.t) : string =
     let doc : Cmarkit.Doc.t = Cmarkit.Doc.make block in
-    Html.of_doc ~backend_blocks:true ~safe:false doc
+    Html.of_doc ~backend_blocks:true ~safe:false ~resolve doc
   ;;
 
   (** Extract the minimal leaf blocks from [doc] that contain a link to
       [target_path], rendered as HTML strings. Descends into container blocks
       (lists, block quotes, splicing) to find the innermost paragraph or heading
       that mentions the target. *)
-  let extract_backlink_blocks (target_path : string) (doc : Cmarkit.Doc.t) : string list =
+  let extract_backlink_blocks ~index ~source (target_path : string) (doc : Cmarkit.Doc.t)
+    : string list
+    =
+    let resolve link_ref = Vault.Index.resolve index source link_ref in
     let rec collect (b : Cmarkit.Block.t) : string list =
       match b with
       | Cmarkit.Block.Paragraph (p, _meta) ->
         let inline : Cmarkit.Inline.t = Cmarkit.Block.Paragraph.inline p in
-        if inline_links_to target_path inline then [ render_block b ] else []
+        if inline_links_to ~index ~source target_path inline
+        then [ render_block ~resolve b ]
+        else []
       | Cmarkit.Block.Heading (h, _meta) ->
         let inline : Cmarkit.Inline.t = Cmarkit.Block.Heading.inline h in
-        if inline_links_to target_path inline then [ render_block b ] else []
+        if inline_links_to ~index ~source target_path inline
+        then [ render_block ~resolve b ]
+        else []
       | Cmarkit.Block.List (l, _meta) ->
         let items : Cmarkit.Block.List_item.t Cmarkit.node list =
           Cmarkit.Block.List'.items l
@@ -450,7 +403,9 @@ module Backlink = struct
     fun (vault : Vault.t) ->
     let sources : (string * string list) list =
       List.filter_map (Vault.docs vault) ~f:(fun (src_path, doc) ->
-        let blocks : string list = extract_backlink_blocks rel_path doc in
+        let blocks : string list =
+          extract_backlink_blocks ~index:vault.index ~source:src_path rel_path doc
+        in
         match blocks with
         | [] -> None
         | _ -> Some (src_path, blocks))
@@ -488,12 +443,7 @@ module Backlink = struct
   module For_test = struct
     (** Build a resolved wikilink inline pointing to [path]. *)
     let make_test_wikilink (path : string) : Cmarkit.Inline.t =
-      Vault.Resolve.make_wikilink
-        ~target:(Some path)
-        ~fragment:None
-        ~display:None
-        ~embed:false
-        ~resolved_target:(Vault.Resolve.Note { path = path ^ ".md" })
+      make_wikilink ~target:(Some path) ~fragment:None ~display:None ~embed:false
     ;;
 
     (** Build a paragraph block from an inline. *)
@@ -521,13 +471,19 @@ module Backlink = struct
 
     let text (s : string) : Cmarkit.Inline.t = Cmarkit.Inline.Text (s, Cmarkit.Meta.none)
 
+    let test_index =
+      Vault.build_index ~md_docs:[ "A.md", Parse.of_string ~locs:true "" ] ~other_files:[]
+    ;;
+
     let%expect_test "extract_backlink_blocks: paragraph with link" =
       let wl : Cmarkit.Inline.t = make_test_wikilink "A" in
       let para : Cmarkit.Block.t =
         make_para (inlines [ text "see "; wl; text " here" ])
       in
       let doc : Cmarkit.Doc.t = make_doc [ para ] in
-      let blocks : string list = extract_backlink_blocks "A.md" doc in
+      let blocks : string list =
+        extract_backlink_blocks ~index:test_index ~source:"source.md" "A.md" doc
+      in
       List.iter blocks ~f:print_string;
       [%expect {| <p>see <a href="/A/">A</a> here</p> |}]
     ;;
@@ -535,7 +491,9 @@ module Backlink = struct
     let%expect_test "extract_backlink_blocks: no match" =
       let wl : Cmarkit.Inline.t = make_test_wikilink "B" in
       let doc : Cmarkit.Doc.t = make_doc [ make_para (inlines [ text "see "; wl ]) ] in
-      let blocks : string list = extract_backlink_blocks "A.md" doc in
+      let blocks : string list =
+        extract_backlink_blocks ~index:test_index ~source:"source.md" "A.md" doc
+      in
       Printf.printf "count: %d" (List.length blocks);
       [%expect {| count: 0 |}]
     ;;
@@ -548,7 +506,9 @@ module Backlink = struct
         make_list_item (Cmarkit.Block.Blocks ([ para1; para2 ], Cmarkit.Meta.none))
       in
       let doc : Cmarkit.Doc.t = make_doc [ list_block ] in
-      let blocks : string list = extract_backlink_blocks "A.md" doc in
+      let blocks : string list =
+        extract_backlink_blocks ~index:test_index ~source:"source.md" "A.md" doc
+      in
       List.iter blocks ~f:print_string;
       [%expect {| <p>this mentions <a href="/A/">A</a></p> |}]
     ;;
@@ -575,7 +535,9 @@ module Backlink = struct
           , Cmarkit.Meta.none )
       in
       let doc : Cmarkit.Doc.t = make_doc [ list_block ] in
-      let blocks : string list = extract_backlink_blocks "A.md" doc in
+      let blocks : string list =
+        extract_backlink_blocks ~index:test_index ~source:"source.md" "A.md" doc
+      in
       List.iter blocks ~f:print_string;
       [%expect {| <p>links to <a href="/A/">A</a></p> |}]
     ;;
@@ -587,7 +549,9 @@ module Backlink = struct
         Cmarkit.Block.Block_quote (Cmarkit.Block.Block_quote.make para, Cmarkit.Meta.none)
       in
       let doc : Cmarkit.Doc.t = make_doc [ bq ] in
-      let blocks : string list = extract_backlink_blocks "A.md" doc in
+      let blocks : string list =
+        extract_backlink_blocks ~index:test_index ~source:"source.md" "A.md" doc
+      in
       List.iter blocks ~f:print_string;
       [%expect {| <p>quoted <a href="/A/">A</a></p> |}]
     ;;

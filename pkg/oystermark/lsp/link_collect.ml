@@ -29,7 +29,7 @@ let is_image_target target =
     [first_byte] and [last_byte] are 0-based absolute byte positions. *)
 type located_link =
   { source : string
-  ; destination : Oystermark.Vault.Resolve.target
+  ; destination : Oystermark.Vault.Index.resolution
   ; reference : Oystermark.Vault.Link_ref.t
   ; kind : kind
   ; first_byte : int
@@ -64,7 +64,7 @@ let collect_links ~(index : Vault.Index.t) ~(rel_path : string) (doc : Cmarkit.D
            | _ -> Embed)
       in
       { source = rel_path
-      ; destination = Oystermark.Vault.Resolve.resolve link.reference rel_path index
+      ; destination = resolution
       ; reference = link.reference
       ; kind
       ; first_byte = Cmarkit.Textloc.first_byte link.loc

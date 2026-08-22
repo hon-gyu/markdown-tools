@@ -54,11 +54,8 @@ let render_vault
       (not (String.is_suffix p ~suffix:".md")) && not (is_dir p))
   in
   let index = Vault.build_index ~md_docs ~other_files in
-  let resolved : (string * Cmarkit.Doc.t) list =
-    Vault.Resolve.resolve_docs md_docs index
-  in
   (* Expand note embeds after resolution *)
-  let expanded : (string * Cmarkit.Doc.t) list = Vault.Embed.expand_docs resolved in
+  let expanded : (string * Cmarkit.Doc.t) list = Vault.Embed.expand_docs ~index md_docs in
   let vault_ctx : Vault.t =
     Vault.of_docs ~base:{ vault_root; index; vault_meta = Cmarkit.Meta.none } expanded
   in
@@ -83,7 +80,8 @@ let render_vault
       let fm = Parse.Frontmatter.of_doc final in
       let fm_config = Config.of_frontmatter fm in
       let config = Config.merge config fm_config in
-      let body = Html.of_doc ~backend_blocks ~safe ~config final in
+      let resolve link_ref = Vault.Index.resolve final_vault.index rel_path link_ref in
+      let body = Html.of_doc ~backend_blocks ~safe ~config ~resolve final in
       let url_path = Html.note_url_path rel_path in
       let title : string = Component.title_of_path rel_path in
       let nav : string = Component.nav_of_url_path ~home_path:config.home.path url_path in

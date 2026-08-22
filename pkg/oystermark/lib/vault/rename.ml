@@ -352,10 +352,9 @@ let%expect_test "plan note and heading renames" =
       let file_stat : Index.file_stat = { rel_path; birthtime = None; mtime = None } in
       Index.set_note index (Index.Note.of_doc_exn file_stat doc))
   in
-  let docs = Resolve.resolve_docs md_docs index in
   let read_file path = List.Assoc.find files ~equal:String.equal path in
   let show target new_name =
-    match plan ~index ~docs ~read_file target ~new_name with
+    match plan ~index ~docs:md_docs ~read_file target ~new_name with
     | Error error -> printf "error: %s\n" error
     | Ok change -> print_s [%sexp (change : change)]
   in

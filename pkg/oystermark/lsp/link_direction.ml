@@ -1,7 +1,7 @@
 (** Inlay hints for intra-note links: which way the target is, and how far.
 
     Spec: {!page-"feature-inlay-hints-link-direction"}.
-    Resolution is {!Oystermark.Vault.Resolve}'s, the same one
+    Resolution is {!Oystermark.Vault.Index.resolve}, the same operation
     {!Go_to_definition} jumps by, so the arrow and the jump can never
     disagree. *)
 
@@ -57,19 +57,15 @@ let label ~(delta : int) ~(side : side) : string option =
 (** The position a link points {e inside the current note}, if it points at one
     at all.  A cross-note target, an unresolved one, and a whole-note
     self-link ([Curr_file], [Note]) alike have no direction to show. *)
-let intra_note_target ~(rel_path : string) (target : Oystermark.Vault.Resolve.target)
+let intra_note_target ~(rel_path : string) (target : Oystermark.Vault.Index.resolution)
   : Cmarkit.Textloc.t option
   =
   let same path = String.equal path rel_path in
   let loc =
     match target with
-    | Oystermark.Vault.Resolve.Curr_heading { loc; _ }
-    | Curr_block { loc; _ }
-    | Curr_attr { loc; _ } -> loc
-    (* The same fragment written the long way, through the note's own name. *)
-    | (Heading { path; loc; _ } | Block { path; loc; _ } | Attr { path; loc; _ })
-      when same path -> loc
-    | Heading _ | Block _ | Attr _ | Note _ | File _ | Curr_file | Unresolved -> None
+    | Ok (Oystermark.Vault.Index.Anchor { note_path; anchor }) when same note_path ->
+      Some anchor.loc
+    | Ok (Anchor _ | Note _ | Asset _) | Error _ -> None
   in
   match loc with
   | Some loc when not (Cmarkit.Textloc.is_none loc) -> Some loc

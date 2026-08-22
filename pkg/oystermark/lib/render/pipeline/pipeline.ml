@@ -138,7 +138,7 @@ let dir_index
             Some (index_path, Parse.of_string ~locs:true generated))))
     in
     let ctx = Vault.of_docs ~base:ctx (docs @ new_docs) in
-    Vault.of_docs ~base:ctx (Vault.Resolve.resolve_docs (Vault.docs ctx) ctx.index)
+    ctx
   in
   make ~on_vault ()
 ;;

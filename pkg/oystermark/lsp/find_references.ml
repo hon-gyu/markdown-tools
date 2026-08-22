@@ -2,10 +2,9 @@
     given file, heading, or block.
 
     Spec: {!page-"feature-find-references"}.
-    Walks pre-resolved vault docs and reads {!Oystermark.Vault.Resolve.resolved_key}
-    metadata attached during vault building, avoiding re-parsing and re-resolving.
+    Walks parsed vault docs and resolves authored links against the vault index.
     Uses {!Link_collect} for link extraction at the cursor position and
-    {!Oystermark.Vault.Resolve} for single-file resolution during target detection. *)
+    {!Oystermark.Vault.Index.resolve} for target detection and collection. *)
 
 open Core
 
@@ -68,37 +67,22 @@ let detect_target
   let links = Link_collect.collect_links ~index ~rel_path doc in
   match Link_collect.find_at_offset links offset with
   | Some link_ref ->
-    let resolved = Oystermark.Vault.Resolve.resolve link_ref rel_path index in
+    let resolved = Oystermark.Vault.Index.resolve index rel_path link_ref in
     (match resolved with
-     | Oystermark.Vault.Resolve.Note { path } | File { path } ->
-       (match link_ref.fragment with
-        | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
-          let slug =
-            String.concat
-              ~sep:"-"
-              (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
-          in
-          Some (Path_heading { path; slug })
-        | Some (Caret_id bid) -> Some (Path_block { path; block_id = bid })
-        | None -> Some (Path_only { path }))
-     | Heading { path; slug; _ } -> Some (Path_heading { path; slug })
-     | Block { path; block_id } -> Some (Path_block { path; block_id })
-     | Attr { path; id; _ } -> Some (Path_attr { path; id })
-     | Curr_file ->
-       (match link_ref.fragment with
-        | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
-          let slug =
-            String.concat
-              ~sep:"-"
-              (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
-          in
-          Some (Path_heading { path = rel_path; slug })
-        | Some (Caret_id bid) -> Some (Path_block { path = rel_path; block_id = bid })
-        | None -> Some (Path_only { path = rel_path }))
-     | Curr_heading { slug; _ } -> Some (Path_heading { path = rel_path; slug })
-     | Curr_block { block_id } -> Some (Path_block { path = rel_path; block_id })
-     | Curr_attr { id; _ } -> Some (Path_attr { path = rel_path; id })
-     | Unresolved -> None)
+     | Error _ -> None
+     | Ok (Oystermark.Vault.Index.Note path | Asset path) -> Some (Path_only { path })
+     | Ok (Anchor { note_path = path; anchor = { value = Heading h; _ } }) ->
+       Some (Path_heading { path; slug = h.slug })
+     | Ok
+         (Anchor
+            { note_path = path
+            ; anchor = { value = Block { id; kind = Obsidian_caret }; _ }
+            }) -> Some (Path_block { path; block_id = id })
+     | Ok
+         (Anchor
+            { note_path = path; anchor = { value = Block { id; kind = Djot_attr }; _ } })
+     | Ok (Anchor { note_path = path; anchor = { value = Inline { id }; _ } }) ->
+       Some (Path_attr { path; id }))
   | None ->
     (* Not on a link — is the cursor on an anchor?  The anchors come from the
        same [doc] the links did, so a [#] or a [ ^id] inside a code block is
@@ -114,76 +98,28 @@ let detect_target
 
 (** {2 Vault scanning}
 
-    Scan pre-resolved vault documents for links matching the target.
-    Reads {!Oystermark.Vault.Resolve.resolved_key} from AST node metadata
-    instead of re-resolving each link.
+    Scan vault documents for authored links matching the target.
     See {!page-"feature-find-references".collection}. *)
 
-(** Extract the path from a resolved target, substituting [source_rel_path]
-    for targets that refer to the current file. *)
-let path_of_resolved ~(source_rel_path : string) (t : Oystermark.Vault.Resolve.target)
-  : string option
-  =
-  match t with
-  | Oystermark.Vault.Resolve.Note { path }
-  | File { path }
-  | Heading { path; _ }
-  | Block { path; _ }
-  | Attr { path; _ } -> Some path
-  | Curr_file | Curr_heading _ | Curr_block _ | Curr_attr _ -> Some source_rel_path
-  | Unresolved -> None
-;;
-
-(** Extract the attribute id from a resolved target, if any. *)
-let attr_id_of_resolved (t : Oystermark.Vault.Resolve.target) : string option =
-  match t with
-  | Oystermark.Vault.Resolve.Attr { id; _ } | Curr_attr { id; _ } -> Some id
-  | _ -> None
-;;
-
-(** Extract the heading slug from a resolved target, if any. *)
-let slug_of_resolved (t : Oystermark.Vault.Resolve.target) : string option =
-  match t with
-  | Oystermark.Vault.Resolve.Heading { slug; _ } | Curr_heading { slug; _ } -> Some slug
-  | _ -> None
-;;
-
-(** Extract the block id from a resolved target, if any. *)
-let block_id_of_resolved (t : Oystermark.Vault.Resolve.target) : string option =
-  match t with
-  | Oystermark.Vault.Resolve.Block { block_id; _ } | Curr_block { block_id } ->
-    Some block_id
-  | _ -> None
-;;
-
-(** Check whether a pre-resolved target matches our reference target. *)
-let resolved_matches
-      (ref_target : target)
-      (resolved : Oystermark.Vault.Resolve.target)
-      ~(source_rel_path : string)
+(** Check whether a resolved index target matches our reference target. *)
+let resolved_matches (ref_target : target) (resolved : Oystermark.Vault.Index.target)
   : bool
   =
-  match ref_target, path_of_resolved ~source_rel_path resolved with
-  | _, None -> false
-  | Path_only { path }, Some rp -> String.equal path rp
-  | Path_heading { path; slug }, Some rp ->
-    String.equal path rp
-    &&
-      (match slug_of_resolved resolved with
-      | Some s -> String.equal s slug
-      | None -> false)
-  | Path_block { path; block_id }, Some rp ->
-    String.equal path rp
-    &&
-      (match block_id_of_resolved resolved with
-      | Some bid -> String.equal bid block_id
-      | None -> false)
-  | Path_attr { path; id }, Some rp ->
-    String.equal path rp
-    &&
-      (match attr_id_of_resolved resolved with
-      | Some rid -> String.equal rid id
-      | None -> false)
+  match ref_target, resolved with
+  | Path_only { path }, resolved ->
+    String.equal path (Oystermark.Vault.Index.target_path resolved)
+  | Path_heading { path; slug }, Anchor { note_path; anchor = { value = Heading h; _ } }
+    -> String.equal path note_path && String.equal slug h.slug
+  | ( Path_block { path; block_id }
+    , Anchor { note_path; anchor = { value = Block { id; kind = Obsidian_caret }; _ } } )
+    -> String.equal path note_path && String.equal block_id id
+  | ( Path_attr { path; id }
+    , Anchor { note_path; anchor = { value = Block { id = found; kind = Djot_attr }; _ } }
+    )
+  | ( Path_attr { path; id }
+    , Anchor { note_path; anchor = { value = Inline { id = found }; _ } } ) ->
+    String.equal path note_path && String.equal id found
+  | _ -> false
 ;;
 
 (** What the fold carries: the references so far, and whether the node being
@@ -193,24 +129,25 @@ type acc =
   ; in_toc : bool
   }
 
-(** Collect references from a single pre-resolved document by folding over
-    its AST and reading {!Oystermark.Vault.Resolve.resolved_key} metadata.
+(** Collect references from a single document by folding over its authored links
+    and resolving each one against [index].
 
     A [::: toc] region is recognized by {!Toc.is_toc}, i.e. by the parser and
     by the same predicate that decides what the TOC feature owns: there is one
     definition of what a region is, so a [::: toc] written inside a code block
     is not one here either. *)
 let collect_from_doc
+      ~(index : Oystermark.Vault.Index.t)
       ~(source_rel_path : string)
       (ref_target : target)
       (doc : Cmarkit.Doc.t)
   : reference list
   =
-  let check_meta acc (meta : Cmarkit.Meta.t) =
-    match Cmarkit.Meta.find Oystermark.Vault.Resolve.resolved_key meta with
-    | None -> acc
-    | Some resolved ->
-      if resolved_matches ref_target resolved ~source_rel_path
+  let check_link acc link_ref (meta : Cmarkit.Meta.t) =
+    match Oystermark.Vault.Index.resolve index source_rel_path link_ref with
+    | Error _ -> acc
+    | Ok resolved ->
+      if resolved_matches ref_target resolved
       then (
         let loc = Cmarkit.Meta.textloc meta in
         if Cmarkit.Textloc.is_none loc
@@ -244,12 +181,18 @@ let collect_from_doc
         | _ -> Cmarkit.Folder.default)
       ~inline:(fun _f acc i ->
         match i with
-        | Cmarkit.Inline.Link (_, meta) | Cmarkit.Inline.Image (_, meta) ->
-          Cmarkit.Folder.ret (check_meta acc meta)
+        | Cmarkit.Inline.Link (link, meta) | Cmarkit.Inline.Image (link, meta) ->
+          (match
+             Oystermark.Vault.Link_ref.of_cmark_reference
+               (Cmarkit.Inline.Link.reference link)
+           with
+           | Some link_ref -> Cmarkit.Folder.ret (check_link acc link_ref meta)
+           | None -> Cmarkit.Folder.default)
         | _ -> Cmarkit.Folder.default)
       ~inline_ext_default:(fun _f acc i ->
         match i with
-        | Cmarkit.Inline.Ext_wikilink (_, meta) -> check_meta acc meta
+        | Cmarkit.Inline.Ext_wikilink (w, meta) ->
+          check_link acc (Oystermark.Vault.Link_ref.of_wikilink w) meta
         | _ -> acc)
       ~block_ext_default:(fun _f acc _b -> acc)
       ()
@@ -257,18 +200,18 @@ let collect_from_doc
   List.rev (Cmarkit.Folder.fold_doc folder { refs = []; in_toc = false } doc).refs
 ;;
 
-(** Scan all pre-resolved vault documents for references matching [ref_target].
-
-    Each document's AST already has {!Oystermark.Vault.Resolve.resolved_key}
-    metadata on every link node, so no re-parsing or re-resolving is needed. *)
-let scan_vault ~(docs : (string * Cmarkit.Doc.t) list) (ref_target : target)
+(** Scan all vault documents for references matching [ref_target]. *)
+let scan_vault
+      ~(index : Oystermark.Vault.Index.t)
+      ~(docs : (string * Cmarkit.Doc.t) list)
+      (ref_target : target)
   : reference list
   =
   Trace_core.with_span ~__FILE__ ~__LINE__ "find_references.scan_vault"
   @@ fun _sp ->
   let refs =
     List.concat_map docs ~f:(fun (source_rel_path, doc) ->
-      collect_from_doc ~source_rel_path ref_target doc)
+      collect_from_doc ~index ~source_rel_path ref_target doc)
   in
   let sorted =
     List.sort refs ~compare:(fun a b ->
@@ -286,8 +229,7 @@ let scan_vault ~(docs : (string * Cmarkit.Doc.t) list) (ref_target : target)
 (** Find all references to the target at cursor position [(line, character)]
     in file [rel_path] with [content].
 
-    [docs] is the list of pre-resolved vault documents (with
-    {!Oystermark.Vault.Resolve.resolved_key} metadata attached).
+    [docs] is the list of parsed vault documents.
 
     Returns a sorted list of {!reference} values, or an empty list if the
     cursor is not on a link, heading, or block ID. *)
@@ -310,7 +252,7 @@ let find_references
   | None ->
     Trace_core.add_data_to_span _sp [ "result", `String "no_target" ];
     []
-  | Some ref_target -> scan_vault ~docs ref_target
+  | Some ref_target -> scan_vault ~index ~docs ref_target
 ;;
 
 (** {2 Counting}
@@ -318,23 +260,24 @@ let find_references
     Used by {!Inlay_hints} for reference count computation. *)
 
 (** Count how many links across the vault resolve to [path] (any fragment). *)
-let count_file_refs ~(docs : (string * Cmarkit.Doc.t) list) ~(path : string) : int =
-  List.length (scan_vault ~docs (Path_only { path }))
+let count_file_refs ~index ~(docs : (string * Cmarkit.Doc.t) list) ~(path : string) : int =
+  List.length (scan_vault ~index ~docs (Path_only { path }))
 ;;
 
 (** Count how many links across the vault resolve to [path] with heading [slug]. *)
 let count_heading_refs
+      ~index
       ~(docs : (string * Cmarkit.Doc.t) list)
       ~(path : string)
       ~(slug : string)
   : int
   =
-  List.length (scan_vault ~docs (Path_heading { path; slug }))
+  List.length (scan_vault ~index ~docs (Path_heading { path; slug }))
 ;;
 
 (** {1:test Test} *)
 
-(** Helper: build an index and pre-resolved docs for testing. *)
+(** Helper: build an index and parsed docs for testing. *)
 module For_test = struct
   let make_vault (files : (string * string) list)
     : Oystermark.Vault.Index.t * (string * Cmarkit.Doc.t) list
@@ -350,8 +293,7 @@ module For_test = struct
         if not (String.is_suffix p ~suffix:".md") then Some p else None)
     in
     let index = Oystermark.Vault.build_index ~md_docs ~other_files in
-    let resolved_docs = Oystermark.Vault.Resolve.resolve_docs md_docs index in
-    index, resolved_docs
+    index, md_docs
   ;;
 end
 

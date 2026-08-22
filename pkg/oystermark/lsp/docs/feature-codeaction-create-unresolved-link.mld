@@ -14,7 +14,7 @@ Broken embeds and images do not offer this action.
 {1 Target path}
 
 The link target is interpreted as a vault-relative path, matching
-{!Oystermark.Vault.Resolve.resolve}. A missing [.md] suffix is appended. The
+{!Oystermark.Vault.Index.resolve}. A missing [.md] suffix is appended. The
 action is unavailable for absolute paths, path components [.] or [..], empty
 components, or extensions other than [.md].
 

@@ -102,7 +102,7 @@ the fragment string is matched, in order, against:
 The first match wins. A [note#id] wikilink or a [(#id)] markdown-link
 fragment that matches an attribute id resolves to that anchor's path and
 location. This adds a corresponding case to
-{!Oystermark.Vault.Resolve.resolve}: an attribute-id target (and a
+{!Oystermark.Vault.Index.resolve}: an attribute-id target (and a
 self-file [Curr_*] variant), carrying the anchor's [Cmarkit.Textloc].
 
 {2 Namespace and precedence}

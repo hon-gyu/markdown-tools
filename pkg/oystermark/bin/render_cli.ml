@@ -47,7 +47,8 @@ let file_cmd : Command.t =
          List.Assoc.find (Vault.docs vault) ~equal:String.equal rel_path
          |> Option.value_exn ~message:(sprintf "File %s not found in vault" rel_path)
        in
-       let html = Html.of_doc ~backend_blocks:true ~safe:false doc in
+       let resolve link_ref = Vault.Index.resolve vault.index rel_path link_ref in
+       let html = Html.of_doc ~backend_blocks:true ~safe:false ~resolve doc in
        match output_dir with
        | Some dir -> Out_channel.write_all (Filename.concat dir "index.html") ~data:html
        | None -> print_string html)

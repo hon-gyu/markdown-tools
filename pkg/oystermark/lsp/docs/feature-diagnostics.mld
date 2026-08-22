@@ -36,7 +36,7 @@ Unresolved destinations are categorized from their source syntax:
 {1:resolution_check Resolution check}
 
 Each link is resolved against the vault index via
-{!Oystermark.Vault.Resolve.resolve}.  A link is {e unresolved} when:
+{!Oystermark.Vault.Index.resolve}.  A link is {e unresolved} when:
 
 {ul
   {- The target note does not exist in the index.}

@@ -22,25 +22,31 @@ let transclude_code_files : t =
       else None
     | None -> None
   in
-  let extract_file_target (i : Cmarkit.Inline.t) : string option =
-    let meta =
+  let extract_file_target
+        ~(index : Vault.Index.t)
+        ~(source : string)
+        (i : Cmarkit.Inline.t)
+    : string option
+    =
+    let link_ref =
       match i with
-      | Cmarkit.Inline.Ext_wikilink (w, m) when Cmarkit.Inline.Wikilink.embed w -> Some m
-      | Cmarkit.Inline.Image (_, m) -> Some m
+      | Cmarkit.Inline.Ext_wikilink (w, _) when Cmarkit.Inline.Wikilink.embed w ->
+        Some (Vault.Link_ref.of_wikilink w)
+      | Cmarkit.Inline.Image (link, _) ->
+        Vault.Link_ref.of_cmark_reference (Cmarkit.Inline.Link.reference link)
       | _ -> None
     in
-    match meta with
-    | Some m ->
-      (match Cmarkit.Meta.find Vault.Resolve.resolved_key m with
-       | Some (Vault.Resolve.File { path }) ->
-         lang_of_path path |> Option.map ~f:(fun _ -> path)
-       | _ -> None)
+    match link_ref with
+    | Some link_ref ->
+      (match Vault.Index.resolve index source link_ref with
+       | Ok (Vault.Index.Asset path) -> lang_of_path path |> Option.map ~f:(fun _ -> path)
+       | Ok (Note _ | Anchor _) | Error _ -> None)
     | None -> None
   in
-  let extract_from_inline (inline : Cmarkit.Inline.t) : string option =
+  let extract_from_inline ~index ~source (inline : Cmarkit.Inline.t) : string option =
     match inline with
-    | Cmarkit.Inline.Inlines ([ i ], _) -> extract_file_target i
-    | i -> extract_file_target i
+    | Cmarkit.Inline.Inlines ([ i ], _) -> extract_file_target ~index ~source i
+    | i -> extract_file_target ~index ~source i
   in
   let on_vault : Vault.t -> Vault.t =
     map_each_doc (fun (ctx : Vault.t) (path : string) (doc : Cmarkit.Doc.t) ->
@@ -51,7 +57,12 @@ let transclude_code_files : t =
           ~block:(fun _m block ->
             match block with
             | Cmarkit.Block.Paragraph (p, _) ->
-              (match extract_from_inline (Cmarkit.Block.Paragraph.inline p) with
+              (match
+                 extract_from_inline
+                   ~index:ctx.index
+                   ~source:path
+                   (Cmarkit.Block.Paragraph.inline p)
+               with
                | Some file_path ->
                  (match lang_of_path file_path with
                   | None -> Cmarkit.Mapper.default

@@ -130,60 +130,34 @@ type t =
    ==================== *)
 
 (** Convert a resolved target to a target vertex. *)
-let vertex_of_resolved_target (target : Vault.Resolve.target) (src_path : string)
-  : vertex option
-  =
+let vertex_of_target (target : Vault.Index.target) : vertex =
   match target with
-  | Vault.Resolve.Note { path } -> Some { path; kind = Note }
-  | Vault.Resolve.File { path } -> Some { path; kind = Note }
-  | Vault.Resolve.Heading { path; heading; slug; loc; _ } ->
-    Some { path; kind = Heading { heading; slug; loc } }
-  | Vault.Resolve.Block { path; block_id; loc } ->
-    Some { path; kind = Block { block_id; loc } }
-  | Vault.Resolve.Attr { path; id; loc } -> Some { path; kind = Attr { id; loc } }
-  | Vault.Resolve.Curr_file -> Some { path = src_path; kind = Note }
-  | Vault.Resolve.Curr_heading { heading; slug; loc; _ } ->
-    Some { path = src_path; kind = Heading { heading; slug; loc } }
-  | Vault.Resolve.Curr_block { block_id; loc } ->
-    Some { path = src_path; kind = Block { block_id; loc } }
-  | Vault.Resolve.Curr_attr { id; loc } ->
-    Some { path = src_path; kind = Attr { id; loc } }
-  | Vault.Resolve.Unresolved -> None
+  | Vault.Index.Note path | Asset path -> { path; kind = Note }
+  | Anchor { note_path = path; anchor = { value = Heading h; loc } } ->
+    { path; kind = Heading { heading = h.text; slug = h.slug; loc = Some loc } }
+  | Anchor
+      { note_path = path
+      ; anchor = { value = Block ({ kind = Obsidian_caret; _ } as b); loc }
+      } -> { path; kind = Block { block_id = b.id; loc = Some loc } }
+  | Anchor
+      { note_path = path; anchor = { value = Block ({ kind = Djot_attr; _ } as b); loc } }
+    -> { path; kind = Attr { id = b.id; loc = Some loc } }
+  | Anchor { note_path = path; anchor = { value = Inline a; loc } } ->
+    { path; kind = Attr { id = a.id; loc = Some loc } }
 ;;
 
 (** Collect [(src_vertex, tgt_vertex)] pairs from a single document. *)
-let collect_edges_from_doc (src_path : string) (doc : Cmarkit.Doc.t)
+let collect_edges_from_note (index : Vault.Index.t) (note : Vault.Index.Note.t)
   : (vertex * vertex) list
   =
-  let extract_edge acc meta ~resolve_target =
-    match Cmarkit.Meta.find Vault.Resolve.resolved_key meta with
-    | None -> acc
-    | Some resolved ->
-      (match vertex_of_resolved_target resolved src_path with
-       | None -> acc
-       | Some tgt ->
-         (match textloc_of_meta meta with
-          | None -> acc
-          | Some tl ->
-            let _ = resolve_target in
-            let src = { path = src_path; kind = Link tl } in
-            (src, tgt) :: acc))
-  in
-  let folder =
-    Cmarkit.Folder.make
-      ~inline:(fun _f acc (i : Cmarkit.Inline.t) ->
-        match i with
-        | Cmarkit.Inline.Link (_, meta) | Cmarkit.Inline.Image (_, meta) ->
-          Cmarkit.Folder.ret (extract_edge acc meta ~resolve_target:i)
-        | _ -> Cmarkit.Folder.default)
-      ~inline_ext_default:(fun _f acc i ->
-        match i with
-        | Cmarkit.Inline.Ext_wikilink (_, meta) -> extract_edge acc meta ~resolve_target:i
-        | _ -> acc)
-      ~block_ext_default:(fun _f acc _b -> acc)
-      ()
-  in
-  List.rev (Cmarkit.Folder.fold_doc folder [] doc)
+  let src_path = Vault.Index.Note.path note in
+  Vault.Index.Note.links note
+  |> List.filter_map ~f:(fun link ->
+    match Vault.Index.resolve index src_path link.reference with
+    | Error _ -> None
+    | Ok target ->
+      let src = { path = src_path; kind = Link link.loc } in
+      Some (src, vertex_of_target target))
 ;;
 
 (* Build graph
@@ -203,8 +177,8 @@ let of_vault (vault : Vault.t) : t =
   in
   (* Add edges *)
   let g =
-    List.fold (Vault.docs vault) ~init:g ~f:(fun g (src_path, doc) ->
-      let edges = collect_edges_from_doc src_path doc in
+    List.fold (Vault.Index.notes vault.index) ~init:g ~f:(fun g note ->
+      let edges = collect_edges_from_note vault.index note in
       List.fold edges ~init:g ~f:(fun g (src, tgt) -> G.add_edge_e g (src, Link, tgt)))
   in
   { graph = g; meta }

@@ -4,7 +4,7 @@ Suggest vault paths and fragments as the user types inside the destination of
 a Markdown link or image — [\[label\](<cursor>)] — the counterpart of
 {!page-"feature-completion"}, which covers wikilink brackets only.
 
-Both link syntaxes resolve through {!Oystermark.Vault.Resolve.resolve} and both
+Both link syntaxes resolve through {!Oystermark.Vault.Index.resolve} and both
 are diagnosed ({!page-"feature-diagnostics"}) and followed
 ({!page-"feature-go-to-definition"}). Completion was the one place the two
 diverged, and the divergence was an omission rather than a decision: a vault
@@ -74,7 +74,7 @@ Unlike {!page-"feature-completion".note_name_completion}, the suggestion is a
 {e path with its extension}, not a shortest unambiguous name.
 
 Not because a shorter name would fail to resolve — it would. Both syntaxes go
-through {!Oystermark.Vault.Resolve.resolve}, which matches a bare unique
+through {!Oystermark.Vault.Index.resolve}, which matches a bare unique
 basename by subsequence like any wikilink, and appends [.md] to a target
 containing no [.] at all. The reasons are that the appending rule tests for a
 dot {e anywhere}, so a real path like [notes/v1.2/draft] is left unresolvable
@@ -182,7 +182,7 @@ keep a keystroke cheap, and a user has no way to know what value would.
   {- Fragment mode: the same expectations as the wikilink fragment tests,
      driven through Markdown syntax.}
   {- Round-trip: for every offered item, inserting it and re-parsing yields a
-     link that {!Oystermark.Vault.Resolve.resolve} resolves to the file the
+     link that {!Oystermark.Vault.Index.resolve} resolves to the file the
      item came from. This is the obligation the escaping rules exist to meet,
      and it is the one worth stating as a property.}
 }

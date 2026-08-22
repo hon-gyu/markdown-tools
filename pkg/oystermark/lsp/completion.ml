@@ -158,8 +158,7 @@ let markdown_dest ~(content : string) ~(line : int) ~(character : int) : md_dest
     See {!page-"feature-completion".note_name_completion}. *)
 let note_name_items (index : Oystermark.Vault.Index.t) : item list =
   let md_files =
-    Oystermark.Vault.Index.notes index
-    |> List.map ~f:Oystermark.Vault.Index.Note.path
+    Oystermark.Vault.Index.notes index |> List.map ~f:Oystermark.Vault.Index.Note.path
   in
   let basename p = String.chop_suffix_if_exists (Filename.basename p) ~suffix:".md" in
   let counts =
@@ -222,7 +221,7 @@ let parens_balanced (path : string) : bool =
 
     Every escape here is undone by the parser — angle brackets by
     [Match.link_destination], backslashes by its unescaping — so the
-    destination reaching {!Oystermark.Vault.Resolve.resolve} is [path] itself.
+    destination reaching {!Oystermark.Vault.Index.resolve} is [path] itself.
     See {!page-"feature-completion-markdown-links".destination_escaping}. *)
 let escape_destination (path : string) : string =
   let escape chars s =
@@ -255,8 +254,7 @@ let path_items ~(image : bool) (index : Oystermark.Vault.Index.t) : item list * 
   let module Index = Oystermark.Vault.Index in
   let title (note : Index.Note.t) =
     Index.Note.headings note
-    |> List.find_map ~f:(fun (h, _) ->
-      if h.level = 1 then Some h.text else None)
+    |> List.find_map ~f:(fun (h, _) -> if h.level = 1 then Some h.text else None)
   in
   let item rel_path detail =
     let group =
@@ -310,10 +308,9 @@ let target_entry
     let link_ref =
       { Oystermark.Vault.Link_ref.target = Some note_part; fragment = None }
     in
-    match Oystermark.Vault.Resolve.resolve link_ref rel_path index with
-    | Note { path } | File { path } -> find path
-    | Curr_file -> find rel_path
-    | _ -> None)
+    match Oystermark.Vault.Index.resolve index rel_path link_ref with
+    | Ok (Note path) -> find path
+    | Ok (Asset _ | Anchor _) | Error _ -> None)
 ;;
 
 (** Heading, block-id, and attribute-id suggestions for a file entry.  All three
@@ -325,11 +322,26 @@ let fragment_items (entry : Oystermark.Vault.Index.Note.t) : item list =
   |> List.map ~f:(fun anchor ->
     match anchor.value with
     | Index.Heading h ->
-      { label = h.text; detail = None; filter_text = Some h.slug; insert_text = Some h.slug; kind = Reference }
+      { label = h.text
+      ; detail = None
+      ; filter_text = Some h.slug
+      ; insert_text = Some h.slug
+      ; kind = Reference
+      }
     | Index.Block { id; kind = Obsidian_caret } ->
-      { label = "^" ^ id; detail = None; filter_text = Some id; insert_text = Some ("^" ^ id); kind = Reference }
+      { label = "^" ^ id
+      ; detail = None
+      ; filter_text = Some id
+      ; insert_text = Some ("^" ^ id)
+      ; kind = Reference
+      }
     | Index.Block { id; kind = Djot_attr } | Index.Inline { id } ->
-      { label = "#" ^ id; detail = Some "attribute"; filter_text = Some id; insert_text = Some id; kind = Reference })
+      { label = "#" ^ id
+      ; detail = Some "attribute"
+      ; filter_text = Some id
+      ; insert_text = Some id
+      ; kind = Reference
+      })
 ;;
 
 (** {2 End-to-end} *)
@@ -752,8 +764,9 @@ let%test_module "markdown links" =
           match Link_collect.collect_links ~index ~rel_path:"note-a.md" doc with
           | [ ll ] ->
             (match ll.destination with
-             | Note { path } | File { path } -> path
-             | other -> Sexp.to_string [%sexp (other : Oystermark.Vault.Resolve.target)])
+             | Ok (Note path | Asset path) -> path
+             | Ok other -> Sexp.to_string [%sexp (other : Oystermark.Vault.Index.target)]
+             | Error _ -> "<unresolved>")
           | links -> sprintf "<%d links>" (List.length links)
         in
         if String.equal resolved i.label

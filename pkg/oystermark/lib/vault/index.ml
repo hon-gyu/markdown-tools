@@ -429,7 +429,6 @@ let resolve_fragment note = function
   @param source The path of the note containing the link reference. It doesn't need to be present in the index.
 *)
 let resolve (index : t) (source : Path.t) (ref : Link_ref.t) : resolution =
-  (* TASK: this aims to replace the existing Resolve.resolve. We want to make [Resolve] mostly a module providing utilities  *)
   let path =
     match ref.Link_ref.target with
     | None -> Some source

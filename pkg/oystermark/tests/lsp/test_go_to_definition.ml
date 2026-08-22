@@ -144,7 +144,7 @@ let%expect_test "trace: heading resolution spans" =
   print_endline (Trace_collect.format spans);
   [%expect
     {|
-    go_to_definition 5us resolution=heading rel_path=note-b.md line=- character=-
+    go_to_definition 5us resolution=anchor rel_path=note-b.md line=- character=-
     ├── byte_offset_of_position 1us line=- character=- offset=42
     ├── parse_doc 2us content_len=144
     ├── collect_links 3us num_links=5

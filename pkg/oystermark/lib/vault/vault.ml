@@ -1,7 +1,6 @@
 module Index = Index
 module Fs_utils = Fs_utils
 module Link_ref = Link_ref
-module Resolve = Resolve
 module Embed = Embed
 module Rename = Rename
 open Core
@@ -76,10 +75,10 @@ let of_root_path
     List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))
   in
   let index = build_index ~md_docs:parsed_docs ~other_files in
-  let resolved_docs = Resolve.resolve_docs parsed_docs index in
-  let index = build_index ~md_docs:resolved_docs ~other_files in
   let vault = { vault_root; index; vault_meta = Cmarkit.Meta.none } in
-  if skip_expand then vault else of_docs ~base:vault (Embed.expand_docs resolved_docs)
+  if skip_expand
+  then vault
+  else of_docs ~base:vault (Embed.expand_docs ~index parsed_docs)
 ;;
 
 (** Construct a vault from Markdown contents and asset paths without performing IO.
@@ -94,9 +93,5 @@ let of_files
     List.map md_files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
   in
   let index = build_index ~md_docs:parsed_docs ~other_files in
-  let resolved_docs = Resolve.resolve_docs parsed_docs index in
-  { vault_root
-  ; index = build_index ~md_docs:resolved_docs ~other_files
-  ; vault_meta = Cmarkit.Meta.none
-  }
+  { vault_root; index; vault_meta = Cmarkit.Meta.none }
 ;;

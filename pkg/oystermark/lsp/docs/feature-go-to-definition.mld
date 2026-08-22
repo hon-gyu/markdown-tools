@@ -24,7 +24,7 @@ navigable links and produce no result.
 {1:resolution Resolution}
 
 Once a link is detected, it is resolved against the vault index via
-{!Oystermark.Vault.Resolve.resolve}.  The resolution cases and their
+{!Oystermark.Vault.Index.resolve}.  The resolution cases and their
 results are:
 
 {t
@@ -129,7 +129,7 @@ nothing inside a fence anyway.
 
 {1 Multi-target ambiguity}
 
-When {!Oystermark.Vault.Resolve.resolve} returns multiple candidates,
+When {!Oystermark.Vault.Index.resolve} returns multiple candidates,
 go-to-definition picks the first candidate (per vault resolution order).
 
 {1 Embed links}
