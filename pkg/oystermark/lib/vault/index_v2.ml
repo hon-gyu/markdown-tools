@@ -10,9 +10,11 @@
 open Core
 open Parse
 
-let todo = failwith "todo"
-
 type loc = Cmarkit.Textloc.t
+let sexp_of_loc = Textloc_conv.sexp_of_t
+let loc_of_sexp = Textloc_conv.t_of_sexp
+let compare_loc = Textloc_conv.compare
+let equal_loc a b = Int.equal (compare_loc a b) 0
 
 (**
 - non-emtpy
@@ -27,13 +29,23 @@ type loc = Cmarkit.Textloc.t
 module Path = struct
   type t = string
 
-  let of_string : string -> (t, error) result = todo
-  let to_string : t -> string = todo
-  let dirname : t -> t option = todo
-  let basename : t -> string = todo
+  let sexp_of_t = String.sexp_of_t
+  let t_of_sexp = String.t_of_sexp
 
-  let compare : t -> t -> int = todo
-  let equal : t -> t -> bool = todo
+  let of_string : string -> (t, Error.t) result =
+    fun s ->
+    let cs = String.split s ~on:'/' in
+    if String.is_empty s then Error "vault path must not be empty"
+    else if String.is_prefix s ~prefix:"/" then Error "vault path must be relative"
+    else if List.exists cs ~f:(fun c -> String.is_empty c || String.equal c "." || String.equal c "..")
+    then Error "vault path contains an empty, . or .. component"
+    else Ok s
+  let to_string : t -> string = Fun.id
+  let dirname : t -> t option = fun t -> Option.map (String.rsplit2 t ~on:'/') ~f:fst
+  let basename : t -> string = Filename.basename
+
+  let compare : t -> t -> int = String.compare
+  let equal : t -> t -> bool = String.equal
 end
 
 type heading =
@@ -42,19 +54,19 @@ type heading =
   ; slug : string
     (** The identifier the parser gave the heading. See {!Parse.Common.heading_id}. *)
   }
-  [@@deriving sexp, equal, compare]
+[@@deriving sexp, equal, compare]
 
 type referenceable_block_kind =
   | Djot_attr
   | Obsidian_caret
-  [@@deriving sexp, equal, compare]
+[@@deriving sexp, equal, compare]
 
 (** Block other than heading, made referenceable because of either djot attribute or Obsidian caret.  *)
 type block =
   { id : string
   ; kind : referenceable_block_kind
   }
-  [@@deriving sexp, equal, compare]
+[@@deriving sexp, equal, compare]
 
 (** Inline, made referenceable because of attached djot attribute id ([ {#id} ]). *)
 type inline = { id : string }
@@ -70,17 +82,23 @@ type anchor_value =
   | Heading of heading
   | Block of block
   | Inline of inline
-  [@@deriving sexp, equal, compare]
+[@@deriving sexp, equal, compare]
 
 (** Construct a vault-qualified reference to [anchor] in [target_path] *)
-let link_ref_of_anchor ~(tgt_path : Path.t) (anchor : anchor_value) : Link_ref.t = todo
+let link_ref_of_anchor ~(tgt_path : Path.t) (anchor : anchor_value) : Link_ref.t =
+  match anchor with
+  | Heading h -> { Link_ref.target = Some tgt_path; fragment = Some (Hash_path [ h.slug ]) }
+  | Block { id; kind = Obsidian_caret } ->
+    { Link_ref.target = Some tgt_path; fragment = Some (Caret_id id) }
+  | Block { id; kind = Djot_attr } | Inline { id } ->
+    { Link_ref.target = Some tgt_path; fragment = Some (Hash_path [ id ]) }
 
 module Anchor = struct
   type t =
     { value : anchor_value
     ; loc : loc (** non-none loc *)
     }
-    [@@deriving sexp, equal, compare]
+  [@@deriving sexp, equal, compare]
 end
 
 (** Authored link; a note can compute this without an index  *)
@@ -95,8 +113,12 @@ module Link = struct
     ; kind : kind
     ; loc : loc (** Non-none loc *)
     }
-    [@@deriving sexp, equal, compare]
+  [@@deriving sexp, equal, compare]
 end
+
+let loc_of_meta meta =
+  let loc = Cmarkit.Meta.textloc meta in
+  if Cmarkit.Textloc.is_none loc then None else Some loc
 
 module Note = struct
   type t =
@@ -107,27 +129,90 @@ module Note = struct
     }
 
   (** @return [Error] if the document is not parsed with source locations enabled (missing location information) *)
-  let of_doc (file_stat : file_stat) (doc : Cmarkit.Doc.t) : (t, string) result = todo
+  let of_doc (file_stat : file_stat) (doc : Cmarkit.Doc.t) : (t, string) result =
+    let missing_loc = ref false in
+    let anchors = ref [] in
+    let links = ref [] in
+    let with_loc meta f =
+      match loc_of_meta meta with
+      | Some loc -> f loc
+      | None -> missing_loc := true
+    in
+    let add_anchor value meta = with_loc meta (fun loc -> anchors := { Anchor.value; loc } :: !anchors) in
+    let add_link reference kind meta = with_loc meta (fun loc -> links := { Link.reference; kind; loc } :: !links) in
+    let add_attr ~inline attr meta =
+      Option.iter (Cmarkit.Attribute.id attr) ~f:(fun id ->
+        add_anchor (if inline then Inline { id } else Block { id; kind = Djot_attr }) meta)
+    in
+    let folder =
+      Cmarkit.Folder.make
+        ~block:(fun f acc b ->
+          match b with
+          | Cmarkit.Block.Heading (h, meta) ->
+            let text = Common.inline_to_plain_text (Cmarkit.Block.Heading.inline h) in
+            let slug = Common.heading_id h |> Option.value_exn ~message:"heading missing identifier; parse with Oystermark.Parse" in
+            add_anchor (Heading { text; level = Cmarkit.Block.Heading.level h; slug }) meta;
+            Cmarkit.Folder.default
+          | Cmarkit.Block.Paragraph (_, meta) ->
+            Option.iter (Cmarkit.Block.Block_id.find meta) ~f:(fun id ->
+              add_anchor (Block { id = Cmarkit.Block.Block_id.id id; kind = Obsidian_caret }) meta);
+            Cmarkit.Folder.default
+          | Cmarkit.Block.Ext_keyed ((_label, body), meta) ->
+            Option.iter (Cmarkit.Block.Block_id.find meta) ~f:(fun id ->
+              add_anchor (Block { id = Cmarkit.Block.Block_id.id id; kind = Obsidian_caret }) meta);
+            Cmarkit.Folder.ret (Cmarkit.Folder.fold_block f acc body)
+          | Cmarkit.Block.Ext_attributes (a, meta) ->
+            add_attr ~inline:false (Cmarkit.Block.Attributes.attributes a) meta;
+            Cmarkit.Folder.ret (Cmarkit.Folder.fold_block f acc (Cmarkit.Block.Attributes.block a))
+          | _ -> Cmarkit.Folder.default)
+        ~inline:(fun f acc i ->
+          match i with
+          | Cmarkit.Inline.Ext_wikilink (w, meta) ->
+            add_link (Link_ref.of_wikilink w) (if Cmarkit.Inline.Wikilink.embed w then Link.Embed else Link.Link) meta;
+            Cmarkit.Folder.default
+          | Cmarkit.Inline.Link (l, meta) ->
+            Option.iter (Link_ref.of_cmark_reference (Cmarkit.Inline.Link.reference l)) ~f:(fun r -> add_link r Link.Link meta);
+            Cmarkit.Folder.default
+          | Cmarkit.Inline.Image (l, meta) ->
+            Option.iter (Link_ref.of_cmark_reference (Cmarkit.Inline.Link.reference l)) ~f:(fun r -> add_link r Link.Image meta);
+            Cmarkit.Folder.default
+          | Cmarkit.Inline.Ext_attributes (a, meta) ->
+            add_attr ~inline:true (Cmarkit.Inline.Attributes.attributes a) meta;
+            Cmarkit.Folder.ret (Cmarkit.Folder.fold_inline f acc (Cmarkit.Inline.Attributes.inline a))
+          | _ -> Cmarkit.Folder.default)
+        ~inline_ext_default:(fun _ acc _ -> acc)
+        ~block_ext_default:(fun _ acc _ -> acc)
+        ()
+    in
+    ignore (Cmarkit.Folder.fold_doc folder () doc : unit);
+    if !missing_loc then Error "document is missing source locations"
+    else Ok { file_stat; doc; anchors = List.rev !anchors; links = List.rev !links }
 
-  let of_doc_exn (file_stat : file_stat) (doc : Cmarkit.Doc.t) : t = todo
+  let of_doc_exn (file_stat : file_stat) (doc : Cmarkit.Doc.t) : t =
+    Result.ok_or_failwith (of_doc file_stat doc)
 
   let path : t -> Path.t = fun note -> note.file_stat.rel_path
 
   let file_stat : t -> file_stat = fun note -> note.file_stat
 
   (** all authored anchor occurrence (including duplicates) in document order *)
-  let anchors (note : t) : Anchor.t list = todo
+  let anchors (note : t) : Anchor.t list = note.anchors
 
-  let headings (note : t) : (heading * loc) list = anchors note |> List.filter_map ~f:todo
+  let headings (note : t) : (heading * loc) list =
+    anchors note
+    |> List.filter_map ~f:(fun anchor ->
+      match anchor.value with
+      | Heading heading -> Some (heading, anchor.loc)
+      | Block _ | Inline _ -> None)
 
   (** All link references in a note, returned in document order.
       - includes both resolved and unresolved links
       - includes both markdown and wiki links
       - does not include external links (HTTP/mail link)
   *)
-  let links (note : t) : Link.t list = todo
+  let links (note : t) : Link.t list = note.links
 
-  let doc (note : t) : Cmarkit.Doc.t = todo
+  let doc (note : t) : Cmarkit.Doc.t = note.doc
 end
 
 (** Non-note assets (images, etc.) *)
@@ -160,11 +245,16 @@ type backlink =
   ; link : Link.t
   }
 
-let target_path : target -> Path.t = todo
+let target_path : target -> Path.t = function
+  | Note path | Asset path -> path
+  | Anchor { note_path; _ } -> note_path
 
-type t
+type t =
+  { notes_by_path : Note.t String.Map.t
+  ; assets_by_path : Asset.t String.Map.t
+  }
 
-let empty : t = todo
+let empty : t = { notes_by_path = String.Map.empty; assets_by_path = String.Map.empty }
 
 (** Insert or replace the note at its canonical path, removing any asset at the same path.
 
@@ -176,23 +266,74 @@ let empty : t = todo
 The result of any update sequence is observationally equivalent to rebuilding the index
 from its resulting notes and assets.
  *)
-let set_note : t -> Note.t -> t = todo
+let set_note : t -> Note.t -> t = fun t n ->
+  let p = Note.path n in
+  { notes_by_path = Map.set t.notes_by_path ~key:p ~data:n; assets_by_path = Map.remove t.assets_by_path p }
 
-(* remove a note from the index. no-op when absent *)
-let remove_note : t -> Path.t -> t = todo
+(** remove a note from the index. no-op when absent *)
+let remove_note : t -> Path.t -> t =
+  fun t p -> { t with notes_by_path = Map.remove t.notes_by_path p }
 
 (** Insert or replace the asset at its canonical path, removing any note at the same path. *)
-let set_asset : t -> Asset.t -> t = todo
-let remove_asset : t -> Path.t   -> t = todo
+let set_asset : t -> Asset.t -> t = fun t a ->
+  let p = Asset.path a in
+  { notes_by_path = Map.remove t.notes_by_path p; assets_by_path = Map.set t.assets_by_path ~key:p ~data:a }
 
-let note_of_path : t -> Path.t -> Note.t option = todo
+let remove_asset : t -> Path.t -> t =
+  fun t p -> { t with assets_by_path = Map.remove t.assets_by_path p }
+
+let note_of_path : t -> Path.t -> Note.t option = fun t p -> Map.find t.notes_by_path p
 
 (** Returned in ascending canonical path order. *)
-let notes (index : t) : Note.t list = todo
+let notes (index : t) : Note.t list = Map.data index.notes_by_path
+
 (** Returned in ascending canonical path order. *)
-let assets (index : t) : Asset.t list = todo
-let find_note (index : t) (path : Path.t) : Note.t option = todo
-let find_asset (index : t) (path : Path.t) : Asset.t option = todo
+let assets (index : t) : Asset.t list = Map.data index.assets_by_path
+let find_note (index : t) (path : Path.t) : Note.t option = Map.find index.notes_by_path path
+let find_asset (index : t) (path : Path.t) : Asset.t option = Map.find index.assets_by_path path
+
+let is_path_subsequence ~haystack ~needle =
+  let rec loop hs = function
+    | [] -> true
+    | n :: ns ->
+      (match List.drop_while hs ~f:(fun h -> not (String.equal h n)) with [] -> false | _ :: hs -> loop hs ns)
+  in loop haystack needle
+
+let match_rank ~source_dir p =
+  List.length (String.split p ~on:'/'), if String.equal (Filename.dirname p) source_dir then 0 else 1
+
+let resolve_path index ~source target =
+  let normalized = if String.mem target '.' then target else target ^ ".md" in
+  let paths = Map.keys index.notes_by_path @ Map.keys index.assets_by_path in
+  match List.find paths ~f:(String.equal normalized) with
+  | Some p -> Some p
+  | None ->
+    let needle = String.split normalized ~on:'/' in
+    let source_dir = Filename.dirname source in
+    List.filter paths ~f:(fun p -> is_path_subsequence ~haystack:(String.split p ~on:'/') ~needle)
+    |> List.min_elt ~compare:(fun a b -> [%compare: int * int] (match_rank ~source_dir a) (match_rank ~source_dir b))
+
+let heading_matches h q = String.equal h.text q || String.equal h.slug (Common.heading_id_of_text q)
+let resolve_heading anchors query =
+  let hs = List.filter_map anchors ~f:(fun a -> match a.Anchor.value with Heading h -> Some (h, a) | _ -> None) |> Array.of_list in
+  let qs = Array.of_list query in
+  let rec search hi qi prev =
+    if hi >= Array.length hs || qi >= Array.length qs then None else
+    let h, a = hs.(hi) in
+    if heading_matches h qs.(qi) && h.level > prev
+    then if qi = Array.length qs - 1 then Some a
+      else Option.first_some (search (hi + 1) (qi + 1) h.level) (search (hi + 1) qi prev)
+    else search (hi + 1) qi prev
+  in
+  if Array.is_empty qs then None else search 0 0 0
+let resolve_fragment note = function
+  | Link_ref.Hash_path hs ->
+    Option.first_some (resolve_heading (Note.anchors note) hs)
+      (match hs with
+       | [ id ] -> List.find (Note.anchors note) ~f:(fun a -> match a.value with Block { id = x; kind = Djot_attr } | Inline { id = x } -> String.equal x id | _ -> false)
+       | _ -> None)
+  | Link_ref.Caret_id id ->
+    List.find (Note.anchors note) ~f:(fun a -> match a.value with Block { id = x; kind = Obsidian_caret } -> String.equal x id | _ -> false)
 
 (** Resolve an authored reference related to a [source] note.
 
@@ -203,24 +344,47 @@ let find_asset (index : t) (path : Path.t) : Asset.t option = todo
 *)
 let resolve (index : t) (source : Path.t) (ref : Link_ref.t) : resolution =
   (* TASK: this aims to replace the existing Resolve.resolve. We want to make [Resolve] mostly a module providing utilities  *)
-  todo
+  let path = match ref.Link_ref.target with None -> Some source | Some t -> resolve_path index ~source t in
+  match path with
+  | None -> Error Missing_path
+  | Some p ->
+    (match ref.fragment with
+     | None -> if Map.mem index.notes_by_path p then Ok (Note p) else if Map.mem index.assets_by_path p then Ok (Asset p) else Error Missing_path
+     | Some f ->
+       (match find_note index p with
+        | None -> Error (Missing_anchor p)
+        | Some n -> Option.value_map (resolve_fragment n f) ~default:(Error (Missing_anchor p)) ~f:(fun anchor -> Ok (Anchor { note_path = p; anchor }))))
 ;;
 
-let unresolved_links (index : t) (note_path : Path.t) : (Link.t * resolution_error) list = todo
-
+let unresolved_links (index : t) (note_path : Path.t) : (Link.t * resolution_error) list =
+  let path = note_path in
+  Option.value_map (find_note index path) ~default:[] ~f:(fun n ->
+    List.filter_map (Note.links n) ~f:(fun l -> match resolve index path l.reference with Ok _ -> None | Error e -> Some (l, e)))
+let all_backlinks index =
+  List.concat_map (notes index) ~f:(fun n ->
+    List.filter_map (Note.links n) ~f:(fun link ->
+      match resolve index (Note.path n) link.reference with Error _ -> None | Ok target -> Some (target, { source = Note.path n; link })))
 (**
   @param include_anchors If true, also includes edge pointing to any anchor owned by the note
   @return incoming links {b to} a note of [tgt_path], in document order
 *)
-let backlinks_of_note ?(include_anchors : bool = false) (index : t) (tgt_path : Path.t) : backlink list = todo
+let backlinks_of_note ?(include_anchors : bool = false) (index : t) (tgt_path : Path.t) : backlink list =
+  let tgt = tgt_path in
+  List.filter_map (all_backlinks index) ~f:(fun (target, b) ->
+    match target with Note p when Path.equal p tgt -> Some b | Anchor { note_path; _ } when include_anchors && Path.equal note_path tgt -> Some b | _ -> None)
 
 (** @return incoming links {b to} [target], in document order *)
-let backlinks_of_target (index : t) (target : target) : backlink list = todo
-
+let backlinks_of_target (index : t) (target : target) : backlink list =
+  let wanted = target in
+  List.filter_map (all_backlinks index) ~f:(fun (target, b) -> if equal_target target wanted then Some b else None)
 
 (** A note is orphaned when no successfully resolved ordinary link or embed from a different
 note targets either the note or one of its anchors. *)
-let is_orphan (index : t) (note_path : Path.t) : bool = todo
+let is_orphan (index : t) (note_path : Path.t) : bool =
+  let path = note_path in
+  not (List.exists (backlinks_of_note ~include_anchors:true index path) ~f:(fun b ->
+    not (Path.equal b.source path) && match b.link.kind with Link.Link | Embed -> true | Image -> false))
 
 (** Returned in ascending canonical path order. *)
-let orphans (index : t) : Path.t list = todo
+let orphans (index : t) : Path.t list =
+  List.filter (Map.keys index.notes_by_path) ~f:(is_orphan index)
