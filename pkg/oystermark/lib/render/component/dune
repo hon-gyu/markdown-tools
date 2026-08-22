@@ -1,7 +1,0 @@
-(library
- (name component)
- (public_name oystermark.render.component)
- (libraries parse vault config oymarkit core tyxml)
- (inline_tests)
- (preprocess
-  (pps ppx_jane ppx_string ppx_blob ppx_quick_test)))

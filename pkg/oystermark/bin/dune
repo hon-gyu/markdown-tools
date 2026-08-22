@@ -1,17 +1,9 @@
 (executable
- (public_name oyster-vault-renderer)
+ (public_name oyster)
  (package oystermark)
- (name render_cli)
- (modules render_cli render_cli_dev_server)
- (libraries
-  oystermark
-  oystermark.render
-  core
-  core_unix
-  core_unix.command_unix
-  cohttp-eio
-  eio_main
-  http)
+ (name vault_cli)
+ (modules vault_cli)
+ (libraries oystermark core core_unix core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
 
@@ -28,14 +20,5 @@
   core_unix.command_unix
   core_unix.filename_unix
   yaml)
- (preprocess
-  (pps ppx_jane)))
-
-(executable
- (public_name oyster)
- (package oystermark)
- (name vault_cli)
- (modules vault_cli)
- (libraries oystermark core core_unix core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
