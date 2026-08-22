@@ -40,7 +40,7 @@ If the cursor is on neither a link nor an anchor, no results are returned.
 
 {ul
   {- If the cursor is on a link, resolve it via
-     {!Oystermark.Vault.Resolve.resolve} to obtain the target path
+     {!Oystermark.Vault.Index.resolve} to obtain the target path
      (and optional fragment).}
   {- If the cursor is on a heading, the target is (current file,
      heading slug).}

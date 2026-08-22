@@ -358,21 +358,21 @@ let hover
     let ll =
       List.find_exn links ~f:(fun ll -> ll.first_byte <= offset && offset <= ll.last_byte)
     in
-    let target = Oystermark.Vault.Resolve.resolve link_ref rel_path index in
+    let target = Oystermark.Vault.Index.resolve index rel_path link_ref in
     (* Determine which file to read and which portion to extract. *)
     let result_opt =
       match target with
-      | Oystermark.Vault.Resolve.Unresolved -> None
+      | Error _ -> None
       (* An image, or any other file whose bytes are not text, is described
          rather than shown — fragment and all, since there is nothing inside
          one for a fragment to name.  See {!page-"feature-hover".images}. *)
-      | File { path } when Option.is_some (Media.of_path path) ->
+      | Ok (Oystermark.Vault.Index.Asset path) when Option.is_some (Media.of_path path) ->
         (match read_file path with
          | None -> None
          | Some file_content ->
            let label, mime = Option.value_exn (Media.of_path path) in
            Some (path, Fixed (Media.image_body ~config ~path ~mime ~label file_content)))
-      | Note { path } | File { path } ->
+      | Ok (Note path | Asset path) ->
         (match read_file path with
          | None -> None
          | Some file_content when Media.looks_binary file_content ->
@@ -380,7 +380,7 @@ let hover
          | Some file_content ->
            let body =
              match link_ref.fragment with
-             | Some (Oystermark.Vault.Link_ref.Heading hs) ->
+             | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
                (* Fragment present but resolve fell back — try to find section. *)
                let slug =
                  String.concat
@@ -388,69 +388,34 @@ let hover
                    (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
                in
                Option.value (heading_section ~slug file_content) ~default:file_content
-             | Some (Block_ref bid) ->
+             | Some (Caret_id bid) ->
                (match extract_block ~block_id:bid file_content with
                 | Some p -> p
                 | None -> file_content)
              | None -> file_content
            in
            Some (path, Text body))
-      | Heading { path; slug; _ } ->
-        (match read_file path with
-         | None -> None
-         | Some file_content ->
-           let body =
-             Option.value (heading_section ~slug file_content) ~default:file_content
-           in
-           Some (path, Text body))
-      | Block { path; block_id } ->
-        (match read_file path with
-         | None -> None
-         | Some file_content ->
-           let body =
-             match extract_block ~block_id file_content with
-             | Some p -> p
-             | None -> file_content
-           in
-           Some (path, Text body))
-      | Attr { path; id; _ } ->
-        (match read_file path with
-         | None -> None
-         | Some file_content ->
-           let body =
-             Option.value (extract_attr_block ~id file_content) ~default:file_content
-           in
-           Some (path, Text body))
-      | Curr_file ->
-        let body =
-          match link_ref.fragment with
-          | Some (Oystermark.Vault.Link_ref.Heading hs) ->
-            let slug =
-              String.concat
-                ~sep:"-"
-                (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
-            in
-            Option.value (heading_section ~slug content) ~default:content
-          | Some (Block_ref bid) ->
-            (match extract_block ~block_id:bid content with
-             | Some p -> p
-             | None -> content)
-          | None -> content
+      | Ok (Anchor { note_path = path; anchor }) ->
+        let target_content =
+          if String.equal path rel_path then Some content else read_file path
         in
-        Some (rel_path, Text body)
-      | Curr_heading { slug; _ } ->
-        let body = Option.value (heading_section ~slug content) ~default:content in
-        Some (rel_path, Text body)
-      | Curr_block { block_id } ->
-        let body =
-          match extract_block ~block_id content with
-          | Some p -> p
-          | None -> content
-        in
-        Some (rel_path, Text body)
-      | Curr_attr { id; _ } ->
-        let body = Option.value (extract_attr_block ~id content) ~default:content in
-        Some (rel_path, Text body)
+        (match target_content with
+         | None -> None
+         | Some file_content ->
+           let body =
+             match anchor.value with
+             | Heading h ->
+               Option.value
+                 (heading_section ~slug:h.slug file_content)
+                 ~default:file_content
+             | Block { id; kind = Obsidian_caret } ->
+               Option.value
+                 (extract_block ~block_id:id file_content)
+                 ~default:file_content
+             | Block { id; kind = Djot_attr } | Inline { id } ->
+               Option.value (extract_attr_block ~id file_content) ~default:file_content
+           in
+           Some (path, Text body))
     in
     (* The budget applies to the body only: the path header is short,
        always useful, and must survive however small the budget is. *)
@@ -775,7 +740,7 @@ let%test_module "hover" =
         List.filter_map files ~f:(fun (p, _) ->
           if String.is_suffix p ~suffix:".md" then None else Some p)
       in
-      Oystermark.Vault.build_index ~md_docs ~other_files ~dirs:[]
+      Oystermark.Vault.build_index ~md_docs ~other_files
     ;;
 
     let index = make_index files

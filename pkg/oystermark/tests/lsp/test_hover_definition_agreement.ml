@@ -5,7 +5,7 @@
 
     The two answer the same question — {i which anchor does this link name?} —
     through different code: go-to-definition goes through
-    {!Oystermark.Vault.Resolve} and the vault index, hover falls back to
+    {!Oystermark.Vault.Index.resolve}, hover falls back to
     {!Lsp_lib.Anchors} when resolution stops at the note.  Both now take the
     identity of an anchor from the parser, which is what removed the drift this
     test was written to catch — hover used to re-derive a slug from the

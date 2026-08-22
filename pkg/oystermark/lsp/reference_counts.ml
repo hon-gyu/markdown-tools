@@ -90,6 +90,7 @@ let headings_in_range
     contents — the column of numbers the zero rule exists to prevent.  See
     {!page-"feature-codelens-reference-counts".self}. *)
 let entries
+      ~(index : Oystermark.Vault.Index.t)
       ~(docs : (string * Cmarkit.Doc.t) list)
       ~(rel_path : string)
       ~(content : string)
@@ -99,7 +100,7 @@ let entries
   : entry list
   =
   let authored (target : Find_references.target) : Find_references.reference list =
-    Find_references.scan_vault ~docs target
+    Find_references.scan_vault ~index ~docs target
     |> List.filter ~f:(fun (r : Find_references.reference) ->
       count_toc_links || not r.in_toc)
   in
@@ -173,11 +174,12 @@ let%test_module "reference_counts" =
       ]
     ;;
 
-    let _index, docs = Find_references.For_test.make_vault files
+    let index, docs = Find_references.For_test.make_vault files
 
     let show ?(range_start_line = 0) ?(range_end_line = 100) rel_path =
       let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
       entries
+        ~index
         ~docs
         ~rel_path
         ~content
@@ -255,11 +257,12 @@ let%test_module "in-note references" =
       ]
     ;;
 
-    let _index, docs = Find_references.For_test.make_vault files
+    let index, docs = Find_references.For_test.make_vault files
 
     let show ?(count_toc_links = false) rel_path =
       let content = List.Assoc.find_exn files ~equal:String.equal rel_path in
       entries
+        ~index
         ~docs
         ~rel_path
         ~content

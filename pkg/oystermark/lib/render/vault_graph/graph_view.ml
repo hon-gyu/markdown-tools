@@ -71,9 +71,10 @@ let standalone_css : string = [%blob "../vault_graph/static/page.css"]
 
 let%expect_test "to_json with cross-note links" =
   let vault =
-    Vault.of_inmem_files
+    Vault.of_files
       ~vault_root:"/tmp_vault"
-      [ "a.md", "link to [[b]]"; "b.md", "link to [[a]]" ]
+      ~md_files:[ "a.md", "link to [[b]]"; "b.md", "link to [[a]]" ]
+      ~other_files:[]
   in
   let g = of_vault vault in
   print_endline (to_json g);

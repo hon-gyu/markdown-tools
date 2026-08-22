@@ -42,10 +42,10 @@ let action_at_range ~index ~rel_path ~content ~first_byte ~last_byte =
     match link.kind, link.reference.target, link.reference.fragment with
     | Link_collect.Link, Some target, None ->
       (match link.destination with
-       | Unresolved ->
+       | Error _ ->
          safe_note_path target
          |> Option.map ~f:(fun rel_path -> { rel_path; title = title_of_path rel_path })
-       | _ -> None)
+       | Ok _ -> None)
     | _ -> None)
 ;;
 

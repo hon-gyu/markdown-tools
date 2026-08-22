@@ -1,5 +1,5 @@
 (** What the vault walk lists.
-    Impl: {!Oystermark.Vault.Index.list_entries_recursive}.
+    Impl: {!Oystermark.Vault.Fs_utils.walk}.
 
     The tree is built at run time rather than checked in under [data/]: dune
     does not copy dot-directories into the build tree, and dot-directories are
@@ -16,7 +16,7 @@ let list_entries (files : string list) : string list =
     Core_unix.mkdir_p (Filename.dirname full);
     Out_channel.write_all full ~data:"# Note\n");
   Exn.protect
-    ~f:(fun () -> Oystermark.Vault.Index.list_entries_recursive root () |> List.sort ~compare:String.compare)
+    ~f:(fun () -> Oystermark.Vault.Fs_utils.walk ~root () |> List.sort ~compare:String.compare)
     ~finally:(fun () ->
       let (_ : Core_unix.Exit_or_signal.t) =
         Core_unix.system (sprintf "rm -rf %s" (Filename.quote root))

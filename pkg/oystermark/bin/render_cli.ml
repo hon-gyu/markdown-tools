@@ -47,7 +47,8 @@ let file_cmd : Command.t =
          List.Assoc.find (Vault.docs vault) ~equal:String.equal rel_path
          |> Option.value_exn ~message:(sprintf "File %s not found in vault" rel_path)
        in
-       let html = Html.of_doc ~backend_blocks:true ~safe:false doc in
+       let resolve link_ref = Vault.Index.resolve vault.index rel_path link_ref in
+       let html = Html.of_doc ~backend_blocks:true ~safe:false ~resolve doc in
        match output_dir with
        | Some dir -> Out_channel.write_all (Filename.concat dir "index.html") ~data:html
        | None -> print_string html)
@@ -74,7 +75,7 @@ let do_render ~verbose ~config ~theme ~vault_root ~output_dir =
       print_char '.';
       Out_channel.flush Out_channel.stdout));
   (* Copy non-markdown assets (images, etc.) to the output directory *)
-  let all_entries = Vault.Index.list_entries_recursive vault_root () in
+  let all_entries = Vault.Fs_utils.walk ~root:vault_root () in
   let is_asset (p : string) : bool =
     (not (String.is_suffix p ~suffix:".md")) && not (String.is_suffix p ~suffix:"/")
   in

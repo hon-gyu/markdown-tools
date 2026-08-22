@@ -16,7 +16,7 @@ Jump from a link to its target. Supported link forms:
 }
 
 Resolution uses the same algorithm as the renderer
-(see {!Oystermark.Vault.Resolve}): exact file match first, then
+(see {!Oystermark.Vault.Index.resolve}): exact file match first, then
 ordered-subsequence fuzzy match, then heading/block-ID lookup within the
 target file.
 
@@ -51,7 +51,7 @@ just the file.
                               │ uses
                        ┌──────▼───────┐
                        │  oystermark  │   Parse, Vault.Index,
-                       │  library     │   Vault.Resolve, Vault.Link_ref
+                       │  library     │   Vault.Index, Vault.Link_ref
                        └──────────────┘
 v}
 
@@ -86,7 +86,7 @@ AST and collects all links (wikilinks and markdown links/images) together
 with their byte ranges from [Cmarkit.Meta.textloc].  The link whose byte
 range contains the cursor offset is selected and converted to an
 {!Oystermark.Vault.Link_ref.t}, then resolved against the vault index via
-{!Oystermark.Vault.Resolve.resolve}.
+{!Oystermark.Vault.Index.resolve}.
 
 Currently, the document is re-parsed on every request.  A future
 optimisation could cache the parsed AST per file and invalidate on

@@ -6,7 +6,8 @@
 open Core
 open Cmarkit
 module C = Cmarkit_renderer.Context
-module Resolve = Vault.Resolve
+module Link_ref = Vault.Link_ref
+module Index = Vault.Index
 module Embed = Vault.Embed
 module Cb_attribute = Parse.Cb_attribute
 module H = Tyxml.Html
@@ -33,25 +34,24 @@ let file_url_path (path : string) : string =
   if String.is_suffix path ~suffix:".md" then note_url_path path else "/" ^ path
 ;;
 
-(* Convert a resolved target to an href string. *)
-let target_to_href : Resolve.target -> string = function
-  | Resolve.Note { path } -> note_url_path path
-  | Resolve.File { path } -> "/" ^ path
-  | Resolve.Heading { path; slug; _ } -> file_url_path path ^ "#" ^ slug
-  | Resolve.Block { path; block_id } -> file_url_path path ^ "#^" ^ block_id
-  | Resolve.Attr { path; id; _ } -> file_url_path path ^ "#" ^ id
-  | Resolve.Curr_file -> ""
-  | Resolve.Curr_heading { slug; _ } -> "#" ^ slug
-  | Resolve.Curr_block { block_id } -> "#^" ^ block_id
-  | Resolve.Curr_attr { id; _ } -> "#" ^ id
-  | Resolve.Unresolved -> "#"
+let target_to_href (link_ref : Link_ref.t) (resolution : Index.resolution) =
+  match resolution with
+  | Error _ -> "#"
+  | Ok (Index.Note path) ->
+    if Option.is_none link_ref.target then "" else note_url_path path
+  | Ok (Index.Asset path) -> "/" ^ path
+  | Ok (Index.Anchor { note_path; anchor }) ->
+    let base = if Option.is_none link_ref.target then "" else file_url_path note_path in
+    let fragment =
+      match anchor.value with
+      | Heading h -> "#" ^ h.slug
+      | Block { id; kind = Obsidian_caret } -> "#^" ^ id
+      | Block { id; kind = Djot_attr } | Inline { id } -> "#" ^ id
+    in
+    base ^ fragment
 ;;
 
-let is_unresolved (meta : Meta.t) : bool =
-  match Meta.find Resolve.resolved_key meta with
-  | Some Resolve.Unresolved -> true
-  | _ -> false
-;;
+let is_unresolved = Result.is_error
 
 (* Attribute-to-HTML helpers
 ---------------------------- *)
@@ -150,17 +150,15 @@ let parse_image_dims (s : string) : (int * int option) option =
 
 (* Render a wikilink as HTML. Handles embed=true for media content. *)
 let render_wikilink
+      ~(resolve : Link_ref.t -> Index.resolution)
       (c : Cmarkit_renderer.context)
       (w : Cmarkit.Inline.Wikilink.t)
-      (meta : Meta.t)
+      (_meta : Meta.t)
   : unit
   =
-  let href_of_meta (meta : Meta.t) =
-    match Meta.find Resolve.resolved_key meta with
-    | Some target -> target_to_href target
-    | None -> "#"
-  in
-  let href = href_of_meta meta in
+  let link_ref = Link_ref.of_wikilink w in
+  let target = resolve link_ref in
+  let href = target_to_href link_ref target in
   let display =
     Option.value (Cmarkit.Inline.Wikilink.display w) ~default:(wikilink_default_display w)
   in
@@ -193,29 +191,32 @@ let render_wikilink
         (* Unknown embed type: render as a link *)
         let attrs =
           H.a_href href
-          :: (if is_unresolved meta then [ H.a_class [ "unresolved" ] ] else [])
+          :: (if is_unresolved target then [ H.a_class [ "unresolved" ] ] else [])
         in
         elt_to_string (H.a ~a:attrs [ H.txt display ])
     in
     C.string c s)
   else (
     let attrs =
-      H.a_href href :: (if is_unresolved meta then [ H.a_class [ "unresolved" ] ] else [])
+      H.a_href href
+      :: (if is_unresolved target then [ H.a_class [ "unresolved" ] ] else [])
     in
     C.string c (elt_to_string (H.a ~a:attrs [ H.txt display ])))
 ;;
 
 (* Render a standard link, overriding href if a resolved target is present. *)
 let render_link
+      ~(resolve : Link_ref.t -> Index.resolution)
       ?(attr : Attribute.t option)
       (c : Cmarkit_renderer.context)
       (l : Inline.Link.t)
-      (meta : Meta.t)
+      (_meta : Meta.t)
   : bool
   =
-  match Meta.find Resolve.resolved_key meta with
-  | Some target ->
-    let href = target_to_href target in
+  match Link_ref.of_cmark_reference (Inline.Link.reference l) with
+  | Some link_ref ->
+    let target = resolve link_ref in
+    let href = target_to_href link_ref target in
     let buf = Buffer.create 128 in
     let sub_ctx = C.make (C.renderer c) buf in
     C.init sub_ctx (C.get_doc c);
@@ -228,7 +229,9 @@ let render_link
       let id = Option.bind attr ~f:Attribute.id in
       let classes = Option.value_map attr ~default:[] ~f:Attribute.classes in
       let kvs = Option.value_map attr ~default:[] ~f:Attribute.key_values in
-      let classes = if is_unresolved meta then classes @ [ "unresolved" ] else classes in
+      let classes =
+        if is_unresolved target then classes @ [ "unresolved" ] else classes
+      in
       emit_html_attrs ~id ~classes ~kvs ()
     in
     C.string c (sprintf "<a href=\"%s\"%s>%s</a>" href_esc attrs_str inner_html);
@@ -238,15 +241,17 @@ let render_link
 
 (* Render an image with resolved target. *)
 let render_image
+      ~(resolve : Link_ref.t -> Index.resolution)
       ?(attr : Attribute.t option)
       (c : Cmarkit_renderer.context)
       (l : Inline.Link.t)
-      (meta : Meta.t)
+      (_meta : Meta.t)
   : bool
   =
-  match Meta.find Resolve.resolved_key meta with
-  | Some target ->
-    let href = target_to_href target in
+  match Link_ref.of_cmark_reference (Inline.Link.reference l) with
+  | Some link_ref ->
+    let target = resolve link_ref in
+    let href = target_to_href link_ref target in
     let buf = Buffer.create 64 in
     let rec extract_text = function
       | Inline.Text (s, _) -> Buffer.add_string buf s
@@ -286,7 +291,10 @@ let render_image
 (** Render an inline, optionally carrying a Djot [attr] from an enclosing
     {!Cmarkit.Inline.Ext_attributes} wrapper. Returns [false] (defer to the
     default renderer) for inlines that need no oystermark-specific handling. *)
-let render_inline ?(attr : Attribute.t option) (c : Cmarkit_renderer.context)
+let render_inline
+      ~(resolve : Link_ref.t -> Index.resolution)
+      ?(attr : Attribute.t option)
+      (c : Cmarkit_renderer.context)
   : Inline.t -> bool
   =
   let with_attr ~tag render =
@@ -300,10 +308,10 @@ let render_inline ?(attr : Attribute.t option) (c : Cmarkit_renderer.context)
   in
   function
   | Cmarkit.Inline.Ext_wikilink (w, meta) ->
-    render_wikilink c w meta;
+    render_wikilink ~resolve c w meta;
     true
-  | Inline.Link (l, meta) -> render_link ?attr c l meta
-  | Inline.Image (l, meta) -> render_image ?attr c l meta
+  | Inline.Link (l, meta) -> render_link ~resolve ?attr c l meta
+  | Inline.Image (l, meta) -> render_image ~resolve ?attr c l meta
   | Inline.Text (s, _) ->
     with_attr ~tag:"span" (fun () -> Cmarkit_html.html_escaped_string c s)
   | Inline.Emphasis (e, _) ->
@@ -332,10 +340,16 @@ let render_inline ?(attr : Attribute.t option) (c : Cmarkit_renderer.context)
   | _ -> false
 ;;
 
-let inline (c : Cmarkit_renderer.context) : Inline.t -> bool = function
+let inline ~(resolve : Link_ref.t -> Index.resolution) (c : Cmarkit_renderer.context)
+  : Inline.t -> bool
+  = function
   | Inline.Ext_attributes (a, _) ->
-    render_inline ~attr:(Inline.Attributes.attributes a) c (Inline.Attributes.inline a)
-  | i -> render_inline c i
+    render_inline
+      ~resolve
+      ~attr:(Inline.Attributes.attributes a)
+      c
+      (Inline.Attributes.inline a)
+  | i -> render_inline ~resolve c i
 ;;
 
 let render_callout
@@ -715,11 +729,17 @@ let renderer
       ~(backend_blocks : bool)
       ~(safe : bool)
       ?(struct_style : struct_style = `Plain)
+      ?(resolve = fun _ -> Error Index.Missing_path)
       ()
   : Cmarkit_renderer.t
   =
   let style_ref = ref struct_style in
-  let custom = Cmarkit_renderer.make ~inline ~block:(block ~struct_style:style_ref) () in
+  let custom =
+    Cmarkit_renderer.make
+      ~inline:(inline ~resolve)
+      ~block:(block ~struct_style:style_ref)
+      ()
+  in
   let default = Cmarkit_html.renderer ~backend_blocks ~safe () in
   Cmarkit_renderer.compose default custom
 ;;
@@ -728,6 +748,7 @@ let of_doc
       ~(backend_blocks : bool)
       ~(safe : bool)
       ?(config = Config.default)
+      ?resolve
       (* ?(struct_style : struct_style = `Plain) *)
         (doc : Doc.t)
   : string
@@ -738,7 +759,9 @@ let of_doc
     | Config.Struct_style_def.Basic -> `Basic
     | Config.Struct_style_def.Graph -> `Graph
   in
-  Cmarkit_renderer.doc_to_string (renderer ~backend_blocks ~safe ~struct_style ()) doc
+  Cmarkit_renderer.doc_to_string
+    (renderer ~backend_blocks ~safe ~struct_style ?resolve ())
+    doc
 ;;
 
 module For_test = struct

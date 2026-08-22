@@ -30,13 +30,12 @@ let render_vault
       (vault_root : string)
   : (string * string) list
   =
-  let all_entries = Vault.Index.list_entries_recursive vault_root () in
+  let all_entries = Vault.Fs_utils.walk ~root:vault_root () in
   (* Stage 1: discover *)
   let discovered =
     List.filter all_entries ~f:(fun p -> pipeline.on_discover p all_entries)
   in
   let is_dir (p : string) : bool = String.is_suffix p ~suffix:"/" in
-  let dirs : string list = List.filter discovered ~f:is_dir in
   (* Stage 2: parse — only .md files go through on_parse *)
   let parsed : (string * Cmarkit.Doc.t) list =
     List.concat_map discovered ~f:(fun rel_path ->
@@ -54,14 +53,11 @@ let render_vault
     List.filter discovered ~f:(fun p ->
       (not (String.is_suffix p ~suffix:".md")) && not (is_dir p))
   in
-  let index = Vault.build_index ~md_docs ~other_files ~dirs in
-  let resolved : (string * Cmarkit.Doc.t) list =
-    Vault.Resolve.resolve_docs md_docs index
-  in
+  let index = Vault.build_index ~md_docs ~other_files in
   (* Expand note embeds after resolution *)
-  let expanded : (string * Cmarkit.Doc.t) list = Vault.Embed.expand_docs resolved in
+  let expanded : (string * Cmarkit.Doc.t) list = Vault.Embed.expand_docs ~index md_docs in
   let vault_ctx : Vault.t =
-    Vault.with_docs { vault_root; index; vault_meta = Cmarkit.Meta.none } expanded
+    Vault.of_docs ~base:{ vault_root; index; vault_meta = Cmarkit.Meta.none } expanded
   in
   (* Stage 4: on_vault + Render *)
   let final_vault : Vault.t = pipeline.on_vault vault_ctx in
@@ -84,7 +80,8 @@ let render_vault
       let fm = Parse.Frontmatter.of_doc final in
       let fm_config = Config.of_frontmatter fm in
       let config = Config.merge config fm_config in
-      let body = Html.of_doc ~backend_blocks ~safe ~config final in
+      let resolve link_ref = Vault.Index.resolve final_vault.index rel_path link_ref in
+      let body = Html.of_doc ~backend_blocks ~safe ~config ~resolve final in
       let url_path = Html.note_url_path rel_path in
       let title : string = Component.title_of_path rel_path in
       let nav : string = Component.nav_of_url_path ~home_path:config.home.path url_path in

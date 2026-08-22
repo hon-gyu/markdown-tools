@@ -11,11 +11,11 @@ open Oystermark_render
     [max_depth] controls embed recursion depth. *)
 let render ?(max_depth = 5) (files : (string * string) list) (target : string) : unit =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] ~dirs:[] in
-  let resolved = Vault.Resolve.resolve_docs docs index in
-  let expanded = Vault.Embed.expand_docs ~max_depth resolved in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
+  let expanded = Vault.Embed.expand_docs ~max_depth ~index docs in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
-  print_string (Html.of_doc ~backend_blocks:true ~safe:false doc)
+  let resolve link_ref = Vault.Index.resolve index target link_ref in
+  print_string (Html.of_doc ~backend_blocks:true ~safe:false ~resolve doc)
 ;;
 
 let%expect_test "full note" =
@@ -262,9 +262,8 @@ let render_reversed ?(max_depth = 5) (files : (string * string) list) (target : 
   : unit
   =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] ~dirs:[] in
-  let resolved = Vault.Resolve.resolve_docs docs index in
-  let expanded = Vault.Embed.expand_docs ~max_depth resolved in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
+  let expanded = Vault.Embed.expand_docs ~max_depth ~index docs in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
   let reversed = Vault.Embed.reverse_embed_doc doc in
   print_string (Parse.commonmark_of_doc reversed)

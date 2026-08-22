@@ -79,13 +79,13 @@ Subsections are encouraged if needed.
 
 {1 attribute-anchors}
 - Spec: {!page-"feature-attribute-anchors"}
-- Core: {!Oystermark.Vault.Index.extract_attr_ids} (collection),
-  {!Oystermark.Vault.Resolve.resolve} ([Attr]/[Curr_attr] cases).
+- Core: {!Oystermark.Vault.Index.Note.anchors} (collection),
+  {!Oystermark.Vault.Index.resolve} (attribute-anchor cases).
 - Consumers: {!module-Lsp_lib.Go_to_definition} and
   {!module-Lsp_lib.Find_references} (attribute anchor targets).
 - Test: {!module-Lsp_lib.Go_to_definition.test},
   {!module-Lsp_lib.Find_references.test}, and
-  [Oystermark.Vault.Index]'s [extract_attr_ids] expect test.
+  [Oystermark.Vault.Index.Note]'s anchor-collection tests.
 - Column precision: go-to-definition returns a [(line, character)]
   position; inline anchors land mid-line. The [character] is a UTF-16
   column decoded from the target file's body (read via [read_file] for

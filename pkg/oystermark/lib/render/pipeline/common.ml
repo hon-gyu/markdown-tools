@@ -51,7 +51,7 @@ let map_each_doc (f : Vault.t -> string -> Cmarkit.Doc.t -> (string * Cmarkit.Do
   let docs' : (string * Cmarkit.Doc.t) list =
     List.concat_map (Vault.docs ctx) ~f:(fun (path, doc) -> f ctx path doc)
   in
-  Vault.with_docs ctx docs'
+  Vault.of_docs ~base:ctx docs'
 ;;
 
 let of_block_mapper (block_mapper : Cmarkit.Block.t Cmarkit.Mapper.mapper) : t =

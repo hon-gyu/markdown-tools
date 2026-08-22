@@ -30,6 +30,17 @@ let compare_path_of_toc_order (toc_order : Config.Toc_order.t) : string -> strin
     if ra <> rb then Int.compare ra rb else String.compare a b
 ;;
 
+(** Non-empty directory paths implied by [paths], with a trailing [/]. *)
+let directories_of_paths (paths : string list) : string list =
+  let rec ancestors acc dir =
+    if String.equal dir "." || String.equal dir ""
+    then acc
+    else ancestors ((dir ^ "/") :: acc) (Filename.dirname dir)
+  in
+  List.fold paths ~init:[] ~f:(fun acc path -> ancestors acc (Filename.dirname path))
+  |> List.dedup_and_sort ~compare:String.compare
+;;
+
 (** Add TOC to the home page.
     @param dir_link controls whether directory entries in the TOC are rendered as
     wikilinks (to [dir/index]) or plain text.  Set to [true] when [dir_index]
@@ -50,11 +61,7 @@ let home_toc
       then [ path, doc ]
       else (
         let doc_paths = List.map (Vault.docs ctx) ~f:fst in
-        let all_entry_paths = doc_paths @ ctx.index.dirs in
-        let toc_paths : string list =
-          List.filter_map all_entry_paths ~f:(fun p ->
-            if String.is_suffix p ~suffix:"/" then None else Some p)
-        in
+        let toc_paths = doc_paths in
         let toc_cmark_list = Component.toc_cmark_list ~dir_link ~compare_path toc_paths in
         let block_mapper = add_block `Append toc_cmark_list in
         let mapper = Cmarkit.Mapper.make ~block:block_mapper () in
@@ -82,14 +89,10 @@ let dir_index
   let on_vault (ctx : Vault.t) : Vault.t =
     let docs = Vault.docs ctx in
     let doc_paths : string list = List.map docs ~f:fst in
-    let non_empty_dirs : string list =
-      List.filter ctx.index.dirs ~f:(fun (dir_path : string) ->
-        List.exists docs ~f:(fun (p, _) ->
-          String.is_prefix p ~prefix:dir_path && not (String.equal p dir_path)))
-    in
-    let all_paths : string list = doc_paths @ non_empty_dirs in
+    let directories = directories_of_paths doc_paths in
+    let all_paths : string list = doc_paths @ directories in
     let new_docs : (string * Cmarkit.Doc.t) list =
-      List.filter_map ctx.index.dirs ~f:(fun (dir_path : string) ->
+      List.filter_map directories ~f:(fun (dir_path : string) ->
         let index_path : string = dir_path ^ "index.md" in
         (* Skip if an explicit index.md already exists *)
         if List.Assoc.mem docs ~equal:String.equal index_path
@@ -131,9 +134,11 @@ let dir_index
                 ~compare_path
                 rel_children
             in
-            Some (index_path, Cmarkit.Doc.make toc_block))))
+            let generated = Cmarkit.Doc.make toc_block |> Cmarkit_commonmark.of_doc in
+            Some (index_path, Parse.of_string ~locs:true generated))))
     in
-    Vault.with_docs ctx (docs @ new_docs)
+    let ctx = Vault.of_docs ~base:ctx (docs @ new_docs) in
+    ctx
   in
   make ~on_vault ()
 ;;
@@ -188,7 +193,7 @@ let home_graph
           in
           path, Cmarkit.Mapper.map_doc mapper doc))
     in
-    Vault.with_docs ctx docs
+    Vault.of_docs ~base:ctx docs
   in
   make ~on_vault ()
 ;;

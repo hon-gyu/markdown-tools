@@ -159,7 +159,7 @@ let initialize_project
 
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
   let project_roots =
-    Oystermark.Vault.Index.list_entries_recursive root ()
+    Oystermark.Vault.Fs_utils.walk ~root ()
     |> List.filter_map ~f:(fun path ->
       if String.equal (Filename.basename path) Lsp_config.file_name
       then Some (Filename.dirname path)
@@ -623,7 +623,7 @@ let daily_note_actions (t : t) ~(rel_path : string) : CodeAction.t list =
     reachable wherever that capability is missing.  It is also, independently,
     an ordinary thing to want in a note.
 
-    The link is the note's base name: [resolve_file] matches a path
+    The link is the note's base name: [Index.resolve] matches a path
     subsequence, so [ [[2026-07-26]] ] finds [2026/07/2026-07-26.md] under a
     nested format without the writer spelling out the folders.  See
     {!page-"feature-daily-notes".link}. *)
@@ -777,6 +777,7 @@ let reference_lenses (t : t) ~(rel_path : string) ~(content : string) : CodeLens
     | None -> []
     | Some v ->
       Reference_counts.entries
+        ~index:v.index
         ~docs:(Oystermark.Vault.docs v)
         ~rel_path
         ~content
@@ -1338,8 +1339,8 @@ let vault_contains (project : t) path =
   match project.vault with
   | None -> false
   | Some vault ->
-    List.exists vault.index.notes ~f:(fun note -> String.equal note.rel_path path)
-    || List.exists vault.index.files ~f:(fun file -> String.equal file.rel_path path)
+    Option.is_some (Oystermark.Vault.Index.find_note vault.index path)
+    || Option.is_some (Oystermark.Vault.Index.find_asset vault.index path)
 ;;
 
 let target_path : Feature.Find_references.target -> string = function
@@ -1369,7 +1370,10 @@ let collect_project_references t ~source_project target =
   |> List.concat_map ~f:(fun project ->
     match project.vault, target_in_project ~source_project target project with
     | Some vault, Some target ->
-      Feature.Find_references.scan_vault ~docs:(Oystermark.Vault.docs vault) target
+      Feature.Find_references.scan_vault
+        ~index:vault.index
+        ~docs:(Oystermark.Vault.docs vault)
+        target
       |> List.map ~f:(fun reference -> project, reference)
     | _ -> [])
   |> List.dedup_and_sort ~compare:(fun (pa, a) (pb, b) ->
