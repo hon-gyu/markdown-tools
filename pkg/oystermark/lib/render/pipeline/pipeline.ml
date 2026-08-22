@@ -137,8 +137,8 @@ let dir_index
             let generated = Cmarkit.Doc.make toc_block |> Cmarkit_commonmark.of_doc in
             Some (index_path, Parse.of_string ~locs:true generated))))
     in
-    let ctx = Vault.with_docs ctx (docs @ new_docs) in
-    Vault.with_docs ctx (Vault.Resolve.resolve_docs (Vault.docs ctx) ctx.index)
+    let ctx = Vault.of_docs ~base:ctx (docs @ new_docs) in
+    Vault.of_docs ~base:ctx (Vault.Resolve.resolve_docs (Vault.docs ctx) ctx.index)
   in
   make ~on_vault ()
 ;;
@@ -193,7 +193,7 @@ let home_graph
           in
           path, Cmarkit.Mapper.map_doc mapper doc))
     in
-    Vault.with_docs ctx docs
+    Vault.of_docs ~base:ctx docs
   in
   make ~on_vault ()
 ;;

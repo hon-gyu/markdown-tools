@@ -283,7 +283,9 @@ let to_dot (t : t) : string =
 
 let%test_module "graph" =
   (module struct
-    let build_vault = Vault.of_inmem_files ~vault_root:"/tmp_vault"
+    let build_vault files =
+      Vault.of_files ~vault_root:"/tmp_vault" ~md_files:files ~other_files:[]
+    ;;
 
     let show_edges (t : t) =
       let edges = G.fold_edges_e (fun e acc -> e :: acc) t.graph [] in
