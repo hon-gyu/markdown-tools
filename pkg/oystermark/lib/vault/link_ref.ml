@@ -4,7 +4,8 @@ open Core
 open Parse
 
 type fragment =
-  | Hash_path of string list (** May resolves to headings, or Djot attribute anchors (when length = 1). Non-empty *)
+  | Hash_path of string list
+  (** May resolves to headings, or Djot attribute anchors (when length = 1). Non-empty *)
   | Caret_id of string (** Obsidian block id *)
 [@@deriving sexp, equal, compare]
 
