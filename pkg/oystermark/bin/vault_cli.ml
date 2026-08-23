@@ -1,6 +1,7 @@
 (** Command-line client for vault queries and renames. *)
 
 open Core
+module Parse = Oystermark.Parse
 module Vault = Oystermark.Vault
 
 let load root = Vault.of_root_path ~skip_expand:true root
@@ -242,12 +243,58 @@ let context_command =
           else Yojson.Safe.pretty_to_string json))
 ;;
 
+(** Write the contents of one code block to stdout, for a build system to pipe
+    into an interpreter. See {!page-"code-block-extraction"}. *)
+let block_command =
+  Command.basic
+    ~summary:"Print the contents of the code block carrying a {#id} attribute"
+    (let%map_open.Command note = anon ("NOTE" %: string)
+     and id = flag "-id" (required string) ~doc:"ID the block's {#id} attribute"
+     and expect_lang =
+       flag
+         "-lang"
+         (optional string)
+         ~doc:"LANG fail unless the block's info string is LANG"
+     in
+     fun () ->
+       let doc = Parse.of_string ~locs:true (In_channel.read_all note) in
+       let blocks =
+         match Cmarkit.Doc.block doc with
+         | Cmarkit.Block.Blocks (blocks, _) -> blocks
+         | block -> [ block ]
+       in
+       let die fmt =
+         ksprintf
+           (fun s ->
+              prerr_endline s;
+              exit 1)
+           fmt
+       in
+       let block =
+         match Parse.Extract.get_block_by_attr_id blocks id with
+         | Some block -> block
+         | None -> die "%s: no block carries the attribute id {#%s}" note id
+       in
+       let code =
+         match Parse.Extract.code_of_block block with
+         | Some code -> code
+         | None -> die "%s: the block {#%s} is not a code block" note id
+       in
+       Option.iter expect_lang ~f:(fun expected ->
+         match Parse.Extract.info_string_of_block block with
+         | Some actual when String.equal actual expected -> ()
+         | Some actual -> die "%s: the block {#%s} is %s, not %s" note id actual expected
+         | None -> die "%s: the block {#%s} has no info string" note id);
+       print_endline code)
+;;
+
 let command =
   Command.group
     ~summary:"Inspect and rename notes in an OysterMark vault"
     [ "unresolved", unresolved_command
     ; "stats", stats_command
     ; "context", context_command
+    ; "block", block_command
     ; "rename-note", rename_note_command
     ; ( "rename-heading"
       , rename_command

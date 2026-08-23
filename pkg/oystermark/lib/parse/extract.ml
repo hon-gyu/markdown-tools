@@ -125,6 +125,27 @@ let get_block_by_caret_id (blocks : Cmarkit.Block.t list) (id : string)
   search None (flatten blocks)
 ;;
 
+(** The literal text of a code block, fenced or indented, without its fence or
+    info string. [None] for any other block. *)
+let code_of_block (block : Cmarkit.Block.t) : string option =
+  match block with
+  | Cmarkit.Block.Code_block (cb, _) ->
+    Cmarkit.Block.Code_block.code cb
+    |> List.map ~f:Cmarkit.Block_line.to_string
+    |> String.concat ~sep:"\n"
+    |> Option.return
+  | _ -> None
+;;
+
+(** The info string of a code block: [python] for [ ```python ]. [None] for
+    another block, or a code block with no info string. *)
+let info_string_of_block (block : Cmarkit.Block.t) : string option =
+  match block with
+  | Cmarkit.Block.Code_block (cb, _) ->
+    Option.map (Cmarkit.Block.Code_block.info_string cb) ~f:fst
+  | _ -> None
+;;
+
 (** Extract the block carrying an explicit djot attribute id ([{#id}]).
 
     Two cases (see {!page-"feature-attribute-anchors"}):

@@ -24,14 +24,16 @@ pkg/oystermark/examples/vault-site/
 ├── sourdough.md
 ├── starter.md
 ├── health.md.jinja
+├── hydration.md.jinja
 ├── index.md.jinja
 └── tags.md.jinja
 v}
 
-Building adds three generated notes beside them:
+Building adds the generated notes beside them:
 
 {v
 ├── health.md     ← health.md.jinja
+├── hydration.md  ← hydration.md.jinja, via a code block in sourdough.md
 ├── index.md      ← index.md.jinja
 └── tags.md       ← tags.md.jinja
 v}
@@ -102,9 +104,16 @@ It is also correct, which a narrower dependency would not be. Adding a link to
 [focaccia.md] changes the count printed for [kneading.md], and the rule reruns.
 
 Generated notes land in the same directory as their sources, and this does not
-feed back: [dune] excludes a rule's own targets from the source tree it depends
-on, so [index.md] never appears in the context that produced it, nor in the one
-that produces [tags.md].
+feed back: [dune] excludes every rule target from the source tree it hands the
+action, so [index.md] is not a note in the context that produced it, nor in the
+one that produces [tags.md]. The note count stays at four however many pages
+are generated beside them.
+
+One wrinkle, visible under [assets] rather than [notes]: when a rule writes its
+target directly, as [(with-stdout-to context.json (run ... context .))] does,
+the file is opened before the action runs, so the walk finds it — empty — and
+[context.json] lists itself as an asset. It is never a note, so templates that
+iterate [notes] are unaffected.
 
 {2 A named alias}
 
@@ -217,6 +226,90 @@ v}
 whether the whole [tags] list is an element of [\["bread"\]]. Sorting on
 [created] works directly because the dates are ISO-8601 strings — see
 {!page-"template-context".dates}.
+
+{1 Executing a code block}
+
+A note can own a computation as well as prose. [oyster block] writes one code
+block to stdout, addressed by the djot attribute id above it, and the build
+system pipes it wherever it belongs — here, into [uv]:
+
+{v
+{#hydration}
+```python
+import json
+
+flour, water, salt = 500, 350, 10
+print(json.dumps({"hydration": {"flour": flour, "water": water, ...}}))
+```
+v}
+
+{v
+oyster block NOTE -id ID [-lang LANG]
+v}
+
+[-lang] asserts rather than selects: it fails if the block's info string is not
+[LANG], so a rule cannot quietly feed a shell script to a Python interpreter.
+Naming a missing id, or an id that sits on something other than a code block,
+is an error too.
+
+Three rules: extract and run, snapshot the context, render the two together.
+[minijinja-cli] accepts several data files and merges them, so the script's
+output arrives as ordinary template variables:
+
+{v
+(rule
+ (targets hydration.json)
+ (deps sourdough.md)
+ (action
+  (with-stdout-to
+   hydration.json
+   (pipe-stdout
+    (run %{bin:oyster} block sourdough.md -id hydration -lang python)
+    (run uv run -)))))
+
+(rule
+ (targets context.json)
+ (deps (source_tree .))
+ (action
+  (with-stdout-to context.json (run %{bin:oyster} context .))))
+
+(rule
+ (targets hydration.md)
+ (deps hydration.md.jinja context.json hydration.json)
+ (action
+  (with-stdout-to
+   hydration.md
+   (run minijinja-cli --format=json hydration.md.jinja context.json
+     hydration.json))))
+v}
+
+The template then reads [hydration] beside the vault's own namespace, and
+editing the numbers in the note changes the rendered page on the next build.
+
+{2 Addressing by id, not by position}
+
+"The third Python block" is a reference into a document people edit: insert an
+example above it and the build quietly runs something else. An id is stable
+under editing, and it is the same anchor the rest of the vault already uses —
+the LSP resolves it, renames it, and reports it when it breaks.
+
+{2 [{#id}] is a Jinja comment}
+
+Djot's attribute syntax collides with Jinja's comment delimiters: a template
+containing a literal [{#hydration}] opens a comment that is never closed, and
+the render fails with a syntax error. Quote it to write it out:
+
+{v
+Computed by running the {{ "{#hydration}" }} block in ...
+v}
+
+{2 What you are agreeing to}
+
+The vault becomes trusted input: building it runs code that any note can
+contain. And [dune] caches the result, so a script that reads the clock, the
+network, or the environment makes the build depend on something the build
+cannot see. Keep executed blocks deterministic, or accept that the page is a
+snapshot of whenever it last ran.
 
 {1 What counts as a note}
 

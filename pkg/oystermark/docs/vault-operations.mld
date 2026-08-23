@@ -49,6 +49,7 @@ The [oystermark-vault] executable exposes the shared services:
 oystermark-vault unresolved VAULT
 oystermark-vault stats VAULT
 oystermark-vault context VAULT [-compact]
+oystermark-vault block NOTE -id ID [-lang LANG]
 oystermark-vault rename-note VAULT NOTE NEW-NAME [--apply]
 oystermark-vault rename-heading VAULT NOTE HEADING NEW-HEADING [--apply]
 v}
