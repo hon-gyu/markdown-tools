@@ -18,7 +18,6 @@ open Core
 open Common
 module Common = Common
 module Frontmatter = Frontmatter
-module Cb_attribute = Cb_attribute
 module Textloc_conv = Textloc_conv
 module Struct = Struct
 
@@ -28,13 +27,6 @@ module Extract = Extract
 type block_id =
   | Caret of Cmarkit.Block.Block_id.t
   | Heading of string
-
-let mk_mapper () : Cmarkit.Mapper.t =
-  Cmarkit.Mapper.make
-    ~inline_ext_default:(fun _m i -> Some i)
-    ~block:(compose_block_maps [ Cb_attribute.block_map ])
-    ()
-;;
 
 (** [of_string ?strict ?layout ?enable_struct s] parses markdown string [s] into a
     [Cmarkit.Doc.t] with frontmatter embedded as a {!Frontmatter.Frontmatter}
@@ -80,8 +72,7 @@ let of_string
       ~multiline_atx_headings:false
       body
   in
-  let body_doc = Mapper.map_doc (mk_mapper ()) cmarkit_doc in
-  let body_doc = if enable_struct then Struct.rewrite_doc body_doc else body_doc in
+  let body_doc = if enable_struct then Struct.rewrite_doc cmarkit_doc else cmarkit_doc in
   (* The frontmatter region was blanked (not stripped) to keep [Textloc]s
      aligned with the original file, so the parsed body begins with blank lines
      standing in for those rows. Drop them: leading blank lines carry no content,
@@ -218,7 +209,7 @@ let sexp_of_ =
       ; Struct.sexp_of_block
       ; block_attributes_sexp_of_block
       ]
-    ~metas:[ block_id_sexp_of_meta; callout_sexp_of_meta; Cb_attribute.sexp_of_meta ]
+    ~metas:[ block_id_sexp_of_meta; callout_sexp_of_meta ]
     ()
 ;;
 
@@ -753,11 +744,7 @@ code2
           (List (Paragraph (Text foo))
             (Keyed (Text bar:)
               (Div (class two-example)
-                (Blocks
-                  ((Code_block py code1)
-                    (meta (attribute ((lang py) (attribute ())))))
-                  ((Code_block js code2)
-                    (meta (attribute ((lang js) (attribute ()))))))))))
+                (Blocks (Code_block py code1) (Code_block js code2))))))
         ```
         n_div=1 n_keyed=1
         |}]

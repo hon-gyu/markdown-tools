@@ -208,8 +208,12 @@ let attr_id_offset ~(id : string) line =
       | None -> None
       | Some close ->
         let body = String.sub line ~pos:(i + 1) ~len:(close - i - 1) in
-        (match Parse.Cb_attribute.of_string body with
-         | Some { id = Some found; _ } when String.equal found id ->
+        (match Cmarkit.Attribute.of_string body with
+         | Some attr
+           when Option.value_map
+                  (Cmarkit.Attribute.id attr)
+                  ~default:false
+                  ~f:(String.equal id) ->
            let pattern = "#" ^ id in
            let rec seek from =
              match String.substr_index body ~pos:from ~pattern with

@@ -63,7 +63,7 @@ let info_string = "oysterlsp"
 
 (** Whether a code block's info string opens a command block.  Only the first
     word is considered, so [oysterlsp \{#id\}] — the attribute syntax any code
-    block may carry — still counts.  See {!Oystermark.Parse.Cb_attribute}. *)
+    block may carry — still counts. *)
 let is_command_block (info : string) : bool =
   match String.split (String.strip info) ~on:' ' with
   | first :: _ -> String.equal first info_string
