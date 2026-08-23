@@ -1,0 +1,9 @@
+# Tags
+
+{% for tag, paths in tags | items -%}
+## {{ tag }} ({{ paths | length }})
+
+{% for p in paths -%}
+- [{{ notes_by_path[p].title }}]({{ p }})
+{% endfor %}
+{% endfor -%}

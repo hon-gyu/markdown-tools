@@ -1,0 +1,231 @@
+{0 Generating notes: a worked example}
+
+A vault, three templates, and the [dune] rules that turn one into the other.
+The JSON namespace the templates read is specified in
+{!page-"template-context"}; this page is only about wiring it to a build.
+
+The example is real: it lives in [pkg/oystermark/examples/vault-site/] and
+builds with
+
+{v
+dune build @pkg/oystermark/examples/vault-site/vault-site
+v}
+
+{1 The tree}
+
+Authored files, with the vault kept separate from the templates that read it:
+
+{v
+pkg/oystermark/examples/vault-site/
+├── dune
+├── templates/
+│   ├── index.md.jinja
+│   ├── tags.md.jinja
+│   └── health.md.jinja
+└── vault/
+    ├── assets/
+    │   └── diagram.svg
+    ├── notes/
+    │   ├── cmarkit.md
+    │   └── wikilinks.md
+    └── projects/
+        ├── mlmdx.md
+        └── oyster.md
+v}
+
+Building adds three generated notes beside the templates:
+
+{v
+├── index.md      ← templates/index.md.jinja
+├── tags.md       ← templates/tags.md.jinja
+└── health.md     ← templates/health.md.jinja
+v}
+
+{1 A note}
+
+Each note carries the frontmatter the templates filter and sort on:
+
+{v
+---
+title: The Oyster Project
+tags: [ocaml, active]
+created: 2026-01-15
+---
+# Oyster
+
+A vault toolchain. Parsing lives in [[notes/cmarkit]], and the link syntax is
+described in [[notes/wikilinks]].
+v}
+
+{1 The rules}
+
+One rule per generated note. Each depends on the whole vault and on its own
+template:
+
+{v
+(rule
+ (targets index.md)
+ (deps
+  (source_tree vault)
+  templates/index.md.jinja)
+ (action
+  (with-stdout-to
+   index.md
+   (pipe-stdout
+    (run %{bin:oyster} context vault)
+    (run minijinja-cli --format=json templates/index.md.jinja -)))))
+
+(alias
+ (name vault-site)
+ (deps index.md tags.md health.md))
+v}
+
+Four things in that stanza are load-bearing.
+
+{2 [pipe-stdout], not [pipe-stdin]}
+
+The pipe is named for the output being redirected, so the action that connects
+one command's stdout to the next command's stdin is [pipe-stdout]. There is no
+[pipe-stdin] action.
+
+{2 [(source_tree vault)]}
+
+A template that queries the whole vault depends on every note in it. The
+dependency is therefore coarse on purpose: editing any note rebuilds every
+generated page. Fine-grained dependencies would require knowing which notes a
+template actually read, which the engine does not report.
+
+It is also correct, which a narrower dependency would not be. Adding a link to
+[projects/mlmdx.md] changes the backlink count printed for
+[notes/wikilinks.md], and the rule reruns.
+
+{2 A named alias}
+
+[minijinja-cli] is not an OCaml dependency; [(run minijinja-cli ...)] resolves
+it from [PATH]. Attaching the generated notes to their own alias rather than to
+[@default] keeps a build that never renders from needing the binary at all.
+
+{2 [%{bin:oyster}]}
+
+Resolves the executable from the workspace, so the rule does not depend on
+[oyster] being installed.
+
+{1 Templates}
+
+Group every note by directory, and annotate each with its tags and how many
+notes point at it:
+
+{v
+# {{ vault.note_count }} notes
+
+{% for dir, group in notes | groupby("dir") -%}
+## {{ dir if dir else "(root)" }}
+
+{% for n in group -%}
+- [{{ n.title }}]({{ n.path }})
+{%- if n.tags %} — {{ n.tags | join(", ") }}{% endif %}
+{%- if n.backlink_count %} · {{ n.backlink_count }} backlink(s){% endif %}
+{% endfor %}
+{% endfor -%}
+v}
+
+which produces
+
+{v
+# 4 notes
+
+## notes
+
+- [Cmarkit](notes/cmarkit.md) — ocaml, reference · 2 backlink(s)
+- [Wikilinks](notes/wikilinks.md) — reference · 2 backlink(s)
+
+## projects
+
+- [mlmdx](projects/mlmdx.md) — ocaml, paused
+- [The Oyster Project](projects/oyster.md) — ocaml, active
+v}
+
+Drive an index off the tag map instead, resolving each path through
+[notes_by_path]:
+
+{v
+{% for tag, paths in tags | items -%}
+## {{ tag }} ({{ paths | length }})
+
+{% for p in paths -%}
+- [{{ notes_by_path[p].title }}]({{ p }})
+{% endfor %}
+{% endfor -%}
+v}
+
+Or report on the graph rather than listing it:
+
+{v
+{{ vault.note_count }} notes · {{ vault.link_count }} links · {{ vault.unresolved_count }} unresolved
+
+## Unresolved links
+
+{% for u in unresolved -%}
+- `{{ u.source }}`:{{ u.line }} → `{{ u.target }}` ({{ u.reason }})
+{% endfor %}
+## Orphans
+
+{% for p in orphans -%}
+- `{{ p }}`
+{% endfor -%}
+v}
+
+{v
+4 notes · 6 links · 1 unresolved
+
+## Unresolved links
+
+- `notes/wikilinks.md`:7 → `nonexistent-note` (missing_path)
+
+## Orphans
+
+- `projects/mlmdx.md`
+- `projects/oyster.md`
+v}
+
+{1 Filtering}
+
+Selecting on a tag is a membership test on the note's [tags], not a
+[selectattr] against a list:
+
+{v
+{% for n in notes | selectattr("created") | sort(attribute="created", reverse=true) %}
+{% if "ocaml" in n.tags %}- {{ n.created }} — [{{ n.title }}]({{ n.path }})
+{% endif %}{% endfor %}
+v}
+
+[selectattr("tags", "in", \["ocaml"\])] silently matches nothing: it tests
+whether the whole [tags] list is an element of [\["ocaml"\]]. Sorting on
+[created] works directly because the dates are ISO-8601 strings — see
+{!page-"template-context".dates}.
+
+{1 Generating into the vault}
+
+Writing a generated note into the vault itself works, and does not create a
+cycle: [dune] excludes a rule's own target from the [source_tree] it depends
+on, so the generated note does not appear in the context that produced it.
+
+{v
+(subdir
+ vault
+ (rule
+  (targets generated.md)
+  (deps
+   (source_tree .)
+   ../templates/index.md.jinja)
+  (action
+   (with-stdout-to
+    generated.md
+    (pipe-stdout
+     (run %{bin:oyster} context .)
+     (run minijinja-cli --format=json ../templates/index.md.jinja -))))))
+v}
+
+Keeping generated notes outside the vault is still the simpler arrangement: it
+keeps the authored vault the thing an editor and the LSP see, and leaves no
+question about which notes are inputs.

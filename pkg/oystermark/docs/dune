@@ -34,6 +34,7 @@
   index
   vault-operations
   template-context
+  template-context-example
   tracking
   design-260322-lsp
   design-260322-tracing

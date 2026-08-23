@@ -101,8 +101,8 @@ many notes point at it without the cost compounding.
  (action
   (with-stdout-to
    index.md
-   (pipe-stdin
-    (run oyster context vault)
+   (pipe-stdout
+    (run %{bin:oyster} context vault)
     (run minijinja-cli --format=json index.md.jinja -)))))
 v}
 
@@ -111,6 +111,9 @@ that queries the whole vault depends on every note in it, so touching any note
 rebuilds every generated page. Fine-grained dependencies would require knowing
 which notes a given template actually read, which the template engine does not
 report.
+
+A worked setup — the tree, several templates, and the rules that build them —
+is in {!page-"template-context-example"}.
 
 {1 Example}
 

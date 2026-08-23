@@ -1,0 +1,14 @@
+# Vault health
+
+{{ vault.note_count }} notes · {{ vault.link_count }} links · {{ vault.unresolved_count }} unresolved
+
+## Unresolved links
+
+{% for u in unresolved -%}
+- `{{ u.source }}`:{{ u.line }} → `{{ u.target }}` ({{ u.reason }})
+{% endfor %}
+## Orphans
+
+{% for p in orphans -%}
+- `{{ p }}`
+{% endfor -%}

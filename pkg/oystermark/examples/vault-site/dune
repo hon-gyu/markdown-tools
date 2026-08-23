@@ -1,0 +1,43 @@
+; Generating a document from vault queries. Built on request, not by default:
+; the rules shell out to minijinja-cli, which is not an OCaml dependency and
+; may be absent.
+
+(rule
+ (targets index.md)
+ (deps
+  (source_tree vault)
+  templates/index.md.jinja)
+ (action
+  (with-stdout-to
+   index.md
+   (pipe-stdout
+    (run %{bin:oyster} context vault)
+    (run minijinja-cli --format=json templates/index.md.jinja -)))))
+
+(rule
+ (targets tags.md)
+ (deps
+  (source_tree vault)
+  templates/tags.md.jinja)
+ (action
+  (with-stdout-to
+   tags.md
+   (pipe-stdout
+    (run %{bin:oyster} context vault)
+    (run minijinja-cli --format=json templates/tags.md.jinja -)))))
+
+(rule
+ (targets health.md)
+ (deps
+  (source_tree vault)
+  templates/health.md.jinja)
+ (action
+  (with-stdout-to
+   health.md
+   (pipe-stdout
+    (run %{bin:oyster} context vault)
+    (run minijinja-cli --format=json templates/health.md.jinja -)))))
+
+(alias
+ (name vault-site)
+ (deps index.md tags.md health.md))
