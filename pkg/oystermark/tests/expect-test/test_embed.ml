@@ -1,31 +1,50 @@
-(** Integration tests for note embedding (![[NOTE]]).
+(** Integration tests for note embedding ([!\[\[NOTE\]\]]).
 
-    Tests the full pipeline: parse → resolve → expand → render HTML.
-    Uses [Html.of_doc] for rendering — no custom test helpers. *)
+    Tests the core pipeline: parse -> resolve -> expand.  The expanded document
+    is printed as CommonMark, with explicit markers for the transclusion
+    boundaries carried by {!Vault.Embed.embed_meta_key}. *)
 
 open! Core
 open Oystermark
-open Oystermark_render
 
-(** Build a mini-vault, run the full pipeline, render [target] to HTML.
+(** Print an expanded document without depending on a rendering package. *)
+let print_expanded_doc (doc : Cmarkit.Doc.t) : unit =
+  let rec print_block = function
+    | Cmarkit.Block.Blocks (blocks, meta) ->
+      (match Cmarkit.Meta.find Vault.Embed.embed_meta_key meta with
+       | Some { depth; source_path; fragment = _ } ->
+         printf "[embed depth=%d source=%s]\n" depth source_path;
+         List.iter blocks ~f:print_block;
+         print_endline "[/embed]"
+       | None -> List.iter blocks ~f:print_block)
+    | block ->
+      Cmarkit.Doc.make block
+      |> Parse.commonmark_of_doc
+      |> String.rstrip
+      |> print_endline
+  in
+  print_block (Cmarkit.Doc.block doc)
+;;
+
+(** Build a mini-vault, run the core pipeline, and print [target].
     [max_depth] controls embed recursion depth. *)
 let render ?(max_depth = 5) (files : (string * string) list) (target : string) : unit =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
   let index = Vault.build_index ~md_docs:docs ~other_files:[] in
   let expanded = Vault.Embed.expand_docs ~max_depth ~index docs in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
-  let resolve link_ref = Vault.Index.resolve index target link_ref in
-  print_string (Html.of_doc ~backend_blocks:true ~safe:false ~resolve doc)
+  print_expanded_doc doc
 ;;
 
 let%expect_test "full note" =
   render [ "a.md", "![[b]]"; "b.md", "Hello.\n\nWorld." ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p>Hello.</p>
-    <p>World.</p>
-    </div>
+    [embed depth=1 source=b.md]
+    Hello.
+
+    World.
+    [/embed]
     |}]
 ;;
 
@@ -37,10 +56,12 @@ let%expect_test "heading section" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <h2 id="sec">Sec</h2>
-    <p>Content.</p>
-    </div>
+    [embed depth=1 source=b.md]
+    ## Sec
+
+    Content.
+
+    [/embed]
     |}]
 ;;
 
@@ -50,9 +71,9 @@ let%expect_test "block ref" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p id="^myblock">Target. ^myblock</p>
-    </div>
+    [embed depth=1 source=b.md]
+    Target. ^myblock
+    [/embed]
     |}]
 ;;
 
@@ -64,11 +85,9 @@ let%expect_test "attribute anchor: block" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <blockquote>
-    <p>An aside.</p>
-    </blockquote>
-    </div>
+    [embed depth=1 source=b.md]
+    > An aside.
+    [/embed]
     |}]
 ;;
 
@@ -79,15 +98,15 @@ let%expect_test "attribute anchor: inline span" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p>The <span id="kt">key term</span> matters.</p>
-    </div>
+    [embed depth=1 source=b.md]
+    The key term{#kt} matters.
+    [/embed]
     |}]
 ;;
 
 let%expect_test "max_depth=0: fallback link" =
   render ~max_depth:0 [ "a.md", "![[b]]"; "b.md", "Should not appear." ] "a.md";
-  [%expect {| <p><a href="/b/">b</a></p> |}]
+  [%expect {| [[b]] |}]
 ;;
 
 let%expect_test "max_depth=1: inner embed becomes link" =
@@ -97,10 +116,11 @@ let%expect_test "max_depth=1: inner embed becomes link" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p>B content.</p>
-    <p><a href="/c/">c</a></p>
-    </div>
+    [embed depth=1 source=b.md]
+    B content.
+
+    [[c]]
+    [/embed]
     |}]
 ;;
 
@@ -108,11 +128,11 @@ let%expect_test "self-embed: terminates at max_depth" =
   render ~max_depth:2 [ "a.md", "![[a]]" ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="embed" data-embed-depth="2">
-    <p><a href="/a/">a</a></p>
-    </div>
-    </div>
+    [embed depth=1 source=a.md]
+    [embed depth=2 source=a.md]
+    [[a]]
+    [/embed]
+    [/embed]
     |}]
 ;;
 
@@ -120,32 +140,32 @@ let%expect_test "mutual cycle A↔B: terminates at max_depth" =
   render ~max_depth:2 [ "a.md", "![[b]]"; "b.md", "![[a]]" ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="embed" data-embed-depth="2">
-    <p><a href="/b/">b</a></p>
-    </div>
-    </div>
+    [embed depth=1 source=b.md]
+    [embed depth=2 source=a.md]
+    [[b]]
+    [/embed]
+    [/embed]
     |}]
 ;;
 
 let%expect_test "unresolved embed stays as unresolved link" =
   render [ "a.md", "![[no-such-note]]" ] "a.md";
-  [%expect {| <p><a href="#" class="unresolved">no-such-note</a></p> |}]
+  [%expect {| ![[no-such-note]] |}]
 ;;
 
-let%expect_test "media embed is rendered by HTML (not expanded)" =
+let%expect_test "media embed is not expanded" =
   render [ "a.md", "![[img.png]]" ] "a.md";
-  [%expect {| <p><a href="#" class="unresolved">img.png</a></p> |}]
+  [%expect {| ![[img.png]] |}]
 ;;
 
 let%expect_test "non-embed wikilink is unchanged" =
   render [ "a.md", "[[b]]"; "b.md", "B content." ] "a.md";
-  [%expect {| <p><a href="/b/">b</a></p> |}]
+  [%expect {| [[b]] |}]
 ;;
 
 let%expect_test "embed mixed with other content stays as paragraph" =
   render [ "a.md", "See ![[b]] here."; "b.md", "B." ] "a.md";
-  [%expect {| <p>See <a href="/b/">b</a> here.</p> |}]
+  [%expect {| See ![[b]] here. |}]
 ;;
 
 let%expect_test "self-reference: embed current heading" =
@@ -155,14 +175,20 @@ let%expect_test "self-reference: embed current heading" =
     "a.md";
   [%expect
     {|
-    <h2 id="intro">Intro</h2>
-    <p>Some text.</p>
-    <h2 id="section">Section</h2>
-    <p>Content.</p>
-    <div class="embed" data-embed-depth="1">
-    <h2 id="intro">Intro</h2>
-    <p>Some text.</p>
-    </div>
+    ## Intro
+
+    Some text.
+
+    ## Section
+
+    Content.
+
+    [embed depth=1 source=a.md]
+    ## Intro
+
+    Some text.
+
+    [/embed]
     |}]
 ;;
 
@@ -173,11 +199,13 @@ let%expect_test "self-reference: embed current block" =
     "a.md";
   [%expect
     {|
-    <p id="^myid">Target paragraph. ^myid</p>
-    <p>Other text.</p>
-    <div class="embed" data-embed-depth="1">
-    <p id="^myid">Target paragraph. ^myid</p>
-    </div>
+    Target paragraph. ^myid
+
+    Other text.
+
+    [embed depth=1 source=a.md]
+    Target paragraph. ^myid
+    [/embed]
     |}]
 ;;
 
@@ -185,11 +213,13 @@ let%expect_test "self-reference: embed current file" =
   render ~max_depth:2 [ "a.md", "Hello.\n\n![[]]" ] "a.md";
   [%expect
     {|
-    <p>Hello.</p>
-    <div class="embed" data-embed-depth="1">
-    <p>Hello.</p>
-    <p><a href=""></a></p>
-    </div>
+    Hello.
+
+    [embed depth=1 source=a.md]
+    Hello.
+
+    ![[]]
+    [/embed]
     |}]
 ;;
 
@@ -199,10 +229,11 @@ let%expect_test "image embed: full note via ![](b.md)" =
   render [ "a.md", "![](b.md)"; "b.md", "Hello.\n\nWorld." ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p>Hello.</p>
-    <p>World.</p>
-    </div>
+    [embed depth=1 source=b.md]
+    Hello.
+
+    World.
+    [/embed]
     |}]
 ;;
 
@@ -214,10 +245,12 @@ let%expect_test "image embed: heading section via ![](b.md#Sec)" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <h2 id="sec">Sec</h2>
-    <p>Content.</p>
-    </div>
+    [embed depth=1 source=b.md]
+    ## Sec
+
+    Content.
+
+    [/embed]
     |}]
 ;;
 
@@ -227,31 +260,31 @@ let%expect_test "image embed: block ref via ![](b.md#^myblock)" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <p id="^myblock">Target. ^myblock</p>
-    </div>
+    [embed depth=1 source=b.md]
+    Target. ^myblock
+    [/embed]
     |}]
 ;;
 
 let%expect_test "image embed: max_depth=0 keeps original image" =
   render ~max_depth:0 [ "a.md", "![](b.md)"; "b.md", "Should not appear." ] "a.md";
-  [%expect {| <p><a href="/b/"><img src="/b/" alt=""/></a></p> |}]
+  [%expect {| ![](b.md) |}]
 ;;
 
 let%expect_test "image embed: non-note file is NOT expanded" =
   render [ "a.md", "![photo](img.png)" ] "a.md";
-  [%expect {| <p><a href="#"><img src="#" alt="photo"/></a></p> |}]
+  [%expect {| ![photo](img.png) |}]
 ;;
 
 let%expect_test "image embed: nested — image inside wikilink embed" =
   render [ "a.md", "![[b]]"; "b.md", "![](c.md)"; "c.md", "Inner content." ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="embed" data-embed-depth="2">
-    <p>Inner content.</p>
-    </div>
-    </div>
+    [embed depth=1 source=b.md]
+    [embed depth=2 source=c.md]
+    Inner content.
+    [/embed]
+    [/embed]
     |}]
 ;;
 
@@ -325,16 +358,11 @@ let%expect_test "block ref: keyed subtree" =
     "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain" data-body="list"><span class="keyed-label">topic</span>
-    <div class="keyed-body">
-    <ul>
-    <li>one</li>
-    <li>two</li>
-    </ul>
-    </div>
-    </div>
-    </div>
+    [embed depth=1 source=b.md]
+    topic: ^k
+    - one
+    - two
+    [/embed]
     |}]
 ;;
 
@@ -342,16 +370,11 @@ let%expect_test "block ref: keyed list item" =
   render [ "a.md", "![[b#^k]]"; "b.md", "- other\n- topic: ^k\n  - one\n  - two" ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain" data-body="list"><span class="keyed-label">topic</span>
-    <div class="keyed-body">
-    <ul>
-    <li>one</li>
-    <li>two</li>
-    </ul>
-    </div>
-    </div>
-    </div>
+    [embed depth=1 source=b.md]
+    topic: ^k
+    - one
+    - two
+    [/embed]
     |}]
 ;;
 
@@ -361,18 +384,9 @@ let%expect_test "block ref: keyed chain" =
   render [ "a.md", "![[b#^k]]"; "b.md", "outer: inner: ^k\n- leaf" ] "a.md";
   [%expect
     {|
-    <div class="embed" data-embed-depth="1">
-    <div class="keyed" id="^k" data-label-kind="paragraph" data-style="plain"><span class="keyed-label">outer</span>
-    <div class="keyed-body">
-    <div class="keyed" data-label-kind="paragraph" data-style="plain" data-body="list" data-single-list-item><span class="keyed-label">inner</span>
-    <div class="keyed-body">
-    <ul>
-    <li>leaf</li>
-    </ul>
-    </div>
-    </div>
-    </div>
-    </div>
-    </div>
+    [embed depth=1 source=b.md]
+    outer: inner: ^k
+    - leaf
+    [/embed]
     |}]
 ;;
