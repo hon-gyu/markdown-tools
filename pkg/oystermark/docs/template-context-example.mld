@@ -312,10 +312,3 @@ contain. And [dune] caches the result, so a script that reads the clock, the
 network, or the environment makes the build depend on something the build
 cannot see. Keep executed blocks deterministic, or accept that the page is a
 snapshot of whenever it last ran.
-
-{1 What counts as a note}
-
-Only [.md] files are notes. Everything else in the directory — [folding.svg]
-here, but also [dune] and the [.jinja] templates themselves — is an asset, and
-shows up under [assets] rather than [notes]. Templates that iterate [notes] are
-unaffected; a template that lists [assets] will see its own source.
