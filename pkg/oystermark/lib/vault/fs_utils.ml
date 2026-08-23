@@ -4,6 +4,16 @@ open Core
 
 let ignored_directories = [ ".git"; ".obsidian"; ".oyster"; ".trash"; ".history" ]
 
+(** [mtime_date path] is the local-time [(year, month, day)] of [path]'s last
+    modification, or [None] when [path] cannot be stat'd. *)
+let mtime_date (path : string) : (int * int * int) option =
+  match Core_unix.stat path with
+  | exception _ -> None
+  | stat ->
+    let tm = Core_unix.localtime stat.st_mtime in
+    Some (tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)
+;;
+
 (** [walk ~root ()] returns the vault-relative paths below [root]. Directory
     paths end in [/]. Ignored directories and dotfiles are omitted. *)
 let rec walk ~(root : string) ?(rel_prefix = "") () : string list =

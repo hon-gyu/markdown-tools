@@ -12,10 +12,7 @@ type t =
   ; vault_meta : Cmarkit.Meta.t
   }
 
-let docs : t -> (string * Cmarkit.Doc.t) list =
-  fun vault -> Map.to_alist vault.documents
-;;
-
+let docs : t -> (string * Cmarkit.Doc.t) list = fun vault -> Map.to_alist vault.documents
 let find_doc (vault : t) path = Map.find vault.documents path
 
 open struct
@@ -24,15 +21,21 @@ open struct
   ;;
 end
 
-let build_index ~(md_docs : (string * Cmarkit.Doc.t) list) ~(other_files : string list)
+(** @param stat_of_path how each vault-relative path becomes a {!Index.file_stat};
+    defaults to a dateless stat, for callers that do no IO. *)
+let build_index
+      ?(stat_of_path : Index.Path.t -> Index.file_stat = fun path -> file_stat path)
+      ~(md_docs : (string * Cmarkit.Doc.t) list)
+      ~(other_files : string list)
+      ()
   : Index.t
   =
   let index =
     List.fold md_docs ~init:Index.empty ~f:(fun index (path, doc) ->
-      Index.set_note index (Index.Note.of_doc_exn (file_stat path) doc))
+      Index.set_note index (Index.Note.of_doc_exn (stat_of_path path) doc))
   in
   List.fold other_files ~init:index ~f:(fun index path ->
-    Index.set_asset index (Index.Asset.create (file_stat path)))
+    Index.set_asset index (Index.Asset.create (stat_of_path path)))
 ;;
 
 let set_doc (vault : t) path doc : t =
@@ -93,7 +96,10 @@ let of_root_path
   let other_files =
     List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))
   in
-  let index = build_index ~md_docs:parsed_docs ~other_files in
+  let stat_of_path path =
+    file_stat ~mtime:(Fs_utils.mtime_date (Filename.concat vault_root path)) path
+  in
+  let index = build_index ~stat_of_path ~md_docs:parsed_docs ~other_files () in
   let vault =
     { vault_root
     ; index
@@ -117,7 +123,7 @@ let of_files
   let parsed_docs =
     List.map md_files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
   in
-  let index = build_index ~md_docs:parsed_docs ~other_files in
+  let index = build_index ~md_docs:parsed_docs ~other_files () in
   { vault_root
   ; index
   ; documents = String.Map.of_alist_exn parsed_docs

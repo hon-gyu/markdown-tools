@@ -1,4 +1,4 @@
 (library
  (name oystermark)
  (public_name oystermark)
- (libraries parse vault))
+ (libraries parse vault context))

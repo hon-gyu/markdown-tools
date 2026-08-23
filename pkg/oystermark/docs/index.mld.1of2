@@ -28,6 +28,13 @@ See {!Oystermark.Vault}.
 Shared link queries, graph statistics, and rename plans are specified in
 {!page-"vault-operations"}.
 
+{2 Context}
+
+A vault snapshot as JSON, for a Jinja template to compute a document from —
+generated index pages, tables of contents, tag listings.
+
+See {!Oystermark.Context} and {!page-"template-context"}.
+
 {1 Other pages}
 
 {2 Reference Specifications of Common CommonMark Extensions}

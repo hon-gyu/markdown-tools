@@ -18,10 +18,7 @@ let print_expanded_doc (doc : Cmarkit.Doc.t) : unit =
          print_endline "[/embed]"
        | None -> List.iter blocks ~f:print_block)
     | block ->
-      Cmarkit.Doc.make block
-      |> Parse.commonmark_of_doc
-      |> String.rstrip
-      |> print_endline
+      Cmarkit.Doc.make block |> Parse.commonmark_of_doc |> String.rstrip |> print_endline
   in
   print_block (Cmarkit.Doc.block doc)
 ;;
@@ -30,7 +27,7 @@ let print_expanded_doc (doc : Cmarkit.Doc.t) : unit =
     [max_depth] controls embed recursion depth. *)
 let render ?(max_depth = 5) (files : (string * string) list) (target : string) : unit =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] () in
   let expanded = Vault.Embed.expand_docs ~max_depth ~index docs in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
   print_expanded_doc doc
@@ -295,7 +292,7 @@ let render_reversed ?(max_depth = 5) (files : (string * string) list) (target : 
   : unit
   =
   let docs = List.map files ~f:(fun (path, content) -> path, Parse.of_string content) in
-  let index = Vault.build_index ~md_docs:docs ~other_files:[] in
+  let index = Vault.build_index ~md_docs:docs ~other_files:[] () in
   let expanded = Vault.Embed.expand_docs ~max_depth ~index docs in
   let doc = List.Assoc.find_exn expanded ~equal:String.equal target in
   let reversed = Vault.Embed.reverse_embed_doc doc in

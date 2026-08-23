@@ -128,9 +128,61 @@ let loc_of_meta meta =
   if Cmarkit.Textloc.is_none loc then None else Some loc
 ;;
 
+(** Frontmatter accessors *)
+module Frontmatter_ = struct
+  let field (fm : Yaml.value option) (key : string) : Yaml.value option =
+    match fm with
+    | Some (`O fields) -> List.Assoc.find fields key ~equal:String.equal
+    | _ -> None
+  ;;
+
+  (** A YAML scalar as a string. [None] for a sequence or a mapping. *)
+  let scalar : Yaml.value option -> string option = function
+    | Some (`String s) -> Some s
+    | Some (`Float f) ->
+      (* YAML has a single number type, so an authored [2026] arrives as a
+         float. Render integral values without the [.] so they round-trip. *)
+      Some
+        (if Float.equal f (Float.round_down f) && Float.( < ) (Float.abs f) 1e16
+         then Int.to_string (Float.to_int f)
+         else Float.to_string f)
+    | Some (`Bool b) -> Some (Bool.to_string b)
+    | _ -> None
+  ;;
+
+  (** A YAML value as a list of strings: a sequence maps its scalar items, a
+      string splits on commas and spaces, and any other scalar is a single
+      element. *)
+  let string_list (v : Yaml.value option) : string list =
+    match v with
+    | Some (`A items) -> List.filter_map items ~f:(fun i -> scalar (Some i))
+    | Some (`String s) ->
+      String.split_on_chars s ~on:[ ','; ' ' ]
+      |> List.filter_map ~f:(fun s ->
+        let s = String.strip s in
+        if String.is_empty s then None else Some s)
+    | other -> Option.to_list (scalar other)
+  ;;
+
+  (** A [YYYY-MM-DD] or [YYYY/MM/DD] scalar. A trailing time is ignored. *)
+  let date (v : Yaml.value option) : (int * int * int) option =
+    let open Option.Let_syntax in
+    let%bind s = scalar v in
+    let head = String.strip s |> String.split_on_chars ~on:[ ' '; 'T' ] |> List.hd_exn in
+    match String.split_on_chars head ~on:[ '-'; '/' ] with
+    | [ y; m; d ] ->
+      let%bind y = Int.of_string_opt y in
+      let%bind m = Int.of_string_opt m in
+      let%map d = Int.of_string_opt d in
+      y, m, d
+    | _ -> None
+  ;;
+end
+
 module Note = struct
   type t =
     { file_stat : file_stat
+    ; frontmatter : Yaml.value option
     ; anchors : Anchor.t list
     ; links : Link.t list
     }
@@ -217,7 +269,13 @@ module Note = struct
     ignore (Cmarkit.Folder.fold_doc folder () doc : unit);
     if !missing_loc
     then Error "document is missing source locations"
-    else Ok { file_stat; anchors = List.rev !anchors; links = List.rev !links }
+    else
+      Ok
+        { file_stat
+        ; frontmatter = Frontmatter.of_doc doc
+        ; anchors = List.rev !anchors
+        ; links = List.rev !links
+        }
   ;;
 
   let of_doc_exn (file_stat : file_stat) (doc : Cmarkit.Doc.t) : t =
@@ -226,6 +284,72 @@ module Note = struct
 
   let path : t -> Path.t = fun note -> note.file_stat.rel_path
   let file_stat : t -> file_stat = fun note -> note.file_stat
+
+  (** Parsed YAML frontmatter, when the note opens with a frontmatter block. *)
+  let frontmatter : t -> Yaml.value option = fun note -> note.frontmatter
+
+  let frontmatter_field (note : t) (key : string) : Yaml.value option =
+    Frontmatter_.field note.frontmatter key
+  ;;
+
+  (** Tags declared in the frontmatter [tags] key, with duplicates removed. *)
+  let tags (note : t) : string list =
+    Frontmatter_.string_list (frontmatter_field note "tags")
+    |> List.fold ~init:([], String.Set.empty) ~f:(fun (acc, seen) tag ->
+      if Set.mem seen tag then acc, seen else tag :: acc, Set.add seen tag)
+    |> fst
+    |> List.rev
+  ;;
+
+  (** The note's creation date, as [(year, month, day)].
+
+      Read from the frontmatter [created] key, then [date], then whatever the
+      loader recorded as {!type-file_stat}'s [birthtime]. *)
+  let created (note : t) : (int * int * int) option =
+    List.find_map
+      [ lazy (Frontmatter_.date (frontmatter_field note "created"))
+      ; lazy (Frontmatter_.date (frontmatter_field note "date"))
+      ; lazy note.file_stat.birthtime
+      ]
+      ~f:force
+  ;;
+
+  (** The note's modification date, as [(year, month, day)].
+
+      Read from the frontmatter [updated] key, then whatever the loader
+      recorded as {!type-file_stat}'s [mtime]. *)
+  let modified (note : t) : (int * int * int) option =
+    Option.first_some
+      (Frontmatter_.date (frontmatter_field note "updated"))
+      note.file_stat.mtime
+  ;;
+
+  (** The note's display title.
+
+      Resolved in order of authorial intent:
+        explicit frontmatter [title]
+        > first level-1 heading
+        > basename without its extension
+        *)
+  let title (note : t) : string =
+    let from_heading () =
+      List.find_map note.anchors ~f:(fun a ->
+        match a.Anchor.value with
+        | Heading h when h.level = 1 -> Some h.text
+        | _ -> None)
+    in
+    let from_basename () =
+      let base = Path.basename (path note) in
+      match String.rsplit2 base ~on:'.' with
+      (* A leading dot marks a hidden file, not an extension: the stem of
+         [.hidden] is [.hidden], not the empty string. *)
+      | Some ("", _) | None -> base
+      | Some (stem, _) -> stem
+    in
+    match Frontmatter_.scalar (frontmatter_field note "title") with
+    | Some t when not (String.is_empty (String.strip t)) -> t
+    | _ -> Option.value_or_thunk (from_heading ()) ~default:from_basename
+  ;;
 
   (** all authored anchor occurrence (including duplicates) in document order *)
   let anchors (note : t) : Anchor.t list = note.anchors
@@ -282,48 +406,19 @@ let target_path : target -> Path.t = function
   | Anchor { note_path; _ } -> note_path
 ;;
 
+(** Every resolved incoming edge in the vault, bucketed by the {e path} of the
+    target it resolves to. *)
+type backlink_map = (target * backlink) list String.Map.t
+
 type t =
   { notes_by_path : Note.t String.Map.t
   ; assets_by_path : Asset.t String.Map.t
+  ; backlinks : backlink_map Lazy.t
+    (* Resolving every link in the vault is [O(notes + links)] and each
+        reverse-reference query needs the whole result, so a snapshot computes
+        it at most once and shares it. Laziness keeps snapshots that are only
+        written to (the LSP's incremental updates) from paying for it. *)
   }
-
-let empty : t = { notes_by_path = String.Map.empty; assets_by_path = String.Map.empty }
-
-(** Insert or replace the note at its canonical path, removing any asset at the same path.
-
-- atomically update its anchors and outgoing occurrences;
-- update all reverse-reference queries affected by the change;
-- return a new index snapshot;
-- leave the old snapshot valid and unchanged.
-
-The result of any update sequence is observationally equivalent to rebuilding the index
-from its resulting notes and assets.
- *)
-let set_note : t -> Note.t -> t =
-  fun t n ->
-  let p = Note.path n in
-  { notes_by_path = Map.set t.notes_by_path ~key:p ~data:n
-  ; assets_by_path = Map.remove t.assets_by_path p
-  }
-;;
-
-(** remove a note from the index. no-op when absent *)
-let remove_note : t -> Path.t -> t =
-  fun t p -> { t with notes_by_path = Map.remove t.notes_by_path p }
-;;
-
-(** Insert or replace the asset at its canonical path, removing any note at the same path. *)
-let set_asset : t -> Asset.t -> t =
-  fun t a ->
-  let p = Asset.path a in
-  { notes_by_path = Map.remove t.notes_by_path p
-  ; assets_by_path = Map.set t.assets_by_path ~key:p ~data:a
-  }
-;;
-
-let remove_asset : t -> Path.t -> t =
-  fun t p -> { t with assets_by_path = Map.remove t.assets_by_path p }
-;;
 
 let note_of_path : t -> Path.t -> Note.t option = fun t p -> Map.find t.notes_by_path p
 
@@ -472,6 +567,62 @@ let resolve (index : t) (source : Path.t) (ref : Link_ref.t) : resolution =
             ~f:(fun anchor -> Ok (Anchor { note_path = p; anchor }))))
 ;;
 
+(** Resolve every authored link in the vault once, bucketed by target path.
+
+    Notes are visited in ascending canonical path order and their links in
+    document order; each bucket preserves that order. *)
+let compute_backlinks (index : t) : backlink_map =
+  List.fold (notes index) ~init:String.Map.empty ~f:(fun acc note ->
+    let source = Note.path note in
+    List.fold (Note.links note) ~init:acc ~f:(fun acc link ->
+      match resolve index source link.reference with
+      | Error _ -> acc
+      | Ok target ->
+        Map.add_multi acc ~key:(target_path target) ~data:(target, { source; link })))
+  (* [add_multi] prepends, so each bucket is built in reverse. *)
+  |> Map.map ~f:List.rev
+;;
+
+(** Build a snapshot from its two path maps, tying the lazy reverse index to it. *)
+let make notes_by_path assets_by_path : t =
+  let rec t = { notes_by_path; assets_by_path; backlinks = lazy (compute_backlinks t) } in
+  t
+;;
+
+let empty : t = make String.Map.empty String.Map.empty
+
+(** Insert or replace the note at its canonical path, removing any asset at the same path.
+
+- atomically update its anchors and outgoing occurrences;
+- update all reverse-reference queries affected by the change;
+- return a new index snapshot;
+- leave the old snapshot valid and unchanged.
+
+The result of any update sequence is observationally equivalent to rebuilding the index
+from its resulting notes and assets.
+ *)
+let set_note : t -> Note.t -> t =
+  fun t n ->
+  let p = Note.path n in
+  make (Map.set t.notes_by_path ~key:p ~data:n) (Map.remove t.assets_by_path p)
+;;
+
+(** remove a note from the index. no-op when absent *)
+let remove_note : t -> Path.t -> t =
+  fun t p -> make (Map.remove t.notes_by_path p) t.assets_by_path
+;;
+
+(** Insert or replace the asset at its canonical path, removing any note at the same path. *)
+let set_asset : t -> Asset.t -> t =
+  fun t a ->
+  let p = Asset.path a in
+  make (Map.remove t.notes_by_path p) (Map.set t.assets_by_path ~key:p ~data:a)
+;;
+
+let remove_asset : t -> Path.t -> t =
+  fun t p -> make t.notes_by_path (Map.remove t.assets_by_path p)
+;;
+
 let unresolved_links (index : t) (note_path : Path.t) : (Link.t * resolution_error) list =
   let path = note_path in
   Option.value_map (find_note index path) ~default:[] ~f:(fun n ->
@@ -481,13 +632,15 @@ let unresolved_links (index : t) (note_path : Path.t) : (Link.t * resolution_err
       | Error e -> Some (l, e)))
 ;;
 
-let all_backlinks index =
-  List.concat_map (notes index) ~f:(fun note ->
-    Note.links note
-    |> List.filter_map ~f:(fun link ->
-      match resolve index (Note.path note) link.reference with
-      | Error _ -> None
-      | Ok target -> Some (target, { source = Note.path note; link })))
+(** Every resolved edge in the vault, in ascending source path order and then
+    document order. *)
+let all_backlinks (index : t) : (target * backlink) list =
+  Map.data (force index.backlinks) |> List.concat
+;;
+
+(** The resolved edges landing on [path], whatever target kind they name. *)
+let backlinks_at_path (index : t) (path : Path.t) : (target * backlink) list =
+  Map.find (force index.backlinks) path |> Option.value ~default:[]
 ;;
 
 (**
@@ -497,19 +650,18 @@ let all_backlinks index =
 let backlinks_of_note ?(include_anchors : bool = false) (index : t) (tgt_path : Path.t)
   : backlink list
   =
-  let tgt = tgt_path in
-  List.filter_map (all_backlinks index) ~f:(fun (target, b) ->
+  List.filter_map (backlinks_at_path index tgt_path) ~f:(fun (target, b) ->
     match target with
-    | Note p when Path.equal p tgt -> Some b
-    | Anchor { note_path; _ } when include_anchors && Path.equal note_path tgt -> Some b
+    | Note _ -> Some b
+    | Anchor _ when include_anchors -> Some b
     | _ -> None)
 ;;
 
 (** @return incoming links {b to} [target], in document order *)
 let backlinks_of_target (index : t) (target : target) : backlink list =
-  let wanted = target in
-  List.filter_map (all_backlinks index) ~f:(fun (target, b) ->
-    if equal_target target wanted then Some b else None)
+  List.filter_map
+    (backlinks_at_path index (target_path target))
+    ~f:(fun (t, b) -> if equal_target t target then Some b else None)
 ;;
 
 (** A note is orphaned when no successfully resolved ordinary link or embed from a different

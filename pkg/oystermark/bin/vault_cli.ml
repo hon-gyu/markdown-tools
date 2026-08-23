@@ -222,11 +222,32 @@ let heading_target (vault : Vault.t) path heading =
   ({ path; subject = Heading { slug = heading.slug } } : Vault.Rename.target)
 ;;
 
+(** Emit the vault as a Jinja template context on stdout.
+
+    Rendering is left to a Jinja engine invoked by the build system, so that
+    this executable stays a pure query over a snapshot and gains no runtime
+    dependency on a template binary. See {!page-"template-context"}. *)
+let context_command =
+  Command.basic
+    ~summary:"Print the vault as a JSON template context"
+    (let%map_open.Command root = vault_param
+     and compact =
+       flag "-compact" no_arg ~doc:" emit one line instead of indented JSON"
+     in
+     fun () ->
+       let json = Oystermark.Context.of_vault (load root) in
+       print_endline
+         (if compact
+          then Yojson.Safe.to_string json
+          else Yojson.Safe.pretty_to_string json))
+;;
+
 let command =
   Command.group
     ~summary:"Inspect and rename notes in an OysterMark vault"
     [ "unresolved", unresolved_command
     ; "stats", stats_command
+    ; "context", context_command
     ; "rename-note", rename_note_command
     ; ( "rename-heading"
       , rename_command

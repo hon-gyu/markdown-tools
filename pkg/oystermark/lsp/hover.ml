@@ -740,7 +740,7 @@ let%test_module "hover" =
         List.filter_map files ~f:(fun (p, _) ->
           if String.is_suffix p ~suffix:".md" then None else Some p)
       in
-      Oystermark.Vault.build_index ~md_docs ~other_files
+      Oystermark.Vault.build_index ~md_docs ~other_files ()
     ;;
 
     let index = make_index files

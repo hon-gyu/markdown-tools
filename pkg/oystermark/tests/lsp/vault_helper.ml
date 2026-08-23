@@ -15,5 +15,5 @@ let make_index (files : (string * string) list) : Oystermark.Vault.Index.t =
     List.filter_map files ~f:(fun (p, _) ->
       if not (String.is_suffix p ~suffix:".md") then Some p else None)
   in
-  Oystermark.Vault.build_index ~md_docs ~other_files
+  Oystermark.Vault.build_index ~md_docs ~other_files ()
 ;;

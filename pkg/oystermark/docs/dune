@@ -43,6 +43,7 @@
  (mld_files
   index
   vault-operations
+  template-context
   code-exec-cache-design
   tracking
   design-260322-lsp

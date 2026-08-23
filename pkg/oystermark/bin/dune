@@ -3,6 +3,6 @@
  (package oystermark)
  (name vault_cli)
  (modules vault_cli)
- (libraries oystermark core core_unix core_unix.command_unix)
+ (libraries oystermark core core_unix core_unix.command_unix yojson)
  (preprocess
   (pps ppx_jane)))

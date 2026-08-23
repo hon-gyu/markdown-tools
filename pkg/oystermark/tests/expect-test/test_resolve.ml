@@ -49,6 +49,7 @@ let test_index : Index.t =
       ; "Something"
       ; "Note 1"
       ]
+    ()
 ;;
 
 let make_link_ref

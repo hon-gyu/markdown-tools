@@ -292,7 +292,7 @@ module For_test = struct
       List.filter_map files ~f:(fun (p, _) ->
         if not (String.is_suffix p ~suffix:".md") then Some p else None)
     in
-    let index = Oystermark.Vault.build_index ~md_docs ~other_files in
+    let index = Oystermark.Vault.build_index ~md_docs ~other_files () in
     index, md_docs
   ;;
 end
