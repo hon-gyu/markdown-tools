@@ -43,7 +43,6 @@
  (mld_files
   index
   vault-operations
-  self-describing-note-gen
   code-exec-cache-design
   tracking
   design-260322-lsp

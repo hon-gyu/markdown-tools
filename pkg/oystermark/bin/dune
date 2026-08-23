@@ -6,19 +6,3 @@
  (libraries oystermark core core_unix core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
-
-(executable
- (public_name md2script)
- (package oystermark)
- (name md2script_cli)
- (modules md2script_cli)
- (libraries
-  parse
-  oymarkit
-  core
-  core_unix
-  core_unix.command_unix
-  core_unix.filename_unix
-  yaml)
- (preprocess
-  (pps ppx_jane)))
