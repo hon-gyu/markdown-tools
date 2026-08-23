@@ -124,7 +124,7 @@ let%test_module "collect_links" =
 
     let%expect_test "wikilink with fragment" =
       show "go to [[Note#Heading]] now";
-      [%expect {| [6-21] ((target(Note))(fragment((Heading(Heading))))) |}]
+      [%expect {| [6-21] ((target(Note))(fragment((Hash_path(Heading))))) |}]
     ;;
 
     let%expect_test "markdown link" =

@@ -632,7 +632,7 @@ let%test_module "configuration" =
             "diagnostics": {"unresolvedFragment": "strict"} }|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Strict)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Strict)
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -650,7 +650,7 @@ let%test_module "configuration" =
       show {|{"dailyNotes": {"linkAction": "no"}}|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -676,7 +676,7 @@ let%test_module "configuration" =
       show {|{"disable": "yes"}|};
       [%expect
         {|
-        ((disable true) (gtd_unresolved_fragment Fallback)
+        ((disable true) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -684,7 +684,7 @@ let%test_module "configuration" =
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -708,7 +708,7 @@ let%test_module "configuration" =
             "dailyNotes": {"format": 42, "folder": "  "} }|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -729,7 +729,7 @@ let%test_module "configuration" =
       show {|{"hover": {"maxChars": 0}}|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -747,7 +747,7 @@ let%test_module "configuration" =
       show {|{"dailynotes": {}, "hover": {"maxchars": 10}, "disabled": true}|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -766,7 +766,7 @@ let%test_module "configuration" =
       show {|{"dailyNotes": []}|};
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -775,7 +775,7 @@ let%test_module "configuration" =
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -807,7 +807,7 @@ let%test_module "configuration" =
       print_s [%sexp (resolve (Partial.merge ~lower:client ~upper:file) : t)];
       [%expect
         {|
-        ((disable false) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)

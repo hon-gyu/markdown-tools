@@ -359,42 +359,50 @@ let hover
       List.find_exn links ~f:(fun ll -> ll.first_byte <= offset && offset <= ll.last_byte)
     in
     let target = Oystermark.Vault.Index.resolve index rel_path link_ref in
-    (* Determine which file to read and which portion to extract. *)
+    (* An image, or any other file whose bytes are not text, is described
+       rather than shown — fragment and all, since there is nothing inside
+       one for a fragment to name.  See {!page-"feature-hover".images}. *)
+    let image_hover path =
+      match read_file path with
+      | None -> None
+      | Some file_content ->
+        let label, mime = Option.value_exn (Media.of_path path) in
+        Some (path, Fixed (Media.image_body ~config ~path ~mime ~label file_content))
+    in
+    let file_hover path =
+      match read_file path with
+      | None -> None
+      | Some file_content when Media.looks_binary file_content ->
+        Some (path, Fixed (Media.describe ~label:"Binary file" file_content))
+      | Some file_content ->
+        let body =
+          match link_ref.fragment with
+          | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
+            (* Fragment present but resolve fell back — try to find section. *)
+            let slug =
+              String.concat
+                ~sep:"-"
+                (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
+            in
+            Option.value (heading_section ~slug file_content) ~default:file_content
+          | Some (Caret_id bid) ->
+            (match extract_block ~block_id:bid file_content with
+             | Some p -> p
+             | None -> file_content)
+          | None -> file_content
+        in
+        Some (path, Text body)
+    in
     let result_opt =
       match target with
-      | Error _ -> None
-      (* An image, or any other file whose bytes are not text, is described
-         rather than shown — fragment and all, since there is nothing inside
-         one for a fragment to name.  See {!page-"feature-hover".images}. *)
-      | Ok (Oystermark.Vault.Index.Asset path) when Option.is_some (Media.of_path path) ->
-        (match read_file path with
-         | None -> None
-         | Some file_content ->
-           let label, mime = Option.value_exn (Media.of_path path) in
-           Some (path, Fixed (Media.image_body ~config ~path ~mime ~label file_content)))
-      | Ok (Note path | Asset path) ->
-        (match read_file path with
-         | None -> None
-         | Some file_content when Media.looks_binary file_content ->
-           Some (path, Fixed (Media.describe ~label:"Binary file" file_content))
-         | Some file_content ->
-           let body =
-             match link_ref.fragment with
-             | Some (Oystermark.Vault.Link_ref.Hash_path hs) ->
-               (* Fragment present but resolve fell back — try to find section. *)
-               let slug =
-                 String.concat
-                   ~sep:"-"
-                   (List.map hs ~f:Oystermark.Parse.Common.heading_id_of_text)
-               in
-               Option.value (heading_section ~slug file_content) ~default:file_content
-             | Some (Caret_id bid) ->
-               (match extract_block ~block_id:bid file_content with
-                | Some p -> p
-                | None -> file_content)
-             | None -> file_content
-           in
-           Some (path, Text body))
+      | Error Missing_path -> None
+      (* A fragment naming nothing still leaves its file identified, so hover
+         shows that file: an image is described, a note falls back to its full
+         content.  See {!page-"feature-hover"} edge cases. *)
+      | (Ok (Oystermark.Vault.Index.Asset path) | Error (Missing_anchor path))
+        when Option.is_some (Media.of_path path) -> image_hover path
+      | Error (Missing_anchor path) -> file_hover path
+      | Ok (Note path | Asset path) -> file_hover path
       | Ok (Anchor { note_path = path; anchor }) ->
         let target_content =
           if String.equal path rel_path then Some content else read_file path
@@ -842,6 +850,29 @@ let%test_module "hover" =
       let content = "See [[missing]]." in
       show ~rel_path:"note-b.md" ~content ~line:0 ~character:6;
       [%expect {| <none> |}]
+    ;;
+
+    (* The note exists and the heading does not: the file still identifies
+       what to show, so hover falls back to its full content, as
+       go-to-definition does.  See {!page-"feature-hover"} edge cases. *)
+    let%expect_test "a heading that names nothing falls back to the file" =
+      let content = "See [[note-a#No Such Heading]]." in
+      show ~rel_path:"note-b.md" ~content ~line:0 ~character:8;
+      [%expect
+        {|
+        [4-29]
+        *Path*:note-a.md
+
+        # Alpha
+
+        ## Section One
+
+        Body text. ^block1
+
+        ## Section Two
+
+        More.
+        |}]
     ;;
 
     let%expect_test "cursor outside link returns none" =
