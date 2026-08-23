@@ -4,12 +4,14 @@
 
 (executable
  (name mlmdx_pp)
+ (modules mlmdx_pp)
  (public_name mlmdx-pp)
  (package oystermark)
  (libraries mlmdx_codegen compiler-libs.common))
 
 (executable
  (name ocamlmerlin_mlmdx)
+ (modules ocamlmerlin_mlmdx)
  (public_name ocamlmerlin-mlmdx)
  (package oystermark)
  (libraries mlmdx_codegen merlin-extend compiler-libs.common))
