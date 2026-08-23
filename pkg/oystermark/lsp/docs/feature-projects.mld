@@ -193,7 +193,7 @@ requires a server restart. Editing an existing configuration file likewise
 takes effect after restart, as specified in
 {!page-"feature-configuration".reload}.
 
-Future file watching must rebuild both affected projects atomically: no
+Future file watching must update both affected projects atomically: no
 request may observe the same document in both the old and new owner indexes.
 
 {1:workspace-folders Workspace folders}

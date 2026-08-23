@@ -206,18 +206,6 @@ let disabled (t : t) : bool =
     {!page-"feature-configuration".tolerance}. *)
 let config_warnings (t : t) : string list = t.config_warnings
 
-let rebuild_vault (t : t) : unit =
-  match t.vault with
-  | None -> ()
-  | Some v ->
-    t.vault
-    <- Some
-         (build_vault
-            ~nested_roots:t.nested_roots
-            ~imported_roots:t.imported_roots
-            v.vault_root)
-;;
-
 let vault_root (t : t) : string option =
   Option.map t.vault ~f:(fun (v : Oystermark.Vault.t) -> v.vault_root)
 ;;
@@ -348,7 +336,6 @@ let diagnostics (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t 
 
 let did_open_local (t : t) ~(rel_path : string) ~(content : string) : Diagnostic.t list =
   Hashtbl.set t.open_docs ~key:rel_path ~data:content;
-  rebuild_vault t;
   diagnostics t ~rel_path ~content
 ;;
 
@@ -361,8 +348,13 @@ let did_close_local (t : t) ~(rel_path : string) : unit =
   Hashtbl.remove t.open_docs rel_path
 ;;
 
-let did_save_local (t : t) : (string * Diagnostic.t list) list =
-  rebuild_vault t;
+let did_save_local (t : t) ~(rel_path : string) : (string * Diagnostic.t list) list =
+  Option.iter t.vault ~f:(fun vault ->
+    match read_file t rel_path with
+    | None -> t.vault <- Some (Oystermark.Vault.remove_path vault rel_path)
+    | Some content ->
+      let doc = Oystermark.Parse.of_string ~locs:true content in
+      t.vault <- Some (Oystermark.Vault.set_doc vault rel_path doc));
   match t.vault with
   | None -> []
   | Some _ ->
@@ -1468,15 +1460,31 @@ let did_close t ~rel_path =
   did_close_local project ~rel_path
 ;;
 
-let did_save t =
-  let root = did_save_local t in
-  let nested =
-    List.concat_map t.nested_projects ~f:(fun (prefix, project) ->
-      did_save_local project
-      |> List.map ~f:(fun (rel_path, diagnostics) ->
-        Filename.concat prefix rel_path, diagnostics))
-  in
-  List.sort (root @ nested) ~compare:(fun (a, _) (b, _) -> String.compare a b)
+let did_save t ~rel_path =
+  let source_project, source_local = route t rel_path in
+  let absolute = absolute_path source_project source_local in
+  projects t
+  |> List.concat_map ~f:(fun project ->
+    match local_path project absolute with
+    | None -> []
+    | Some local ->
+      let included =
+        deepest_root project.nested_roots local
+        |> Option.value_map ~default:true ~f:(fun owner ->
+          List.mem project.imported_roots owner ~equal:String.equal)
+      in
+      if not included
+      then []
+      else
+        did_save_local project ~rel_path:local
+        |> List.map ~f:(fun (path, diagnostics) ->
+          absolute_path project path, diagnostics))
+  |> List.dedup_and_sort ~compare:(fun (a, _) (b, _) -> String.compare a b)
+  |> List.map ~f:(fun (absolute, diagnostics) ->
+    let rel_path =
+      Option.value (local_path t absolute) ~default:absolute
+    in
+    rel_path, diagnostics)
 ;;
 
 let hover t ~rel_path ~line ~character =

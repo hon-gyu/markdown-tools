@@ -149,9 +149,10 @@ class oystermark_server ~sw =
         [publishDiagnostics] by hand. *)
     method! on_notif_doc_did_save
       ~notify_back
-      (_params : DidSaveTextDocumentParams.t)
+      (params : DidSaveTextDocumentParams.t)
       : unit =
-      Server.did_save server
+      let rel_path = self#rel_path params.textDocument.uri in
+      Server.did_save server ~rel_path
       |> List.iter ~f:(fun (rel_path, diagnostics) ->
         let uri = Server.uri_of_rel_path server rel_path in
         notify_back#send_notification

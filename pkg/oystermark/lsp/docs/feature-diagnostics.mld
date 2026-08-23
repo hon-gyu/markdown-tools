@@ -6,9 +6,9 @@ and reports ambiguous anchor targets at their source.
 
 {1 Trigger}
 
-Diagnostics are published via [textDocument/publishDiagnostics] after
-every index rebuild (i.e. on {b didOpen} and {b didSave}, matching
-the current rebuild cadence).
+Diagnostics are published via [textDocument/publishDiagnostics] on
+{b didOpen} and {b didChange}. On {b didSave}, the saved note's index
+entry is replaced and diagnostics are republished for every open document.
 
 {1 Scope}
 

@@ -158,7 +158,9 @@ let%expect_test "disable: every surface answers emptily" =
        printf
          "did_change diagnostics: %d\n"
          (List.length (Server.did_change s ~rel_path ~content));
-       printf "did_save documents: %d\n" (List.length (Server.did_save s));
+       printf
+         "did_save documents: %d\n"
+         (List.length (Server.did_save s ~rel_path));
        (* Column 6 is inside [ [[idea]] ], a link that resolves in this vault —
           so an answer here would be a real one, not an accident of position. *)
        let line, character = 2, 6 in

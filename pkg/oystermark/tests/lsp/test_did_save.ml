@@ -3,7 +3,7 @@
 
     Tests the save-triggered refresh contract: when a sibling file
     appears on disk and a [didSave] fires, every open document's
-    diagnostics are recomputed against the freshly rebuilt vault.
+    diagnostics are recomputed after the saved note is replaced in the index.
     This is what makes a previously-unresolved [[[brand-new]]] link in
     an {i already-open} buffer lose its warning after the user creates
     [brand-new.md] in a different tab and saves it. *)
@@ -24,7 +24,7 @@ let%expect_test "didSave refreshes diagnostics in other open docs" =
        Out_channel.write_all
          (Filename.concat vault_root "brand-new.md")
          ~data:"# Brand new\n";
-       Server.did_save s
+       Server.did_save s ~rel_path:"brand-new.md"
        |> List.iter ~f:(fun (rel_path, diags) ->
          printf "after save: %s has %d diagnostic(s)\n" rel_path (List.length diags)));
   [%expect
@@ -49,7 +49,7 @@ let%expect_test "didSave refreshes every open document" =
        Out_channel.write_all
          (Filename.concat vault_root "brand-new.md")
          ~data:"# Brand new\n";
-       Server.did_save s
+       Server.did_save s ~rel_path:"brand-new.md"
        |> List.iter ~f:(fun (rel_path, diags) ->
          printf "%s:\n" rel_path;
          diagnostic_positions diags
@@ -71,7 +71,7 @@ let%expect_test "didClose stops refreshing a document" =
        did_open s ~rel_path:"a.md";
        did_open s ~rel_path:"b.md";
        Server.did_close s ~rel_path:"a.md";
-       Server.did_save s
+       Server.did_save s ~rel_path:"b.md"
        |> List.iter ~f:(fun (rel_path, _) -> printf "refreshed: %s\n" rel_path));
   [%expect {| refreshed: b.md |}]
 ;;

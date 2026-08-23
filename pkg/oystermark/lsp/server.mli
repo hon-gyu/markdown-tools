@@ -106,8 +106,7 @@ val code_lens : t -> rel_path:string -> CodeLens.t list option
     See {!page-"feature-document-sync"} for the full state machine.  Each
     notification handler returns the diagnostics the caller should publish. *)
 
-(** Track the buffer, rebuild the vault (files may have appeared on disk since
-    the last rebuild), and return diagnostics for the opened document. *)
+(** Track the buffer and return diagnostics for the opened document. *)
 val did_open : t -> rel_path:string -> content:string -> Diagnostic.t list
 
 (** Recompute diagnostics against the in-flight buffer so squigglies update as
@@ -118,14 +117,14 @@ val did_change : t -> rel_path:string -> content:string -> Diagnostic.t list
     by {!did_save}. *)
 val did_close : t -> rel_path:string -> unit
 
-(** Rebuild the vault, then recompute diagnostics for {i every} open document
-    against its disk content.  This is the one moment a stale warning in a
+(** Replace the saved document's index entry, then recompute diagnostics for
+    {i every} open document against its disk content.  This is the moment a stale warning in a
     sibling buffer clears — an unresolved [[[b]]] link in an already-open
     [a.md] loses its squiggly once [b.md] exists and a save fires.
 
     Returns [(rel_path, diagnostics)] sorted by path, so callers (and expect
     tests) see a stable order.  Documents that cannot be read are omitted. *)
-val did_save : t -> (string * Diagnostic.t list) list
+val did_save : t -> rel_path:string -> (string * Diagnostic.t list) list
 
 (** {1 Features} *)
 
