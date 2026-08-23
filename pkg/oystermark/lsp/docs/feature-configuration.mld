@@ -15,9 +15,7 @@ editor settings.
 [oysterlsp.json], at a project root. Optional at the workspace root: its
 absence is not an error and not worth a message. In a descendant directory its
 presence declares a nested project; see {!page-"feature-projects"}. This is
-{b not} {!Oystermark_render.Config}, which configures a vault {e build} and is
-passed by path on the command line; the two have no keys in common and are read
-by different programs.
+the project-local configuration for the language server.
 
 {1:schema Schema}
 
@@ -187,7 +185,7 @@ server capabilities would remain restart-only.
   {- The file defines one project; it is not a per-directory override and does
      not inherit from or merge with a parent project's file. Nested project
      discovery is specified in {!page-"feature-projects"}.}
-  {- JSON, so no comments. Consistent with {!Oystermark_render.Config}.}
+  {- JSON, so no comments.}
   {- No environment-variable or command-line source for {e settings}. The one
      argument the binary takes, [--print-default-config], writes a file and
      exits; it configures nothing.}

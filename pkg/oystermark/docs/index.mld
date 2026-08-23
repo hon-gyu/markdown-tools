@@ -28,23 +28,6 @@ See {!Oystermark.Vault}.
 Shared link queries, graph statistics, and rename plans are specified in
 {!page-"vault-operations"}.
 
-{2 Render}
-
-HTML rendering.
-
-See {!Oystermark_render.Html}.
-
-{2 Pipeline}
-
-A {{!Oystermark_render.Pipeline}pipeline} is a sequence of hooks that run at successive stages of vault processing.
-
-Stages:
-{ol
-  {- {b discover}: path only, before reading actual contents.}
-  {- {b parse}: obtain OysterMark AST (CommonMark AST + extensions).}
-  {- {b vault}: full vault transform after indexing and link resolution.}
-}
-
 {1 Other pages}
 
 {2 Reference Specifications of Common CommonMark Extensions}

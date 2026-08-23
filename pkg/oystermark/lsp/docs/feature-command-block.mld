@@ -121,10 +121,9 @@ disabled — is offered nothing, there being no panel worth writing.
 {1:publishing Publishing}
 
 This is a {b dev-time} feature. The block is an ordinary code block to every
-other part of Oystermark: the parser reads it as one, the renderer prints it as
-one, and nothing here changes what a build produces. A block is expected to be
-deleted from a note before that note is published — no [Silent] handling, no
-pipeline hook, no interaction with {!Oystermark_render.Config}.
+other part of Oystermark: the parser reads it as one, and nothing here changes
+what a build produces. A block is expected to be deleted from a note before
+that note is published — no [Silent] handling or build-time hook.
 
 {1:limitations Limitations}
 

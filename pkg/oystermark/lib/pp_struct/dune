@@ -6,20 +6,3 @@
  (inline_tests)
  (preprocess
   (pps ppx_jane ppx_string ppx_quick_test)))
-
-(executable
- (name t1)
- (modules t1)
- (libraries oymarkit core parse component oystermark.render))
-
-(rule
- (with-stdout-to
-  t1.output
-  (run ./t1.exe)))
-
-(rule
- (alias runtest)
- (mode
-  (promote (until-clean)))
- (action
-  (diff t1.expected.html t1.output)))
