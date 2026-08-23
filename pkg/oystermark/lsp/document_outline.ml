@@ -53,11 +53,22 @@ let events (entry : Oystermark.Vault.Index.Note.t) =
     |> List.fold ~init:([], [], []) ~f:(fun (headings, blocks, attrs) anchor ->
       match anchor.value with
       | Index.Heading h ->
-        Option.to_list (event_of_loc ~name:h.text ~kind:(Heading h.level) (Some anchor.loc)) @ headings, blocks, attrs
+        ( Option.to_list
+            (event_of_loc ~name:h.text ~kind:(Heading h.level) (Some anchor.loc))
+          @ headings
+        , blocks
+        , attrs )
       | Index.Block { id; kind = Obsidian_caret } ->
-        headings, Option.to_list (event_of_loc ~name:("^" ^ id) ~kind:Block_id (Some anchor.loc)) @ blocks, attrs
+        ( headings
+        , Option.to_list (event_of_loc ~name:("^" ^ id) ~kind:Block_id (Some anchor.loc))
+          @ blocks
+        , attrs )
       | Index.Block { id; kind = Djot_attr } | Index.Inline { id } ->
-        headings, blocks, Option.to_list (event_of_loc ~name:("#" ^ id) ~kind:Attribute_id (Some anchor.loc)) @ attrs)
+        ( headings
+        , blocks
+        , Option.to_list
+            (event_of_loc ~name:("#" ^ id) ~kind:Attribute_id (Some anchor.loc))
+          @ attrs ))
   in
   List.sort
     (headings @ blocks @ attrs)
@@ -71,8 +82,7 @@ let events (entry : Oystermark.Vault.Index.Note.t) =
       | c -> c)
 ;;
 
-let symbols ~(entry : Oystermark.Vault.Index.Note.t) ~(content_length : int)
-  : symbol list
+let symbols ~(entry : Oystermark.Vault.Index.Note.t) ~(content_length : int) : symbol list
   =
   let roots_rev = ref [] in
   let heading_stack : (int * node) list ref = ref [] in

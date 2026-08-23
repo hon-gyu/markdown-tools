@@ -13,7 +13,10 @@ let option f = function
 
 let json_of_fragment = function
   | Vault.Link_ref.Hash_path path ->
-    `Assoc [ "kind", `String "hash-path"; "path", `List (List.map path ~f:(fun s -> `String s)) ]
+    `Assoc
+      [ "kind", `String "hash-path"
+      ; "path", `List (List.map path ~f:(fun s -> `String s))
+      ]
   | Caret_id id -> `Assoc [ "kind", `String "caret-id"; "id", `String id ]
 ;;
 
@@ -53,7 +56,8 @@ let json_of_anchor_value = function
 ;;
 
 let json_of_anchor (anchor : Index.Anchor.t) =
-  `Assoc [ "value", json_of_anchor_value anchor.value; "location", json_of_loc anchor.loc ]
+  `Assoc
+    [ "value", json_of_anchor_value anchor.value; "location", json_of_loc anchor.loc ]
 ;;
 
 let json_of_resolution = function
@@ -105,18 +109,24 @@ let index request =
     |> List.map ~f:(fun file -> member_string "path" file, member_string "content" file)
   in
   let other_files =
-    Json.Util.member "otherFiles" json |> Json.Util.to_list |> List.map ~f:Json.Util.to_string
+    Json.Util.member "otherFiles" json
+    |> Json.Util.to_list
+    |> List.map ~f:Json.Util.to_string
   in
   let vault = Vault.of_files ~vault_root ~md_files ~other_files in
   `Assoc
     [ "notes", `List (List.map (Index.notes vault.index) ~f:(json_of_note vault))
-    ; "assets", `List (List.map (Index.assets vault.index) ~f:(fun a -> `String (Index.Asset.path a)))
+    ; ( "assets"
+      , `List
+          (List.map (Index.assets vault.index) ~f:(fun a -> `String (Index.Asset.path a)))
+      )
     ]
   |> Json.to_string
 ;;
 
 let parse markdown =
-  Oystermark.Parse.of_string ~locs:true markdown |> Cmarkit_mdast.of_doc ~strip_block_id:false
+  Oystermark.Parse.of_string ~locs:true markdown
+  |> Cmarkit_mdast.of_doc ~strip_block_id:false
 ;;
 
 let expose name f =

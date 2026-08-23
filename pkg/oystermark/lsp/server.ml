@@ -1481,9 +1481,7 @@ let did_save t ~rel_path =
           absolute_path project path, diagnostics))
   |> List.dedup_and_sort ~compare:(fun (a, _) (b, _) -> String.compare a b)
   |> List.map ~f:(fun (absolute, diagnostics) ->
-    let rel_path =
-      Option.value (local_path t absolute) ~default:absolute
-    in
+    let rel_path = Option.value (local_path t absolute) ~default:absolute in
     rel_path, diagnostics)
 ;;
 
