@@ -32,7 +32,6 @@
  (package oystermark)
  (mld_files
   index
-  vault-operations
   template-context
   template-context-example
   tracking

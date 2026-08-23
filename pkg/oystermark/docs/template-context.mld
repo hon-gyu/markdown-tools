@@ -17,7 +17,7 @@ to a Jinja engine invoked by the build system.
 Splitting there keeps two properties. The library gains no runtime dependency on
 a template binary, so a build that never renders never needs one. And the
 context is an ordinary value: it can be diffed, committed, and expect-tested,
-which is how {!page-"vault-operations"} treats every other vault query.
+as every other vault query is.
 
 {v
 oyster context VAULT [-compact]
@@ -25,7 +25,7 @@ v}
 
 The queried vault is loaded with embed expansion skipped. An expanded embed
 repeats another note's syntax inside its host, which would report links the
-author never wrote there — see {!page-"vault-operations"}.
+author never wrote there.
 
 {1 Namespace}
 

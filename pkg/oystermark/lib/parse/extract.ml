@@ -125,16 +125,11 @@ let get_block_by_caret_id (blocks : Cmarkit.Block.t list) (id : string)
   search None (flatten blocks)
 ;;
 
-(** The literal text of a code block, fenced or indented, without its fence or
-    info string. [None] for any other block. *)
-let code_of_block (block : Cmarkit.Block.t) : string option =
-  match block with
-  | Cmarkit.Block.Code_block (cb, _) ->
-    Cmarkit.Block.Code_block.code cb
-    |> List.map ~f:Cmarkit.Block_line.to_string
-    |> String.concat ~sep:"\n"
-    |> Option.return
-  | _ -> None
+(** [Cmarkit.Block.meta] raises on a block type extension defined outside
+    [Cmarkit] -- {!Frontmatter.Frontmatter} carries no metadata at all. Such a
+    block has no location to report, which is [Meta.none]. *)
+let meta_of_block (block : Cmarkit.Block.t) : Cmarkit.Meta.t =
+  Cmarkit.Block.meta ~ext:(fun _ -> Cmarkit.Meta.none) block
 ;;
 
 (** The info string of a code block: [python] for [ ```python ]. [None] for
@@ -144,6 +139,13 @@ let info_string_of_block (block : Cmarkit.Block.t) : string option =
   | Cmarkit.Block.Code_block (cb, _) ->
     Option.map (Cmarkit.Block.Code_block.info_string cb) ~f:fst
   | _ -> None
+;;
+
+(** The Obsidian block identifier [ ^id ] carried on the block, if any. *)
+let caret_id_of_block (block : Cmarkit.Block.t) : string option =
+  Option.map
+    (Cmarkit.Block.Block_id.find (meta_of_block block))
+    ~f:Cmarkit.Block.Block_id.id
 ;;
 
 (** Extract the block carrying an explicit djot attribute id ([{#id}]).
@@ -257,3 +259,237 @@ Some text ^exists
 |}
   ;;
 end
+
+(* Walk
+   ==== *)
+
+(** A block in document order, with everything needed to select it. Nothing
+    here is derivable from anything else here; what is derivable from [block] --
+    its kind, a code block's info string -- is a function of the block. *)
+type located =
+  { block : Cmarkit.Block.t
+  ; index : int (** 1-based position in the walk, over the whole note *)
+  ; attr_id : string option
+    (** a djot [ {#id} ] attribute. Unlike an [ ^id ] (see
+        {!caret_id_of_block}) this is not recoverable from [block]: the walk
+        unwraps the [Ext_attributes] node that carries it. *)
+  ; heading_path : string list (** enclosing heading ids, outermost first *)
+  ; heading_text : string list (** the same headings as plain text *)
+  }
+
+(** The block's kind, as a stable name for [-kind] and for JSON. A callout is
+    reported as [callout] rather than [block_quote]: it is a quote only in
+    representation, and an author selecting one is not asking for quotes. *)
+let kind_of_block (block : Cmarkit.Block.t) : string =
+  let open Cmarkit in
+  match block with
+  | Block.Blank_line _ -> "blank_line"
+  | Block.Block_quote (_, meta) ->
+    (match Block.Callout.find meta with
+     | Some _ -> "callout"
+     | None -> "block_quote")
+  | Block.Blocks _ -> "blocks"
+  | Block.Code_block _ -> "code_block"
+  | Block.Heading _ -> "heading"
+  | Block.Html_block _ -> "html_block"
+  | Block.Link_reference_definition _ -> "link_reference_definition"
+  | Block.List _ -> "list"
+  | Block.Paragraph _ -> "paragraph"
+  | Block.Thematic_break _ -> "thematic_break"
+  | Block.Ext_attributes _ -> "attributes"
+  | Block.Ext_definition_list _ -> "definition_list"
+  | Block.Ext_div _ -> "div"
+  | Block.Ext_footnote_definition _ -> "footnote_definition"
+  | Block.Ext_jsx_block _ -> "jsx_block"
+  | Block.Ext_keyed _ -> "keyed"
+  | Block.Ext_math_block _ -> "math_block"
+  | Block.Ext_raw_block _ -> "raw_block"
+  | Block.Ext_table _ -> "table"
+  | _ -> "unknown"
+;;
+
+(** The id of the first inline [ {#id} ] attribute in [inline], if any. The
+    block-level counterpart is an [Ext_attributes] wrapper, handled in the walk
+    itself. *)
+let inline_attr_id (inline : Cmarkit.Inline.t) : string option =
+  let open Cmarkit in
+  let folder =
+    Folder.make
+      ~inline:(fun _f found i ->
+        match found with
+        | Some _ -> Folder.ret found
+        | None ->
+          (match i with
+           | Inline.Ext_attributes (a, _) ->
+             (match Attribute.id (Inline.Attributes.attributes a) with
+              | Some _ as id -> Folder.ret id
+              | None -> Folder.default)
+           | _ -> Folder.default))
+      ~inline_ext_default:(fun _f found _ -> found)
+      ~block_ext_default:(fun _f found _ -> found)
+      ()
+  in
+  Folder.fold_inline folder None inline
+;;
+
+(** Every addressable block of [blocks] in document order, containers before
+    their contents.
+
+    Blank lines, [Blocks] groupings and [Ext_attributes] wrappers are not blocks
+    an author would name, so they are not reported: an attributes wrapper
+    forwards its id to the block it wraps, which is what [ {#id} ] denotes.
+
+    A list item is not reported: it has no [Cmarkit.Block.t] of its own, its
+    syntax being the marker. Its contents are walked as the blocks they are. *)
+let walk (blocks : Cmarkit.Block.t list) : located list =
+  let open Cmarkit in
+  let next_index =
+    let count = ref 0 in
+    fun () ->
+      incr count;
+      !count
+  in
+  let emit ~headings ~attr_id block =
+    { block
+    ; index = next_index ()
+    ; attr_id
+    ; heading_path = List.rev_map headings ~f:(fun (_level, id, _text) -> id)
+    ; heading_text = List.rev_map headings ~f:(fun (_level, _id, text) -> text)
+    }
+  in
+  let acc = ref [] in
+  let push located = acc := located :: !acc in
+  (* [headings] is the enclosing heading stack, innermost first, as
+     (level, id, text). *)
+  let rec siblings ~headings blocks =
+    List.fold (flatten blocks) ~init:headings ~f:(fun headings block ->
+      visit ~headings ~attr_id:None block)
+  and visit ~headings ~attr_id block =
+    match block with
+    | Block.Blank_line _ | Block.Link_reference_definition _ -> headings
+    | Block.Blocks (bs, _) -> siblings ~headings bs
+    | Block.Ext_attributes (a, _) ->
+      (* The wrapper is not the block; its id belongs to what it wraps. *)
+      let attr_id =
+        match Attribute.id (Block.Attributes.attributes a) with
+        | Some _ as id -> id
+        | None -> attr_id
+      in
+      visit ~headings ~attr_id (Block.Attributes.block a)
+    | Block.Heading (h, _) ->
+      let level = Block.Heading.level h in
+      let headings =
+        List.drop_while headings ~f:(fun (enclosing, _, _) -> enclosing >= level)
+      in
+      let attr_id =
+        match attr_id with
+        | Some _ as id -> id
+        | None -> inline_attr_id (Block.Heading.inline h)
+      in
+      push (emit ~headings ~attr_id block);
+      let id = Option.value (Common.heading_id h) ~default:"" in
+      let text = Common.inline_to_plain_text (Block.Heading.inline h) in
+      (level, id, text) :: headings
+    | Block.Paragraph (p, _) ->
+      let attr_id =
+        match attr_id with
+        | Some _ as id -> id
+        | None -> inline_attr_id (Block.Paragraph.inline p)
+      in
+      push (emit ~headings ~attr_id block);
+      headings
+    | Block.Block_quote (bq, _) ->
+      push (emit ~headings ~attr_id block);
+      ignore (siblings ~headings [ Block.Block_quote.block bq ] : _ list);
+      headings
+    | Block.Ext_div (d, _) ->
+      push (emit ~headings ~attr_id block);
+      ignore (siblings ~headings [ Block.Div.block d ] : _ list);
+      headings
+    | Block.Ext_keyed ((_label, body), _) ->
+      push (emit ~headings ~attr_id block);
+      ignore (siblings ~headings [ body ] : _ list);
+      headings
+    | Block.Ext_footnote_definition (fn, _) ->
+      push (emit ~headings ~attr_id block);
+      ignore (siblings ~headings [ Block.Footnote.block fn ] : _ list);
+      headings
+    | Block.List (l, _) ->
+      push (emit ~headings ~attr_id block);
+      List.iter (Block.List'.items l) ~f:(fun (item, _meta) ->
+        ignore (siblings ~headings [ Block.List_item.block item ] : _ list));
+      headings
+    | block ->
+      (* A block kind this module does not know is not one an author can name.
+         Frontmatter is the case in practice: it carries no metadata at all. *)
+      if String.equal (kind_of_block block) "unknown"
+      then headings
+      else (
+        push (emit ~headings ~attr_id block);
+        headings)
+  in
+  ignore (siblings ~headings:[] blocks : _ list);
+  List.rev !acc
+;;
+
+(* Content
+   ======= *)
+
+(** What a container holds, once its own syntax is taken off.
+
+    The two cases are not a convenience: a code block holds {e text}, which the
+    parser has already stripped of its fence and indentation, so its content is
+    exact. A block quote holds {e blocks}, whose source still carries the
+    [>] marker on every line -- the content is a markdown value, and the only
+    faithful way to write a markdown value back out is to render it. Rendering
+    normalizes (fences, list markers, wrapping), so [Markdown] content is not
+    byte-for-byte what the author typed, while [Literal] content is. *)
+type content =
+  | Literal of string
+  | Markdown of Cmarkit.Block.t
+  | Not_a_container
+
+(** The contents of the container [located] addresses.
+
+    [Not_a_container] for a paragraph, heading, table or thematic break: they
+    hold inlines, rows, or nothing at all, so there is no single value inside to
+    ask for. A list is not a container either: its syntax lives in the item
+    markers, and its items' blocks are walked in their own right. *)
+let content_of_located (located : located) : content =
+  let open Cmarkit in
+  let code_lines cb =
+    Literal
+      (Block.Code_block.code cb
+       |> List.map ~f:Block_line.to_string
+       |> String.concat ~sep:"\n")
+  in
+  match located.block with
+  | Block.Code_block (cb, _) | Block.Ext_math_block (cb, _) -> code_lines cb
+  | Block.Ext_raw_block (rb, _) -> code_lines (Block.Raw_block.code_block rb)
+  | Block.Html_block (lines, _) ->
+    Literal (lines |> List.map ~f:Block_line.to_string |> String.concat ~sep:"\n")
+  | Block.Block_quote (bq, meta) ->
+    let inner = Block.Block_quote.block bq in
+    (* A callout's [ [!note] Title ] header is the callout's own syntax, the
+         way a fence is a code block's; its contents are what follows. *)
+    (match Block.Callout.find meta with
+     | Some _ -> Markdown (Block.Callout.strip_header inner)
+     | None -> Markdown inner)
+  | Block.Ext_div (d, _) -> Markdown (Block.Div.block d)
+  | Block.Ext_keyed ((_label, body), _) -> Markdown body
+  | Block.Ext_footnote_definition (fn, _) -> Markdown (Block.Footnote.block fn)
+  | _ -> Not_a_container
+;;
+
+(** The contents of [located] as a string, given the document's label
+    definitions (a rendered container may hold reference links).
+
+    [Error kind] names the kind that has no contents to give. *)
+let content_string ~(defs : Cmarkit.Label.defs) (located : located)
+  : (string, string) Result.t
+  =
+  match content_of_located located with
+  | Literal text -> Ok text
+  | Markdown block -> Ok (Cmarkit_commonmark.of_doc (Cmarkit.Doc.make ~defs block))
+  | Not_a_container -> Error (kind_of_block located.block)
+;;

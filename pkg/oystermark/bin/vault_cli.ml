@@ -243,26 +243,37 @@ let context_command =
           else Yojson.Safe.pretty_to_string json))
 ;;
 
-(** Write the contents of one code block to stdout, for a build system to pipe
-    into an interpreter. See {!page-"code-block-extraction"}. *)
+(** Query the blocks of a note.
+
+    The filters are sugar over one traversal: every flag narrows the same list
+    of {!Oystermark.Parse.Extract.located} records, and [-json] prints those
+    records so a filter this command does not implement can be written in jq.
+
+    Default output is the block's source, verbatim. *)
 let block_command =
   Command.basic
-    ~summary:"Print the contents of the code block carrying a {#id} attribute"
+    ~summary:"Print blocks of a note, filtered by heading, kind, id or position"
     (let%map_open.Command note = anon ("NOTE" %: string)
-     and id = flag "-id" (required string) ~doc:"ID the block's {#id} attribute"
-     and expect_lang =
+     and under =
+       flag
+         "-under"
+         (optional string)
+         ~doc:"SLUG only blocks under the heading with this id or text"
+     and direct = flag "-direct" no_arg ~doc:" with -under, exclude nested subsections"
+     and kind = flag "-kind" (optional string) ~doc:"KIND only blocks of this kind"
+     and lang =
        flag
          "-lang"
          (optional string)
-         ~doc:"LANG fail unless the block's info string is LANG"
-     in
+         ~doc:"INFO only code blocks whose info string is exactly INFO"
+     and id = flag "-id" (optional string) ~doc:"ID only the block with this {#id}"
+     and caret_id =
+       flag "-caret-id" (optional string) ~doc:"ID only the block with this ^id"
+     and nth = flag "-nth" (optional int) ~doc:"N keep only the Nth match, 1-based"
+     and content =
+       flag "-content" no_arg ~doc:" print what the container holds, not its source"
+     and json = flag "-json" no_arg ~doc:" print the matching blocks as JSON" in
      fun () ->
-       let doc = Parse.of_string ~locs:true (In_channel.read_all note) in
-       let blocks =
-         match Cmarkit.Doc.block doc with
-         | Cmarkit.Block.Blocks (blocks, _) -> blocks
-         | block -> [ block ]
-       in
        let die fmt =
          ksprintf
            (fun s ->
@@ -270,22 +281,107 @@ let block_command =
               exit 1)
            fmt
        in
-       let block =
-         match Parse.Extract.get_block_by_attr_id blocks id with
-         | Some block -> block
-         | None -> die "%s: no block carries the attribute id {#%s}" note id
+       let source = In_channel.read_all note in
+       let doc = Parse.of_string ~locs:true source in
+       let defs = Cmarkit.Doc.defs doc in
+       let blocks =
+         match Cmarkit.Doc.block doc with
+         | Cmarkit.Block.Blocks (blocks, _) -> blocks
+         | block -> [ block ]
        in
-       let code =
-         match Parse.Extract.code_of_block block with
-         | Some code -> code
-         | None -> die "%s: the block {#%s} is not a code block" note id
+       let matches =
+         Parse.Extract.walk blocks
+         |> List.filter ~f:(fun (located : Parse.Extract.located) ->
+           let keeps_under =
+             match under with
+             | None -> true
+             | Some wanted ->
+               let wanted = Parse.Common.heading_id_of_text wanted in
+               if direct
+               then (
+                 match List.last located.heading_path with
+                 | Some innermost -> String.equal innermost wanted
+                 | None -> false)
+               else List.mem located.heading_path wanted ~equal:String.equal
+           in
+           let matches_option option actual =
+             match option with
+             | None -> true
+             | Some wanted ->
+               (match actual with
+                | Some actual -> String.equal actual wanted
+                | None -> false)
+           in
+           keeps_under
+           && matches_option kind (Some (Parse.Extract.kind_of_block located.block))
+           && matches_option lang (Parse.Extract.info_string_of_block located.block)
+           && matches_option id located.attr_id
+           && matches_option caret_id (Parse.Extract.caret_id_of_block located.block))
        in
-       Option.iter expect_lang ~f:(fun expected ->
-         match Parse.Extract.info_string_of_block block with
-         | Some actual when String.equal actual expected -> ()
-         | Some actual -> die "%s: the block {#%s} is %s, not %s" note id actual expected
-         | None -> die "%s: the block {#%s} has no info string" note id);
-       print_endline code)
+       let matches =
+         match nth with
+         | None -> matches
+         | Some n ->
+           (match List.nth matches (n - 1) with
+            | Some located -> [ located ]
+            | None -> [])
+       in
+       if List.is_empty matches then die "%s: no block matches" note;
+       let content_of located =
+         match Parse.Extract.content_string ~defs located with
+         | Ok content -> content
+         | Error kind -> die "%s: a %s has no contents to print" note kind
+       in
+       let source_of (located : Parse.Extract.located) =
+         let textloc = Cmarkit.Meta.textloc (Parse.Extract.meta_of_block located.block) in
+         if Cmarkit.Textloc.is_none textloc
+         then die "%s: block %d has no location; parse with locations" note located.index
+         else (
+           let first = Cmarkit.Textloc.first_byte textloc in
+           let last = Cmarkit.Textloc.last_byte textloc in
+           String.sub source ~pos:first ~len:(last - first + 1))
+       in
+       if json
+       then (
+         let json_of (located : Parse.Extract.located) =
+           let textloc =
+             Cmarkit.Meta.textloc (Parse.Extract.meta_of_block located.block)
+           in
+           let string_or_null = function
+             | Some s -> `String s
+             | None -> `Null
+           in
+           `Assoc
+             [ "index", `Int located.index
+             ; "kind", `String (Parse.Extract.kind_of_block located.block)
+             ; "info", string_or_null (Parse.Extract.info_string_of_block located.block)
+             ; "attr_id", string_or_null located.attr_id
+             ; "caret_id", string_or_null (Parse.Extract.caret_id_of_block located.block)
+             ; ( "heading_path"
+               , `List (List.map located.heading_path ~f:(fun s -> `String s)) )
+             ; ( "heading_text"
+               , `List (List.map located.heading_text ~f:(fun s -> `String s)) )
+             ; ( "loc"
+               , `Assoc
+                   [ "first_line", `Int (fst (Cmarkit.Textloc.first_line textloc))
+                   ; "last_line", `Int (fst (Cmarkit.Textloc.last_line textloc))
+                   ; "first_byte", `Int (Cmarkit.Textloc.first_byte textloc)
+                   ; "last_byte", `Int (Cmarkit.Textloc.last_byte textloc)
+                   ] )
+             ; "text", `String (source_of located)
+             ; ( "content"
+               , match Parse.Extract.content_string ~defs located with
+                 | Ok content -> `String content
+                 | Error _ -> `Null )
+             ]
+         in
+         print_endline
+           (Yojson.Safe.pretty_to_string (`List (List.map matches ~f:json_of))))
+       else
+         List.map matches ~f:(fun located ->
+           if content then content_of located else source_of located)
+         |> String.concat ~sep:"\n\n"
+         |> print_endline)
 ;;
 
 let command =

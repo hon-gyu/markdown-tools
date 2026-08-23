@@ -229,9 +229,10 @@ whether the whole [tags] list is an element of [\["bread"\]]. Sorting on
 
 {1 Executing a code block}
 
-A note can own a computation as well as prose. [oyster block] writes one code
-block to stdout, addressed by the djot attribute id above it, and the build
-system pipes it wherever it belongs — here, into [uv]:
+A note can own a computation as well as prose. [oyster block] queries the blocks
+of a note and writes what it finds to stdout; with [-content] it writes what a
+container holds rather than its source, so a code block arrives without its
+fence and the build system can pipe it wherever it belongs — here, into [uv]:
 
 {v
 {#hydration}
@@ -244,13 +245,14 @@ print(json.dumps({"hydration": {"flour": flour, "water": water, ...}}))
 v}
 
 {v
-oyster block NOTE -id ID [-lang LANG]
+oyster block NOTE -id ID [-lang INFO] -content
 v}
 
 [-lang] asserts rather than selects: it fails if the block's info string is not
-[LANG], so a rule cannot quietly feed a shell script to a Python interpreter.
-Naming a missing id, or an id that sits on something other than a code block,
-is an error too.
+[INFO], so a rule cannot quietly feed a shell script to a Python interpreter. A
+query that matches nothing is an error too, so a rule fails rather than feeding
+an interpreter an empty string. Blocks can also be addressed by heading,
+kind and position, and printed as JSON.
 
 Three rules: extract and run, snapshot the context, render the two together.
 [minijinja-cli] accepts several data files and merges them, so the script's
@@ -264,7 +266,7 @@ output arrives as ordinary template variables:
   (with-stdout-to
    hydration.json
    (pipe-stdout
-    (run %{bin:oyster} block sourdough.md -id hydration -lang python)
+    (run %{bin:oyster} block sourdough.md -id hydration -lang python -content)
     (run uv run -)))))
 
 (rule

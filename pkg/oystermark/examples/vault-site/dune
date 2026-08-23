@@ -61,15 +61,20 @@
   (with-stdout-to
    hydration.json
    (pipe-stdout
-    (run %{bin:oyster} block sourdough.md -id hydration -lang python)
+    (run
+     %{bin:oyster}
+     block
+     sourdough.md
+     -id
+     hydration
+     -lang
+     python
+     -content)
     (run uv run -)))))
 
 (rule
  (targets hydration.md)
- (deps
-  hydration.md.jinja
-  context.json
-  hydration.json)
+ (deps hydration.md.jinja context.json hydration.json)
  (action
   (with-stdout-to
    hydration.md
