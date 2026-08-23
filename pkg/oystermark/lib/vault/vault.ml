@@ -8,14 +8,15 @@ open Core
 type t =
   { vault_root : string
   ; index : Index.t
+  ; documents : Cmarkit.Doc.t String.Map.t
   ; vault_meta : Cmarkit.Meta.t
   }
 
 let docs : t -> (string * Cmarkit.Doc.t) list =
-  fun vault ->
-  Index.notes vault.index
-  |> List.map ~f:(fun note -> Index.Note.path note, Index.Note.doc note)
+  fun vault -> Map.to_alist vault.documents
 ;;
+
+let find_doc (vault : t) path = Map.find vault.documents path
 
 open struct
   let file_stat ?(birthtime = None) ?(mtime = None) rel_path : Index.file_stat =
@@ -34,6 +35,24 @@ let build_index ~(md_docs : (string * Cmarkit.Doc.t) list) ~(other_files : strin
     Index.set_asset index (Index.Asset.create (file_stat path)))
 ;;
 
+let set_doc (vault : t) path doc : t =
+  let stat =
+    Index.find_note vault.index path
+    |> Option.value_map ~default:(file_stat path) ~f:Index.Note.file_stat
+  in
+  { vault with
+    index = Index.set_note vault.index (Index.Note.of_doc_exn stat doc)
+  ; documents = Map.set vault.documents ~key:path ~data:doc
+  }
+;;
+
+let remove_path (vault : t) path : t =
+  { vault with
+    index = Index.remove_asset (Index.remove_note vault.index path) path
+  ; documents = Map.remove vault.documents path
+  }
+;;
+
 (** Construct a vault from transformed documents, retaining the base vault's file dates,
     non-note assets, metadata, and root. *)
 let of_docs ~(base : t) (docs : (string * Cmarkit.Doc.t) list) : t =
@@ -46,7 +65,7 @@ let of_docs ~(base : t) (docs : (string * Cmarkit.Doc.t) list) : t =
       Index.set_note index (Index.Note.of_doc_exn stat doc))
   in
   let index = List.fold (Index.assets base.index) ~init:index ~f:Index.set_asset in
-  { base with index }
+  { base with index; documents = String.Map.of_alist_exn docs }
 ;;
 
 (** Read, parse, resolve, and by default expand the files beneath [vault_root]. *)
@@ -75,7 +94,13 @@ let of_root_path
     List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))
   in
   let index = build_index ~md_docs:parsed_docs ~other_files in
-  let vault = { vault_root; index; vault_meta = Cmarkit.Meta.none } in
+  let vault =
+    { vault_root
+    ; index
+    ; documents = String.Map.of_alist_exn parsed_docs
+    ; vault_meta = Cmarkit.Meta.none
+    }
+  in
   if skip_expand
   then vault
   else of_docs ~base:vault (Embed.expand_docs ~index parsed_docs)
@@ -93,5 +118,9 @@ let of_files
     List.map md_files ~f:(fun (path, content) -> path, Parse.of_string ~locs:true content)
   in
   let index = build_index ~md_docs:parsed_docs ~other_files in
-  { vault_root; index; vault_meta = Cmarkit.Meta.none }
+  { vault_root
+  ; index
+  ; documents = String.Map.of_alist_exn parsed_docs
+  ; vault_meta = Cmarkit.Meta.none
+  }
 ;;

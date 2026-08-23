@@ -2,7 +2,7 @@
 
   - provide a unified vault API, centralizing all relevant queries / operations
   - downstream client code: LSP, oyster-publish (not in this repo yet), vault_cli (oyster)
-  - base for adding incremental calculation using [Incremental], which should improve performance for LSP (for both memory usage and speed)
+  - compact, persistent snapshots that clients can update one file at a time
 *)
 
 open Core
@@ -131,7 +131,6 @@ let loc_of_meta meta =
 module Note = struct
   type t =
     { file_stat : file_stat
-    ; doc : Cmarkit.Doc.t
     ; anchors : Anchor.t list
     ; links : Link.t list
     }
@@ -218,7 +217,7 @@ module Note = struct
     ignore (Cmarkit.Folder.fold_doc folder () doc : unit);
     if !missing_loc
     then Error "document is missing source locations"
-    else Ok { file_stat; doc; anchors = List.rev !anchors; links = List.rev !links }
+    else Ok { file_stat; anchors = List.rev !anchors; links = List.rev !links }
   ;;
 
   let of_doc_exn (file_stat : file_stat) (doc : Cmarkit.Doc.t) : t =
@@ -245,8 +244,6 @@ module Note = struct
       - does not include external links (HTTP/mail link)
   *)
   let links (note : t) : Link.t list = note.links
-
-  let doc (note : t) : Cmarkit.Doc.t = note.doc
 end
 
 (** Non-note assets (images, etc.) *)

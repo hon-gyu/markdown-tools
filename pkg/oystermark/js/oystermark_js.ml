@@ -83,13 +83,14 @@ let json_of_link index source (link : Index.Link.t) =
     ]
 ;;
 
-let json_of_note index (note : Index.Note.t) =
+let json_of_note vault (note : Index.Note.t) =
   let path = Index.Note.path note in
+  let doc = Option.value_exn (Vault.find_doc vault path) in
   `Assoc
     [ "path", `String path
-    ; "mdast", Json.from_string (Cmarkit_mdast.of_doc ~strip_block_id:false (Index.Note.doc note))
+    ; "mdast", Json.from_string (Cmarkit_mdast.of_doc ~strip_block_id:false doc)
     ; "anchors", `List (List.map (Index.Note.anchors note) ~f:json_of_anchor)
-    ; "links", `List (List.map (Index.Note.links note) ~f:(json_of_link index path))
+    ; "links", `List (List.map (Index.Note.links note) ~f:(json_of_link vault.index path))
     ]
 ;;
 
@@ -108,7 +109,7 @@ let index request =
   in
   let vault = Vault.of_files ~vault_root ~md_files ~other_files in
   `Assoc
-    [ "notes", `List (List.map (Index.notes vault.index) ~f:(json_of_note vault.index))
+    [ "notes", `List (List.map (Index.notes vault.index) ~f:(json_of_note vault))
     ; "assets", `List (List.map (Index.assets vault.index) ~f:(fun a -> `String (Index.Asset.path a)))
     ]
   |> Json.to_string
