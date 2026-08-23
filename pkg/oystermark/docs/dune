@@ -7,16 +7,6 @@
    (run ./utils/note_toc.exe))))
 
 (rule
- (alias doc)
- (deps
-  (:exe ./utils/md_to_mld.exe))
- (action
-  (progn
-   (with-stdout-to
-    code-exec-cache-design.mld
-    (run %{exe} %{dep:code-exec-cache-design.md})))))
-
-(rule
  (mode
   (promote (until-clean)))
  (action
@@ -44,7 +34,6 @@
   index
   vault-operations
   template-context
-  code-exec-cache-design
   tracking
   design-260322-lsp
   design-260322-tracing
