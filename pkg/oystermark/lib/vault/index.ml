@@ -345,6 +345,22 @@ let find_asset (index : t) (path : Path.t) : Asset.t option =
 ;;
 
 module Resolve_ = struct
+  let normalize_relative_target ~source target =
+    if not (String.is_prefix target ~prefix:"./" || String.is_prefix target ~prefix:"../")
+    then target
+    else
+      Filename.concat (Filename.dirname source) target
+      |> String.split ~on:'/'
+      |> List.fold ~init:[] ~f:(fun acc component ->
+        match component, acc with
+        | ".", _ | "", _ -> acc
+        | "..", _ :: rest -> rest
+        | "..", [] -> []
+        | component, _ -> component :: acc)
+      |> List.rev
+      |> String.concat ~sep:"/"
+  ;;
+
   let is_path_subsequence ~haystack ~needle =
     let rec loop hs = function
       | [] -> true
@@ -362,6 +378,7 @@ module Resolve_ = struct
   ;;
 
   let resolve_path index ~source target =
+    let target = normalize_relative_target ~source target in
     let normalized = if String.mem target '.' then target else target ^ ".md" in
     let paths = Map.keys index.notes_by_path @ Map.keys index.assets_by_path in
     match List.find paths ~f:(String.equal normalized) with
