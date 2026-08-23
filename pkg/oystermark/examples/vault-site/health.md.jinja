@@ -2,13 +2,13 @@
 
 {{ vault.note_count }} notes · {{ vault.link_count }} links · {{ vault.unresolved_count }} unresolved
 
-## Unresolved links
+## Links pointing nowhere
 
 {% for u in unresolved -%}
 - `{{ u.source }}`:{{ u.line }} → `{{ u.target }}` ({{ u.reason }})
 {% endfor %}
-## Orphans
+## Nothing links here
 
 {% for p in orphans -%}
-- `{{ p }}`
+- [{{ notes_by_path[p].title }}]({{ p }})
 {% endfor -%}

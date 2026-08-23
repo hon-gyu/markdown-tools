@@ -1,0 +1,9 @@
+# Recipe index
+
+{{ vault.note_count }} notes, newest first.
+
+{% for n in notes | sort(attribute="created", reverse=true) -%}
+- [{{ n.title }}]({{ n.path }})
+{%- if n.tags %} — {{ n.tags | join(", ") }}{% endif %}
+{%- if n.backlink_count %} · referenced by {{ n.backlink_count }}{% endif %}
+{% endfor %}

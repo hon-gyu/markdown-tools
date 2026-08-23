@@ -1,7 +1,7 @@
 {0 Generating notes: a worked example}
 
-A vault, three templates, and the [dune] rules that turn one into the other.
-The JSON namespace the templates read is specified in
+A small vault, three templates, and the [dune] rules that turn one into the
+other. The JSON namespace the templates read is specified in
 {!page-"template-context"}; this page is only about wiring it to a build.
 
 The example is real: it lives in [pkg/oystermark/examples/vault-site/] and
@@ -13,33 +13,32 @@ v}
 
 {1 The tree}
 
-Authored files, with the vault kept separate from the templates that read it:
+Everything sits in one directory — the templates alongside the notes they read:
 
 {v
 pkg/oystermark/examples/vault-site/
 ├── dune
-├── templates/
-│   ├── index.md.jinja
-│   ├── tags.md.jinja
-│   └── health.md.jinja
-└── vault/
-    ├── assets/
-    │   └── diagram.svg
-    ├── notes/
-    │   ├── cmarkit.md
-    │   └── wikilinks.md
-    └── projects/
-        ├── mlmdx.md
-        └── oyster.md
+├── focaccia.md
+├── folding.svg
+├── kneading.md
+├── sourdough.md
+├── starter.md
+├── health.md.jinja
+├── index.md.jinja
+└── tags.md.jinja
 v}
 
-Building adds three generated notes beside the templates:
+Building adds three generated notes beside them:
 
 {v
-├── index.md      ← templates/index.md.jinja
-├── tags.md       ← templates/tags.md.jinja
-└── health.md     ← templates/health.md.jinja
+├── health.md     ← health.md.jinja
+├── index.md      ← index.md.jinja
+└── tags.md       ← tags.md.jinja
 v}
+
+A vault does not have to be flat — [note.dir] and [note.segments] exist so a
+template can group a nested vault by subtree — but a flat one keeps this
+example about the wiring.
 
 {1 A note}
 
@@ -47,40 +46,44 @@ Each note carries the frontmatter the templates filter and sort on:
 
 {v
 ---
-title: The Oyster Project
-tags: [ocaml, active]
+title: Sourdough Loaf
+tags: [bread, weekend]
 created: 2026-01-15
 ---
-# Oyster
+# Sourdough Loaf
 
-A vault toolchain. Parsing lives in [[notes/cmarkit]], and the link syntax is
-described in [[notes/wikilinks]].
+A long, slow bake. Build the levain from [[starter]] the night before, then
+follow the folds in [[kneading]].
 v}
+
+Only [tags] and [created] are read by name. A note with no [title] falls back
+to its first heading, and [focaccia.md] writes its tags the inline way
+([tags: bread, quick]) to show both forms are accepted.
 
 {1 The rules}
 
-One rule per generated note. Each depends on the whole vault and on its own
-template:
+One rule per generated note, each depending on the whole directory and on its
+own template:
 
 {v
 (rule
  (targets index.md)
  (deps
-  (source_tree vault)
-  templates/index.md.jinja)
+  (source_tree .)
+  index.md.jinja)
  (action
   (with-stdout-to
    index.md
    (pipe-stdout
-    (run %{bin:oyster} context vault)
-    (run minijinja-cli --format=json templates/index.md.jinja -)))))
+    (run %{bin:oyster} context .)
+    (run minijinja-cli --format=json index.md.jinja -)))))
 
 (alias
  (name vault-site)
  (deps index.md tags.md health.md))
 v}
 
-Four things in that stanza are load-bearing.
+Four parts of that stanza are worth spelling out.
 
 {2 [pipe-stdout], not [pipe-stdin]}
 
@@ -88,7 +91,7 @@ The pipe is named for the output being redirected, so the action that connects
 one command's stdout to the next command's stdin is [pipe-stdout]. There is no
 [pipe-stdin] action.
 
-{2 [(source_tree vault)]}
+{2 [(source_tree .)]}
 
 A template that queries the whole vault depends on every note in it. The
 dependency is therefore coarse on purpose: editing any note rebuilds every
@@ -96,8 +99,12 @@ generated page. Fine-grained dependencies would require knowing which notes a
 template actually read, which the engine does not report.
 
 It is also correct, which a narrower dependency would not be. Adding a link to
-[projects/mlmdx.md] changes the backlink count printed for
-[notes/wikilinks.md], and the rule reruns.
+[focaccia.md] changes the count printed for [kneading.md], and the rule reruns.
+
+Generated notes land in the same directory as their sources, and this does not
+feed back: [dune] excludes a rule's own targets from the source tree it depends
+on, so [index.md] never appears in the context that produced it, nor in the one
+that produces [tags.md].
 
 {2 A named alias}
 
@@ -112,37 +119,32 @@ Resolves the executable from the workspace, so the rule does not depend on
 
 {1 Templates}
 
-Group every note by directory, and annotate each with its tags and how many
-notes point at it:
+List every note newest first, annotated with its tags and how many notes point
+at it:
 
 {v
-# {{ vault.note_count }} notes
+# Recipe index
 
-{% for dir, group in notes | groupby("dir") -%}
-## {{ dir if dir else "(root)" }}
+{{ vault.note_count }} notes, newest first.
 
-{% for n in group -%}
+{% for n in notes | sort(attribute="created", reverse=true) -%}
 - [{{ n.title }}]({{ n.path }})
 {%- if n.tags %} — {{ n.tags | join(", ") }}{% endif %}
-{%- if n.backlink_count %} · {{ n.backlink_count }} backlink(s){% endif %}
+{%- if n.backlink_count %} · referenced by {{ n.backlink_count }}{% endif %}
 {% endfor %}
-{% endfor -%}
 v}
 
 which produces
 
 {v
-# 4 notes
+# Recipe index
 
-## notes
+4 notes, newest first.
 
-- [Cmarkit](notes/cmarkit.md) — ocaml, reference · 2 backlink(s)
-- [Wikilinks](notes/wikilinks.md) — reference · 2 backlink(s)
-
-## projects
-
-- [mlmdx](projects/mlmdx.md) — ocaml, paused
-- [The Oyster Project](projects/oyster.md) — ocaml, active
+- [Sourdough Loaf](sourdough.md) — bread, weekend
+- [Focaccia](focaccia.md) — bread, quick
+- [Starter](starter.md) — reference · referenced by 1
+- [Kneading](kneading.md) — technique, reference · referenced by 2
 v}
 
 Drive an index off the tag map instead, resolving each path through
@@ -158,34 +160,46 @@ Drive an index off the tag map instead, resolving each path through
 {% endfor -%}
 v}
 
+{v
+## bread (2)
+
+- [Focaccia](focaccia.md)
+- [Sourdough Loaf](sourdough.md)
+
+## quick (1)
+
+- [Focaccia](focaccia.md)
+...
+v}
+
 Or report on the graph rather than listing it:
 
 {v
 {{ vault.note_count }} notes · {{ vault.link_count }} links · {{ vault.unresolved_count }} unresolved
 
-## Unresolved links
+## Links pointing nowhere
 
 {% for u in unresolved -%}
 - `{{ u.source }}`:{{ u.line }} → `{{ u.target }}` ({{ u.reason }})
 {% endfor %}
-## Orphans
+## Nothing links here
 
 {% for p in orphans -%}
-- `{{ p }}`
+- [{{ notes_by_path[p].title }}]({{ p }})
 {% endfor -%}
 v}
 
 {v
-4 notes · 6 links · 1 unresolved
+4 notes · 5 links · 1 unresolved
 
-## Unresolved links
+## Links pointing nowhere
 
-- `notes/wikilinks.md`:7 → `nonexistent-note` (missing_path)
+- `starter.md`:7 → `hydration-table` (missing_path)
 
-## Orphans
+## Nothing links here
 
-- `projects/mlmdx.md`
-- `projects/oyster.md`
+- [Focaccia](focaccia.md)
+- [Sourdough Loaf](sourdough.md)
 v}
 
 {1 Filtering}
@@ -195,37 +209,18 @@ Selecting on a tag is a membership test on the note's [tags], not a
 
 {v
 {% for n in notes | selectattr("created") | sort(attribute="created", reverse=true) %}
-{% if "ocaml" in n.tags %}- {{ n.created }} — [{{ n.title }}]({{ n.path }})
+{% if "bread" in n.tags %}- {{ n.created }} — [{{ n.title }}]({{ n.path }})
 {% endif %}{% endfor %}
 v}
 
-[selectattr("tags", "in", \["ocaml"\])] silently matches nothing: it tests
-whether the whole [tags] list is an element of [\["ocaml"\]]. Sorting on
+[selectattr("tags", "in", \["bread"\])] silently matches nothing: it tests
+whether the whole [tags] list is an element of [\["bread"\]]. Sorting on
 [created] works directly because the dates are ISO-8601 strings — see
 {!page-"template-context".dates}.
 
-{1 Generating into the vault}
+{1 What counts as a note}
 
-Writing a generated note into the vault itself works, and does not create a
-cycle: [dune] excludes a rule's own target from the [source_tree] it depends
-on, so the generated note does not appear in the context that produced it.
-
-{v
-(subdir
- vault
- (rule
-  (targets generated.md)
-  (deps
-   (source_tree .)
-   ../templates/index.md.jinja)
-  (action
-   (with-stdout-to
-    generated.md
-    (pipe-stdout
-     (run %{bin:oyster} context .)
-     (run minijinja-cli --format=json ../templates/index.md.jinja -))))))
-v}
-
-Keeping generated notes outside the vault is still the simpler arrangement: it
-keeps the authored vault the thing an editor and the LSP see, and leaves no
-question about which notes are inputs.
+Only [.md] files are notes. Everything else in the directory — [folding.svg]
+here, but also [dune] and the [.jinja] templates themselves — is an asset, and
+shows up under [assets] rather than [notes]. Templates that iterate [notes] are
+unaffected; a template that lists [assets] will see its own source.

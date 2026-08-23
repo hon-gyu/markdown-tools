@@ -106,9 +106,9 @@ many notes point at it without the cost compounding.
     (run minijinja-cli --format=json index.md.jinja -)))))
 v}
 
-The [source_tree] dependency is load-bearing and coarse on purpose: a template
-that queries the whole vault depends on every note in it, so touching any note
-rebuilds every generated page. Fine-grained dependencies would require knowing
+The [source_tree] dependency is coarse on purpose: a template that queries the
+whole vault depends on every note in it, so touching any note rebuilds every
+generated page. Fine-grained dependencies would require knowing
 which notes a given template actually read, which the template engine does not
 report.
 
