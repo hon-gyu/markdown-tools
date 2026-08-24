@@ -33,6 +33,10 @@ devc-down:
         echo "No running dev container found"
     fi
 
+[no-exit-message]
+oyster-publish:
+    just -f pkg/oyster-publish/justfile oyster-publish
+
 mod lsp "pkg/oystermark/lsp"
 
 import? 'justfile.local'

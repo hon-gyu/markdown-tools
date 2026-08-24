@@ -1,0 +1,6 @@
+default:
+    just --list
+
+[no-exit-message]
+oyster-publish:
+    @node {{ source_directory() }}/bin/oyster-publish.mjs
