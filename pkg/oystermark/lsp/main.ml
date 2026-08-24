@@ -111,7 +111,17 @@ class oystermark_server ~sw =
                 ~message:
                   "oystermark: disabled by configuration (\"disable\": true); no \
                    features are offered"));
-      super#on_req_initialize ~notify_back params
+      let result = super#on_req_initialize ~notify_back params in
+      (* The client logs [serverInfo] on connect, which is where a version
+         mismatch between the editor extension and this binary shows up. *)
+      { result with
+        serverInfo =
+          Some
+            (InitializeResult.create_serverInfo
+               ~name:"oystermark-lsp"
+               ~version:(Oystermark.Version.to_string ())
+               ())
+      }
 
     method! on_req_code_lens
       ~notify_back:_

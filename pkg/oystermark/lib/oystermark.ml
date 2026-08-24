@@ -3,3 +3,4 @@
 module Parse = Parse
 module Vault = Vault
 module Context = Context
+module Version = Version

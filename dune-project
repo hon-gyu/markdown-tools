@@ -2,6 +2,9 @@
 
 (name oystermark)
 
+; The version reported by [oyster -version] and by the LSP [serverInfo].
+(version 0.1.0)
+
 (generate_opam_files true)
 
 (source
