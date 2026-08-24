@@ -25,6 +25,15 @@
       },
       "description": "Descendant OysterMark project paths to include in this project's vault view, relative to this project root. Importing selectively removes that project's subtree from pruning; ordinary exact and subpath link resolution then applies over the combined view."
     },
+    "exclude": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Vault-relative path patterns to leave out of the index, in the shape .gitignore made familiar: a pattern without '/' matches a file or directory of that name at any depth, one with '/' is anchored at the project root, '*' and '?' match within a component and '**' spans components. A matched directory takes its subtree with it and is never descended into. This is in addition to what the walk always skips — dot-directories, node_modules, _build, target, dist — which no setting re-includes."
+    },
     "dailyNotes": {
       "type": "object",
       "additionalProperties": false,

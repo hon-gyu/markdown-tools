@@ -78,9 +78,9 @@ let of_root_path
       (vault_root : string)
   : t
   =
-  let entries =
-    List.filter (Fs_utils.walk ~root:vault_root ()) ~f:(fun p -> not (exclude p))
-  in
+  (* [exclude] goes to the walk rather than filtering its result: an excluded
+     directory is then never descended into. *)
+  let entries = Fs_utils.walk ~root:vault_root ~exclude () in
   let files = List.filter entries ~f:(fun p -> not (String.is_suffix p ~suffix:"/")) in
   let parsed_docs =
     List.filter_map files ~f:(fun path ->

@@ -26,6 +26,7 @@ The same shape in both sources — one schema, one parser.
   |-----|------|---------|---------|
   | [disable] | bool | [false] | Turn the server off for this vault. See {!section-disable}. |
   | [imports] | array of strings | [[]] | Descendant projects visible to this project. See {!page-"feature-projects".imports}. |
+  | [exclude] | array of strings | [[]] | Path patterns the vault walk leaves out. See {!section-exclude}. |
   | [dailyNotes.format] | string | [YYYY-MM-DD] | Date format naming the note. See {!page-"feature-daily-notes".format}. |
   | [dailyNotes.folder] | string | vault root | Vault-relative folder the daily notes live under. |
   | [dailyNotes.template] | string | none | {b Stubbed}. See {!page-"feature-daily-notes".limitations}. |
@@ -166,6 +167,62 @@ answered emptily rather than removed. A client may therefore still send
 requests; it will get nothing back. Withdrawing the capabilities themselves
 would be a truer disable and is a possible refinement — it would also make
 {!section-reload} strictly restart-only for this key, which it already is.
+
+{1:exclude Exclude}
+
+What a vault holds is not always what its directory holds. A workspace that
+happens to contain Markdown — a [node_modules] with a README per dependency, a
+build tree with generated pages, a checked-out vendor tree — indexes all of it,
+and the index is the server's memory: every note is parsed and kept, with
+source locations, for as long as the server runs.
+
+Two mechanisms, and the division between them is deliberate.
+
+{b By rule}, never walked, not configurable:
+
+{ul
+  {- Directories whose name begins with a [.]. A leading dot marks tooling
+     state — [.git], [.obsidian], [.venv], an editor's, a language's — and
+     there are more of those than a list could name. A vault that keeps notes
+     under a dot-directory loses them from the index; that is the cost of the
+     rule, and it is preferred to guessing which dot is which.}
+  {- [node_modules], [_build], [target], [dist]. Dependency trees and build
+     output: not notes, and larger than the vault that contains them.}
+}
+
+{b By configuration}, the [exclude] list, for what only the vault knows —
+attachments too numerous to be worth resolving, an archive nobody links into, a
+sibling project's tree. The shape is the one [.gitignore] made familiar:
+
+{ul
+  {- A pattern with no [/] matches a file or directory of that name at any
+     depth: ["drafts"].}
+  {- A pattern with a [/] is anchored at the project root: ["/drafts"],
+     ["archive/2019"].}
+  {- [*] and [?] match within one component; [**] as a whole component spans
+     any number of them: ["*.excalidraw.md"], ["archive/**/raw"].}
+  {- A pattern that matches a directory takes its subtree with it, and the
+     directory is never descended into — the cost of a tree left out is one
+     [stat]. A trailing [/] is accepted and means nothing extra.}
+}
+
+{[
+  { "exclude": ["attachments", "archive/**/raw", "*.excalidraw.md"] }
+]}
+
+A pattern naming nothing — [""], ["/"], ["."] — excludes nothing rather than
+everything: the failure mode worth ruling out here is a vault that silently
+disappears.
+
+Excluded paths are excluded from the {e vault}, not merely from a feature: an
+excluded note is not a link target, not a completion, not a backlink, and a
+link to it is unresolved. That is the point — it is not part of this vault —
+but it is also why the list belongs in the file, travelling with the notes,
+rather than in one contributor's editor settings.
+
+{b Note}: this is what makes an unconditionally-started server affordable, not
+a substitute for not starting one. A workspace that is no vault at all wants
+{!section-disable}.
 
 {1:reload Reload}
 

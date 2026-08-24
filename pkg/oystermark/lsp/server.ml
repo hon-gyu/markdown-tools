@@ -67,13 +67,15 @@ let deepest_root roots path =
   |> List.max_elt ~compare:(fun a b -> Int.compare (String.length a) (String.length b))
 ;;
 
-let build_vault ?(nested_roots = []) ?(imported_roots = []) root =
+let build_vault ?(nested_roots = []) ?(imported_roots = []) ?(exclude = []) root =
+  let excluded_by_config = Oystermark.Vault.Fs_utils.Exclude.of_patterns exclude in
   Oystermark.Vault.of_root_path
     ~skip_expand:true
     ~exclude:(fun path ->
-      deepest_root nested_roots path
-      |> Option.value_map ~default:false ~f:(fun owner ->
-        not (List.mem imported_roots owner ~equal:String.equal)))
+      excluded_by_config path
+      || deepest_root nested_roots path
+         |> Option.value_map ~default:false ~f:(fun owner ->
+           not (List.mem imported_roots owner ~equal:String.equal)))
     root
 ;;
 
@@ -154,7 +156,8 @@ let initialize_project
       | Error e -> [ sprintf "daily notes disabled: %s" e ]
     in
     t.config_warnings <- warnings @ import_warnings @ daily_notes_warning;
-    t.vault <- Some (build_vault ~nested_roots ~imported_roots root)
+    t.vault
+    <- Some (build_vault ~nested_roots ~imported_roots ~exclude:config.exclude root)
 ;;
 
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =

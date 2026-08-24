@@ -41,6 +41,10 @@ type t =
   ; imports : string list
     (** Descendant project paths whose trees are visible in this project's
       vault view. See {!page-"feature-projects".imports}. *)
+  ; exclude : string list
+    (** Path patterns the vault walk leaves out, over and above the
+      directories it never enters.  See
+      {!page-"feature-configuration".exclude}. *)
   ; gtd_unresolved_fragment : fragment_behavior
     (** Fragment behavior for {!Go_to_definition}. *)
   ; diag_unresolved_fragment : fragment_behavior
@@ -101,6 +105,7 @@ let default_daily_notes =
 let default =
   { disable = false
   ; imports = []
+  ; exclude = []
   ; gtd_unresolved_fragment = Fallback
   ; diag_unresolved_fragment = Fallback
   ; hover_max_chars = 2000
@@ -138,6 +143,7 @@ module Partial = struct
   type t =
     { disable : bool option
     ; imports : string list option
+    ; exclude : string list option
     ; gtd_unresolved_fragment : fragment_behavior option
     ; diag_unresolved_fragment : fragment_behavior option
     ; hover_max_chars : int option
@@ -153,6 +159,7 @@ module Partial = struct
   let empty =
     { disable = None
     ; imports = None
+    ; exclude = None
     ; gtd_unresolved_fragment = None
     ; diag_unresolved_fragment = None
     ; hover_max_chars = None
@@ -173,6 +180,7 @@ module Partial = struct
     let pick u l = Option.first_some u l in
     { disable = pick upper.disable lower.disable
     ; imports = pick upper.imports lower.imports
+    ; exclude = pick upper.exclude lower.exclude
     ; gtd_unresolved_fragment =
         pick upper.gtd_unresolved_fragment lower.gtd_unresolved_fragment
     ; diag_unresolved_fragment =
@@ -203,6 +211,7 @@ end
 let resolve (p : Partial.t) : resolved =
   { disable = Option.value p.disable ~default:default.disable
   ; imports = Option.value p.imports ~default:default.imports
+  ; exclude = Option.value p.exclude ~default:default.exclude
   ; gtd_unresolved_fragment =
       Option.value p.gtd_unresolved_fragment ~default:default.gtd_unresolved_fragment
   ; diag_unresolved_fragment =
@@ -362,6 +371,9 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
     | "imports" ->
       acc := { !acc with Partial.imports = parse_string_list w ~key value };
       true
+    | "exclude" ->
+      acc := { !acc with Partial.exclude = parse_string_list w ~key value };
+      true
     | "dailyNotes" ->
       acc := { !acc with Partial.daily_notes = parse_daily_notes w value };
       true
@@ -465,6 +477,7 @@ let parse (j : Yojson.Safe.t) : Partial.t * string list =
 let known_keys : string list =
   [ "disable"
   ; "imports"
+  ; "exclude"
   ; "dailyNotes.format"
   ; "dailyNotes.folder"
   ; "dailyNotes.template"
@@ -511,6 +524,7 @@ let to_json (t : t) : Yojson.Safe.t =
   `Assoc
     [ "disable", `Bool t.disable
     ; "imports", `List (List.map t.imports ~f:(fun path -> `String path))
+    ; "exclude", `List (List.map t.exclude ~f:(fun pattern -> `String pattern))
     ; ( "dailyNotes"
       , `Assoc
           ([ "format", `String t.daily_notes.format ]
@@ -632,7 +646,7 @@ let%test_module "configuration" =
             "diagnostics": {"unresolvedFragment": "strict"} }|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Strict)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Strict)
          (diag_unresolved_fragment Strict) (hover_max_chars 400)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -650,7 +664,7 @@ let%test_module "configuration" =
       show {|{"dailyNotes": {"linkAction": "no"}}|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -676,7 +690,7 @@ let%test_module "configuration" =
       show {|{"disable": "yes"}|};
       [%expect
         {|
-        ((disable true) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable true) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -684,7 +698,7 @@ let%test_module "configuration" =
          (code_lens_show_references_command editor.action.showReferences)
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -693,6 +707,34 @@ let%test_module "configuration" =
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! disable: expected a boolean, got "yes"
+        |}]
+    ;;
+
+    (* Both list-valued keys read the same way; what differs is what the
+       server does with them.  See {!page-"feature-configuration".exclude}. *)
+    let%expect_test "exclude" =
+      show {|{"exclude": ["attachments", "archive/**/raw", "*.excalidraw.md"]}|};
+      show {|{"exclude": "attachments"}|};
+      [%expect
+        {|
+        ((disable false) (imports ())
+         (exclude (attachments archive/**/raw *.excalidraw.md))
+         (gtd_unresolved_fragment Fallback) (diag_unresolved_fragment Fallback)
+         (hover_max_chars 2000) (hover_image_preview false)
+         (hover_image_max_bytes 262144) (inlay_link_direction true)
+         (code_lens_references true) (code_lens_count_toc_links false)
+         (code_lens_show_references_command editor.action.showReferences)
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
+         (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
+         (hover_image_preview false) (hover_image_max_bytes 262144)
+         (inlay_link_direction true) (code_lens_references true)
+         (code_lens_count_toc_links false)
+         (code_lens_show_references_command editor.action.showReferences)
+         (daily_notes
+          ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
+        ! exclude: expected an array of non-empty strings, got "attachments"
         |}]
     ;;
 
@@ -708,7 +750,7 @@ let%test_module "configuration" =
             "dailyNotes": {"format": 42, "folder": "  "} }|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -729,7 +771,7 @@ let%test_module "configuration" =
       show {|{"hover": {"maxChars": 0}}|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -747,7 +789,7 @@ let%test_module "configuration" =
       show {|{"dailynotes": {}, "hover": {"maxchars": 10}, "disabled": true}|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -766,7 +808,7 @@ let%test_module "configuration" =
       show {|{"dailyNotes": []}|};
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -775,7 +817,7 @@ let%test_module "configuration" =
          (daily_notes
           ((format YYYY-MM-DD) (folder ()) (template ()) (link_action true))))
         ! configuration: expected an object, got "nonsense"
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 2000)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
@@ -807,7 +849,7 @@ let%test_module "configuration" =
       print_s [%sexp (resolve (Partial.merge ~lower:client ~upper:file) : t)];
       [%expect
         {|
-        ((disable false) (imports ()) (gtd_unresolved_fragment Fallback)
+        ((disable false) (imports ()) (exclude ()) (gtd_unresolved_fragment Fallback)
          (diag_unresolved_fragment Fallback) (hover_max_chars 100)
          (hover_image_preview false) (hover_image_max_bytes 262144)
          (inlay_link_direction true) (code_lens_references true)
