@@ -1,0 +1,2 @@
+# Generated js_of_ocaml bundle: suppress its diff, collapse it on GitHub.
+oystermark.cjs -diff linguist-generated=true
