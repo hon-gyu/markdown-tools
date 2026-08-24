@@ -4,7 +4,7 @@ open Core
 module Parse = Oystermark.Parse
 module Vault = Oystermark.Vault
 
-let load root = Vault.of_root_path ~skip_expand:true root
+let load root = Vault_fs.of_root_path ~skip_expand:true root
 
 let is_image_target target =
   let target = String.lowercase target in

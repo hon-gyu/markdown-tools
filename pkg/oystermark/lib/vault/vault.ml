@@ -1,5 +1,4 @@
 module Index = Index
-module Fs_utils = Fs_utils
 module Link_ref = Link_ref
 module Embed = Embed
 module Rename = Rename
@@ -69,47 +68,6 @@ let of_docs ~(base : t) (docs : (string * Cmarkit.Doc.t) list) : t =
   in
   let index = List.fold (Index.assets base.index) ~init:index ~f:Index.set_asset in
   { base with index; documents = String.Map.of_alist_exn docs }
-;;
-
-(** Read, parse, resolve, and by default expand the files beneath [vault_root]. *)
-let of_root_path
-      ?(skip_expand = false)
-      ?(exclude : string -> bool = fun _ -> false)
-      (vault_root : string)
-  : t
-  =
-  (* [exclude] goes to the walk rather than filtering its result: an excluded
-     directory is then never descended into. *)
-  let entries = Fs_utils.walk ~root:vault_root ~exclude () in
-  let files = List.filter entries ~f:(fun p -> not (String.is_suffix p ~suffix:"/")) in
-  let parsed_docs =
-    List.filter_map files ~f:(fun path ->
-      if String.is_suffix path ~suffix:".md"
-      then
-        Some
-          ( path
-          , Parse.of_string
-              ~locs:true
-              (In_channel.read_all (Filename.concat vault_root path)) )
-      else None)
-  in
-  let other_files =
-    List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))
-  in
-  let stat_of_path path =
-    file_stat ~mtime:(Fs_utils.mtime_date (Filename.concat vault_root path)) path
-  in
-  let index = build_index ~stat_of_path ~md_docs:parsed_docs ~other_files () in
-  let vault =
-    { vault_root
-    ; index
-    ; documents = String.Map.of_alist_exn parsed_docs
-    ; vault_meta = Cmarkit.Meta.none
-    }
-  in
-  if skip_expand
-  then vault
-  else of_docs ~base:vault (Embed.expand_docs ~index parsed_docs)
 ;;
 
 (** Construct a vault from Markdown contents and asset paths without performing IO.
