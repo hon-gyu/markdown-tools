@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "astro dev",
     "publish:dev": "node ./bin/oyster-publish.mjs dev",
-    "build:parser": "DIR=\"$OYSTERMARK_DIR\" && dune build --root \"$DIR\" pkg/oystermark/js/oystermark_js.bc.js && cp -f \"$DIR/_build/default/pkg/oystermark/js/oystermark_js.bc.js\" src/lib/oystermark/oystermark.cjs && chmod u+w src/lib/oystermark/oystermark.cjs",
+    "build:parser": "./scripts/build-parser.sh",
     "build": "astro build",
     "publish:build": "node ./bin/oyster-publish.mjs build",
     "preview": "astro preview",
