@@ -1,4 +1,4 @@
-(** {0 Note embedding: expand embed wikilinks and markdown image links as AST transclusion}
+(** {1 Note embedding: expand embed wikilinks and markdown image links as AST transclusion}
 
     {@meta[
     ai-disclosure: autonomous
@@ -418,7 +418,7 @@ let reverse_embed_doc (doc : Cmarkit.Doc.t) : Cmarkit.Doc.t =
   Cmarkit.Mapper.map_doc mapper doc
 ;;
 
-(** {1 Tests} *)
+(** {2 Tests} *)
 
 module For_test = struct
   let parse_blocks (md : string) : Cmarkit.Block.t list =

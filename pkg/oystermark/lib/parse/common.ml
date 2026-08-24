@@ -292,9 +292,7 @@ let make_sexp_of
 
 module For_test = struct
   (** Assert that the commonmark roundtrip of a doc is idempotent under normalization.
-    @return ()
-    @raise Failure if the roundtrip is not idempotent.
-  *)
+    Raises [Failure] if the roundtrip is not idempotent. *)
   let commonmark_of_doc_idempotent
         ~(doc_of_string : string -> Doc.t)
         ~(commonmark_of_doc : Doc.t -> string)

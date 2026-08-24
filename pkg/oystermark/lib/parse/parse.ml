@@ -10,7 +10,7 @@ Each module provides a single-pass mapper that might
   provided mapper follows the signature of [Cmarkit.Inline.t Cmarkit.Mapper.mapper]
   or [Cmarkit.Block.t Cmarkit.Mapper.mapper]
 - `-> other mappers rely on multiple nodes as input, thus operates on the whole
-  [Cmarkit.Doc.t]. E.g., {!Oy_div} and {!Struct}
+  [Cmarkit.Doc.t]. E.g., div fences (see [Cmarkit.Block.Ext_div]) and {!Struct}
 
 *)
 
@@ -370,9 +370,9 @@ let%test_module "Extract" =
 
 (** {2 Interactions}
 
-{3 Oy_div and Struct}
+{3 Div fences and Struct}
 
-Tests for interaction between {!module-"Oy_div"} and {!module-"Struct"}
+Tests for interaction between div fences ([Cmarkit.Block.Ext_div]) and {!module-"Struct"}
 
 The open and closing fence of div should not be keyed.
 

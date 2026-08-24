@@ -19,7 +19,7 @@ type diagnostic =
 
     Such an id reaches the collection below twice: once as the heading's slug,
     which the parser resolves from the attribute, and once as the attribute
-    line {!Oystermark.Vault.Index.Note.anchors} sees.  One authored anchor
+    line {!Oystermark.Vault.Index.Note.val-anchors} sees.  One authored anchor
     is not a collision, so the heading occurrence is dropped and the attribute
     line — the better place to jump to — is kept.  A genuine collision between
     the same id written twice is still two attribute occurrences.
