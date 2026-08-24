@@ -15,16 +15,6 @@ let loc_of_sexp = Textloc_conv.t_of_sexp
 let compare_loc = Textloc_conv.compare
 let equal_loc a b = Int.equal (compare_loc a b) 0
 
-(**
-- non-emtpy
-- vault-relative
-- separated by [/]
-- free of leading [./]
-- no empty components
-- no [.] or [..] components
-- case-preserving
-- no Unicode normalization
-*)
 module Path = struct
   type t = string
 
@@ -56,7 +46,6 @@ type heading =
   { text : string
   ; level : int
   ; slug : string
-    (** The identifier the parser gave the heading. See {!Parse.Common.heading_id}. *)
   }
 [@@deriving sexp, equal, compare]
 
@@ -65,20 +54,18 @@ type referenceable_block_kind =
   | Obsidian_caret
 [@@deriving sexp, equal, compare]
 
-(** Block other than heading, made referenceable because of either djot attribute or Obsidian caret.  *)
 type block =
   { id : string
   ; kind : referenceable_block_kind
   }
 [@@deriving sexp, equal, compare]
 
-(** Inline, made referenceable because of attached djot attribute id ([ {#id} ]). *)
 type inline = { id : string } [@@deriving sexp, equal, compare]
 
 type file_stat =
   { rel_path : Path.t
-  ; birthtime : (int * int * int) option (** created date YYYY/MM/DD, when available *)
-  ; mtime : (int * int * int) option (** modified date YYYY/MM/DD, when available *)
+  ; birthtime : (int * int * int) option
+  ; mtime : (int * int * int) option
   }
 
 type anchor_value =
@@ -87,7 +74,6 @@ type anchor_value =
   | Inline of inline
 [@@deriving sexp, equal, compare]
 
-(** Construct a vault-qualified reference to [anchor] in [target_path] *)
 let link_ref_of_anchor ~(tgt_path : Path.t) (anchor : anchor_value) : Link_ref.t =
   match anchor with
   | Heading h ->
@@ -101,15 +87,12 @@ let link_ref_of_anchor ~(tgt_path : Path.t) (anchor : anchor_value) : Link_ref.t
 module Anchor = struct
   type t =
     { value : anchor_value
-    ; loc : loc (** non-none loc *)
+    ; loc : loc
     }
   [@@deriving sexp, equal, compare]
 end
 
-(** Authored link; a note can compute this without an index  *)
 module Link = struct
-  (** How the authored syntax uses its target. Whether an embed transcludes a
-      note or displays an asset is determined after resolution. *)
   type kind =
     | Link
     | Embed
@@ -118,7 +101,7 @@ module Link = struct
   type t =
     { reference : Link_ref.t
     ; kind : kind
-    ; loc : loc (** Non-none loc *)
+    ; loc : loc
     }
   [@@deriving sexp, equal, compare]
 end
@@ -187,7 +170,6 @@ module Note = struct
     ; links : Link.t list
     }
 
-  (** @return [Error] if the document is not parsed with source locations enabled (missing location information) *)
   let of_doc (file_stat : file_stat) (doc : Cmarkit.Doc.t) : (t, string) result =
     let missing_loc = ref false in
     let anchors = ref [] in
@@ -284,15 +266,12 @@ module Note = struct
 
   let path : t -> Path.t = fun note -> note.file_stat.rel_path
   let file_stat : t -> file_stat = fun note -> note.file_stat
-
-  (** Parsed YAML frontmatter, when the note opens with a frontmatter block. *)
   let frontmatter : t -> Yaml.value option = fun note -> note.frontmatter
 
   let frontmatter_field (note : t) (key : string) : Yaml.value option =
     Frontmatter_.field note.frontmatter key
   ;;
 
-  (** Tags declared in the frontmatter [tags] key, with duplicates removed. *)
   let tags (note : t) : string list =
     Frontmatter_.string_list (frontmatter_field note "tags")
     |> List.fold ~init:([], String.Set.empty) ~f:(fun (acc, seen) tag ->
@@ -301,10 +280,6 @@ module Note = struct
     |> List.rev
   ;;
 
-  (** The note's creation date, as [(year, month, day)].
-
-      Read from the frontmatter [created] key, then [date], then whatever the
-      loader recorded as {!type-file_stat}'s [birthtime]. *)
   let created (note : t) : (int * int * int) option =
     List.find_map
       [ lazy (Frontmatter_.date (frontmatter_field note "created"))
@@ -314,23 +289,12 @@ module Note = struct
       ~f:force
   ;;
 
-  (** The note's modification date, as [(year, month, day)].
-
-      Read from the frontmatter [updated] key, then whatever the loader
-      recorded as {!type-file_stat}'s [mtime]. *)
   let modified (note : t) : (int * int * int) option =
     Option.first_some
       (Frontmatter_.date (frontmatter_field note "updated"))
       note.file_stat.mtime
   ;;
 
-  (** The note's display title.
-
-      Resolved in order of authorial intent:
-        explicit frontmatter [title]
-        > first level-1 heading
-        > basename without its extension
-        *)
   let title (note : t) : string =
     let from_heading () =
       List.find_map note.anchors ~f:(fun a ->
@@ -351,7 +315,6 @@ module Note = struct
     | _ -> Option.value_or_thunk (from_heading ()) ~default:from_basename
   ;;
 
-  (** all authored anchor occurrence (including duplicates) in document order *)
   let anchors (note : t) : Anchor.t list = note.anchors
 
   let headings (note : t) : (heading * loc) list =
@@ -362,15 +325,9 @@ module Note = struct
       | Block _ | Inline _ -> None)
   ;;
 
-  (** All link references in a note, returned in document order.
-      - includes both resolved and unresolved links
-      - includes both markdown and wiki links
-      - does not include external links (HTTP/mail link)
-  *)
   let links (note : t) : Link.t list = note.links
 end
 
-(** Non-note assets (images, etc.) *)
 module Asset = struct
   type t = { file_stat : file_stat }
 
@@ -390,12 +347,9 @@ type target =
 type resolution_error =
   | Missing_path
   | Missing_anchor of Path.t
-  (** the base path exists and the fragment does not resolve, whether that base target is a note or asset *)
 
-(** Result of resolving an authored reference. *)
 type resolution = (target, resolution_error) result
 
-(** An authored link viewed through a resolved target  *)
 type backlink =
   { source : Path.t
   ; link : Link.t
@@ -420,12 +374,7 @@ type t =
         written to (the LSP's incremental updates) from paying for it. *)
   }
 
-let note_of_path : t -> Path.t -> Note.t option = fun t p -> Map.find t.notes_by_path p
-
-(** Returned in ascending canonical path order. *)
 let notes (index : t) : Note.t list = Map.data index.notes_by_path
-
-(** Returned in ascending canonical path order. *)
 let assets (index : t) : Asset.t list = Map.data index.assets_by_path
 
 let find_note (index : t) (path : Path.t) : Note.t option =
@@ -534,13 +483,6 @@ end
 
 open Resolve_
 
-(** Resolve an authored reference related to a [source] note.
-
-  On duplicated anchors, the first one in document order is returned.
-
-  @param ref The link reference to resolve.
-  @param source The path of the note containing the link reference. It doesn't need to be present in the index.
-*)
 let resolve (index : t) (source : Path.t) (ref : Link_ref.t) : resolution =
   let path =
     match ref.Link_ref.target with
@@ -591,28 +533,16 @@ let make notes_by_path assets_by_path : t =
 
 let empty : t = make String.Map.empty String.Map.empty
 
-(** Insert or replace the note at its canonical path, removing any asset at the same path.
-
-- atomically update its anchors and outgoing occurrences;
-- update all reverse-reference queries affected by the change;
-- return a new index snapshot;
-- leave the old snapshot valid and unchanged.
-
-The result of any update sequence is observationally equivalent to rebuilding the index
-from its resulting notes and assets.
- *)
 let set_note : t -> Note.t -> t =
   fun t n ->
   let p = Note.path n in
   make (Map.set t.notes_by_path ~key:p ~data:n) (Map.remove t.assets_by_path p)
 ;;
 
-(** remove a note from the index. no-op when absent *)
 let remove_note : t -> Path.t -> t =
   fun t p -> make (Map.remove t.notes_by_path p) t.assets_by_path
 ;;
 
-(** Insert or replace the asset at its canonical path, removing any note at the same path. *)
 let set_asset : t -> Asset.t -> t =
   fun t a ->
   let p = Asset.path a in
@@ -632,21 +562,14 @@ let unresolved_links (index : t) (note_path : Path.t) : (Link.t * resolution_err
       | Error e -> Some (l, e)))
 ;;
 
-(** Every resolved edge in the vault, in ascending source path order and then
-    document order. *)
 let all_backlinks (index : t) : (target * backlink) list =
   Map.data (force index.backlinks) |> List.concat
 ;;
 
-(** The resolved edges landing on [path], whatever target kind they name. *)
 let backlinks_at_path (index : t) (path : Path.t) : (target * backlink) list =
   Map.find (force index.backlinks) path |> Option.value ~default:[]
 ;;
 
-(**
-  @param include_anchors If true, also includes edge pointing to any anchor owned by the note
-  @return incoming links {b to} a note of [tgt_path], in document order
-*)
 let backlinks_of_note ?(include_anchors : bool = false) (index : t) (tgt_path : Path.t)
   : backlink list
   =
@@ -657,15 +580,12 @@ let backlinks_of_note ?(include_anchors : bool = false) (index : t) (tgt_path : 
     | _ -> None)
 ;;
 
-(** @return incoming links {b to} [target], in document order *)
 let backlinks_of_target (index : t) (target : target) : backlink list =
   List.filter_map
     (backlinks_at_path index (target_path target))
     ~f:(fun (t, b) -> if equal_target t target then Some b else None)
 ;;
 
-(** A note is orphaned when no successfully resolved ordinary link or embed from a different
-note targets either the note or one of its anchors. *)
 let is_orphan (index : t) (note_path : Path.t) : bool =
   let path = note_path in
   not
@@ -676,7 +596,6 @@ let is_orphan (index : t) (note_path : Path.t) : bool =
        | Link.Link | Embed -> true))
 ;;
 
-(** Returned in ascending canonical path order. *)
 let orphans (index : t) : Path.t list =
   List.filter (Map.keys index.notes_by_path) ~f:(is_orphan index)
 ;;
