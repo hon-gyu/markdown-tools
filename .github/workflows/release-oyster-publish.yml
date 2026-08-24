@@ -1,0 +1,63 @@
+name: Release oyster-publish
+
+on:
+  push:
+    tags: ["oyster-publish-v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: pkg/oyster-publish
+
+jobs:
+  release:
+    name: Cut GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#oyster-publish-v}"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $declared"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches package.json version $declared"
+
+      # Which oystermark the generator ships is a release decision, not
+      # necessarily HEAD. The stamp only has to be true: the bundle beside it
+      # must be the build it names.
+      - name: Check vendored parser stamp is truthful
+        run: |
+          stamp=src/lib/oystermark/oystermark.version.json
+          if [ ! -f "$stamp" ]; then
+            echo "::error::$stamp missing; run npm run build:parser"
+            exit 1
+          fi
+          claimed=$(node -p "require('./$stamp').bundleSha256")
+          actual=$(shasum -a 256 src/lib/oystermark/oystermark.cjs | cut -d' ' -f1)
+          if [ "$claimed" != "$actual" ]; then
+            echo "::error::oystermark.cjs does not match its stamp; run npm run build:parser"
+            exit 1
+          fi
+          echo "ships oystermark $(node -p "require('./$stamp').oystermark")" \
+               "($(node -p "require('./$stamp').commit"))"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git tag -l 'oyster-publish-v*' --sort=-v:refname \
+                   | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          if [ -n "$prev" ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag \
+              --generate-notes --notes-start-tag "$prev"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi
