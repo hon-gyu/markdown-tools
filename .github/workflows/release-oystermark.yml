@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags: ["oystermark-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Cut GitHub release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag matches dune-project version
+        run: |
+          tag="${GITHUB_REF_NAME#oystermark-v}"
+          declared=$(sed -n 's/^(version \(.*\))$/\1/p' dune-project)
+          if [ -z "$declared" ]; then
+            echo "::error::no (version ...) stanza found in dune-project"
+            exit 1
+          fi
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match dune-project version $declared"
+            exit 1
+          fi
+          echo "tag $GITHUB_REF_NAME matches dune-project version $declared"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git tag -l 'oystermark-v*' --sort=-v:refname \
+                   | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          if [ -n "$prev" ]; then
+            echo "generating notes since $prev"
+            gh release create "$GITHUB_REF_NAME" --verify-tag \
+              --generate-notes --notes-start-tag "$prev"
+          else
+            echo "no previous oystermark tag; generating notes from history start"
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          fi

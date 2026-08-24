@@ -4,7 +4,7 @@ open Core
 module Parse = Oystermark.Parse
 module Vault = Oystermark.Vault
 
-let load root = Vault.of_root_path ~skip_expand:true root
+let load root = Vault_fs.of_root_path ~skip_expand:true root
 
 let is_image_target target =
   let target = String.lowercase target in
@@ -400,4 +400,9 @@ let command =
     ]
 ;;
 
-let () = Command_unix.run command
+let () =
+  let version = Oystermark.Version.to_string () in
+  (* [build_info] defaults to a placeholder sexp that [oyster version] prints
+     verbatim; give it something readable instead. *)
+  Command_unix.run ~version ~build_info:("oystermark " ^ version) command
+;;

@@ -2,6 +2,9 @@
 
 (name oystermark)
 
+; The version reported by [oyster -version] and by the LSP [serverInfo].
+(version 0.1.0)
+
 (generate_opam_files true)
 
 (source
@@ -72,20 +75,6 @@
   (odoc :with-doc))
  (tags
   ("add topics" "to describe" your project)))
-
-(package
-  (name spec)
-  (allow_empty)
-  (synopsis "")
-  (description "")
-  (depends
-  ocaml
-  (dune
-    (>= 3.22))
-  core
-  ppx_jane
-  opentelemetry
-))
 
 (package
   (name trace-collect)

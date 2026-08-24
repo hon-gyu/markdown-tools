@@ -1,6 +1,13 @@
 (library
  (name test_oystermark_expect)
- (libraries oystermark oymarkit core core_unix yojson textutils.ascii_table)
+ (libraries
+  oystermark
+  oystermark.vault_fs
+  oymarkit
+  core
+  core_unix
+  yojson
+  textutils.ascii_table)
  (inline_tests
   (deps
    (source_tree ../data)))

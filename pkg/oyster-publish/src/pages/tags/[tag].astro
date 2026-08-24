@@ -1,0 +1,17 @@
+---
+import Base from "../../layouts/Base.astro";
+import NoteList from "../../components/NoteList.astro";
+import { getVaultIndex } from "../../lib/note-index";
+import { tagGroups } from "../../lib/discovery";
+
+export async function getStaticPaths() {
+  const groups = tagGroups((await getVaultIndex()).notes);
+  return groups.map((group) => ({ params: { tag: group.slug }, props: { group } }));
+}
+const { group } = Astro.props;
+---
+<Base title={`#${group.label}`}>
+  <h1>#{group.label}</h1>
+  <p>{group.notes.length} {group.notes.length === 1 ? "note" : "notes"}</p>
+  <NoteList notes={group.notes} />
+</Base>

@@ -1,0 +1,68 @@
+{
+  "name": "oyster-publish",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "oyster-publish": "./bin/oyster-publish.mjs"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "publish:dev": "node ./bin/oyster-publish.mjs dev",
+    "build:parser": "./scripts/build-parser.sh",
+    "build": "astro build",
+    "publish:build": "node ./bin/oyster-publish.mjs build",
+    "preview": "astro preview",
+    "sync": "astro sync",
+    "check": "astro check",
+    "check:ts": "tsc --noEmit",
+    "check:biome": "biome check --files-ignore-unknown=true src tests",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "^7.0.2",
+    "@astrojs/react": "^6.0.1",
+    "@astryxdesign/core": "^0.1.7",
+    "@astryxdesign/theme-neutral": "^0.1.7",
+    "@heroicons/react": "^2.2.0",
+    "astro": "^7.0.7",
+    "commander": "^15.0.0",
+    "d3-drag": "^3.0.0",
+    "d3-force": "^3.0.0",
+    "d3-selection": "^3.0.0",
+    "d3-transition": "^3.0.1",
+    "d3-zoom": "^3.0.0",
+    "github-slugger": "^2.0.0",
+    "js-yaml": "^4.3.0",
+    "katex": "^0.17.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "rehype-autolink-headings": "^7.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "@astryxdesign/cli": "^0.1.7",
+    "@biomejs/biome": "^2.5.7",
+    "@types/d3-drag": "^3.0.7",
+    "@types/d3-force": "^3.0.10",
+    "@types/d3-selection": "^3.0.11",
+    "@types/d3-transition": "^3.0.9",
+    "@types/d3-zoom": "^3.0.8",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "playwright": "^1.61.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

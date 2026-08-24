@@ -1,0 +1,56 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getVaultIndex } from "../../lib/note-index";
+import { tagGroups } from "../../lib/discovery";
+
+const groups = tagGroups((await getVaultIndex()).notes);
+---
+<Base title="Tags">
+  <h1>Tags</h1>
+  {groups.length === 0 ? <p>No tags yet.</p> : (
+    <ul class="tag-index">
+      {groups.map((group) => (
+        <li id={group.label.toLocaleLowerCase()}>
+          <a class="tag-link" href={`/tags/${group.slug}`}>
+            <span aria-hidden="true">#</span>{group.label}
+          </a>
+          <span class="tag-count" aria-label={`${group.notes.length} ${group.notes.length === 1 ? "note" : "notes"}`}>
+            {group.notes.length}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )}
+</Base>
+<style>
+  .tag-index { list-style: none; padding: 0; display: grid; gap: 0.4rem; }
+  .tag-index li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid transparent;
+    border-radius: 0.45rem;
+    background: color-mix(in oklab, currentColor 4%, transparent);
+  }
+  .tag-index li:hover {
+    border-color: color-mix(in oklab, currentColor 10%, transparent);
+    background: color-mix(in oklab, currentColor 6%, transparent);
+  }
+  .tag-link {
+    color: inherit !important;
+    font-weight: 600;
+    text-decoration: none !important;
+  }
+  .tag-link span { margin-inline-end: 0.15rem; opacity: 0.5; }
+  .tag-count {
+    min-width: 1.6rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, currentColor 7%, transparent);
+    color: color-mix(in oklab, currentColor 62%, transparent);
+    font-size: 0.78rem;
+    text-align: center;
+  }
+</style>

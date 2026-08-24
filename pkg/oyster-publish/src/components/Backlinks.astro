@@ -1,0 +1,81 @@
+---
+// The "Linked mentions" panel: lists the notes that link to this one.
+// Server-rendered, no client JS.
+import type { Backlink } from "../lib/note-index";
+
+interface Props {
+  backlinks: Backlink[];
+}
+const { backlinks } = Astro.props;
+---
+
+{
+  backlinks.length > 0 && (
+    <section class="backlinks">
+      <h2>Linked mentions</h2>
+      <ul>
+        {backlinks.map((b) => (
+          <li>
+            <a class="backlink-title" href={b.slug}>{b.title}</a>
+            {b.count > 1 && <span class="backlink-count">{b.count} references</span>}
+            {b.mentions.map((mention) => (
+              <blockquote>
+                <a class="backlink-mention" href={mention.href}>
+                  {mention.context || "Linked without surrounding text."}
+                </a>
+                {mention.targetFragment && <small>Links to {mention.targetFragment}</small>}
+              </blockquote>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+<style>
+  .backlinks {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+  }
+  .backlinks h2 {
+    margin-block: 0 0.85rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.6;
+  }
+  .backlinks ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .backlink-count {
+    margin-inline-start: 0.5rem;
+    font-size: 0.8rem;
+    opacity: 0.65;
+  }
+  .backlink-title {
+    color: inherit;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .backlink-mention {
+    color: inherit;
+    text-decoration: none;
+  }
+  .backlink-title:hover,
+  .backlink-mention:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+  }
+  .backlinks blockquote {
+    margin: 0.45rem 0 0.8rem;
+    padding-inline-start: 0.75rem;
+    border-inline-start: 2px solid color-mix(in oklab, currentColor 18%, transparent);
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  .backlinks small { display: block; margin-block-start: 0.25rem; }
+</style>

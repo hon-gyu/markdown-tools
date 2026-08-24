@@ -1,0 +1,32 @@
+---
+import type { NoteRecord } from "../lib/vault-manifest";
+
+interface Props {
+  notes: NoteRecord[];
+  empty?: string;
+}
+const { notes, empty = "No notes yet." } = Astro.props;
+const dateLabel = (value?: string) => value
+  ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(value))
+  : null;
+---
+
+{notes.length === 0 ? <p class="note-list-empty">{empty}</p> : (
+  <ol class="note-list">
+    {notes.map((note) => (
+      <li>
+        <a href={note.slug}>{note.title}</a>
+        {dateLabel(note.date) && <time datetime={note.date}>{dateLabel(note.date)}</time>}
+        {note.excerpt && <p>{note.excerpt}</p>}
+      </li>
+    ))}
+  </ol>
+)}
+
+<style>
+  .note-list { list-style: none; padding: 0; }
+  .note-list li { padding-block: 0.8rem; border-block-end: 1px solid color-mix(in oklab, currentColor 10%, transparent); }
+  .note-list a { font-weight: 650; }
+  .note-list time { margin-inline-start: 0.65rem; color: color-mix(in oklab, currentColor 58%, transparent); font-size: 0.85em; }
+  .note-list p { margin-block: 0.3rem 0; color: color-mix(in oklab, currentColor 72%, transparent); }
+</style>

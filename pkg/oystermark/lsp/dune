@@ -24,6 +24,7 @@
   server)
  (libraries
   oystermark
+  oystermark.vault_fs
   core
   core_unix.time_float_unix
   yojson
@@ -42,6 +43,7 @@
  (libraries
   lsp_lib
   oystermark
+  oystermark.vault_fs
   linol-eio
   eio_main
   opentelemetry.trace

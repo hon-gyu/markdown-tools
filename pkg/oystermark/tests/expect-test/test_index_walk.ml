@@ -1,5 +1,5 @@
 (** What the vault walk lists.
-    Impl: {!Oystermark.Vault.Fs_utils.walk}.
+    Impl: {!Vault_fs.Fs_utils.walk}.
 
     The tree is built at run time rather than checked in under [data/]: dune
     does not copy dot-directories into the build tree, and dot-directories are
@@ -17,9 +17,9 @@ let list_entries ?(exclude = []) (files : string list) : string list =
     Out_channel.write_all full ~data:"# Note\n");
   Exn.protect
     ~f:(fun () ->
-      Oystermark.Vault.Fs_utils.walk
+      Vault_fs.Fs_utils.walk
         ~root
-        ~exclude:(Oystermark.Vault.Fs_utils.Exclude.of_patterns exclude)
+        ~exclude:(Vault_fs.Fs_utils.Exclude.of_patterns exclude)
         ()
       |> List.sort ~compare:String.compare)
     ~finally:(fun () ->
@@ -71,7 +71,7 @@ let%expect_test "build and dependency directories are not notes" =
 ;;
 
 (* What the walk leaves out by rule is fixed; what a vault leaves out is its
-   own business. See {!Oystermark.Vault.Fs_utils.Exclude}. *)
+   own business. See {!Vault_fs.Fs_utils.Exclude}. *)
 let%expect_test "configured patterns" =
   let files =
     [ "top.md"

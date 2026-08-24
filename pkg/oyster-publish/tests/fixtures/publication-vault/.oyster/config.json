@@ -1,0 +1,8 @@
+{
+  "title": "Publication fixture",
+  "publication": {
+    "includeFolders": ["blog"],
+    "excludeFolders": ["blog/drafts"],
+    "linkedNotes": true
+  }
+}

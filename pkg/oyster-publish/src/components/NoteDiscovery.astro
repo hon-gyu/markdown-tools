@@ -1,0 +1,45 @@
+---
+import type { NoteRecord } from "../lib/vault-manifest";
+
+interface Props {
+  note: NoteRecord;
+  previous: NoteRecord | null;
+  next: NoteRecord | null;
+  tagLinks: { label: string; href: string }[];
+}
+const { note, previous, next, tagLinks } = Astro.props;
+const format = (value: string) => new Intl.DateTimeFormat(
+  "en-GB",
+  { dateStyle: "long", timeZone: "UTC" },
+).format(new Date(value));
+---
+
+<footer class="note-discovery">
+  {(note.date || note.updated || note.author || note.status || note.tags.length > 0) && (
+    <div class="note-meta">
+      {note.date && <span>Published <time datetime={note.date}>{format(note.date)}</time></span>}
+      {note.updated && <span>Updated <time datetime={note.updated}>{format(note.updated)}</time></span>}
+      {note.author && <span>By {note.author}</span>}
+      {note.status && <span>Status: {note.status}</span>}
+      {tagLinks.length > 0 && (
+        <span class="note-tags">
+          {tagLinks.map((tag) => <a href={tag.href}>#{tag.label}</a>)}
+        </span>
+      )}
+    </div>
+  )}
+  {(previous || next) && (
+    <nav class="note-adjacent" aria-label="Previous and next notes">
+      <span>{previous && <a href={previous.slug}>← {previous.title}</a>}</span>
+      <span>{next && <a href={next.slug}>{next.title} →</a>}</span>
+    </nav>
+  )}
+</footer>
+
+<style>
+  .note-discovery { margin-block-start: 2.5rem; padding-block-start: 1rem; border-block-start: 1px solid color-mix(in oklab, currentColor 12%, transparent); }
+  .note-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; color: color-mix(in oklab, currentColor 64%, transparent); font-size: 0.85rem; }
+  .note-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .note-adjacent { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-block-start: 1.25rem; }
+  .note-adjacent span:last-child { text-align: end; }
+</style>

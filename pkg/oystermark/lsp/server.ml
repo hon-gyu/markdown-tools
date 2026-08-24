@@ -68,8 +68,8 @@ let deepest_root roots path =
 ;;
 
 let build_vault ?(nested_roots = []) ?(imported_roots = []) ?(exclude = []) root =
-  let excluded_by_config = Oystermark.Vault.Fs_utils.Exclude.of_patterns exclude in
-  Oystermark.Vault.of_root_path
+  let excluded_by_config = Vault_fs.Fs_utils.Exclude.of_patterns exclude in
+  Vault_fs.of_root_path
     ~skip_expand:true
     ~exclude:(fun path ->
       excluded_by_config path
@@ -162,7 +162,7 @@ let initialize_project
 
 let initialize (t : t) ~(root : string) ?(init_options : Yojson.Safe.t option) () : unit =
   let project_roots =
-    Oystermark.Vault.Fs_utils.walk ~root ()
+    Vault_fs.Fs_utils.walk ~root ()
     |> List.filter_map ~f:(fun path ->
       if String.equal (Filename.basename path) Lsp_config.file_name
       then Some (Filename.dirname path)
