@@ -33,4 +33,6 @@ devc-down:
         echo "No running dev container found"
     fi
 
+mod lsp "pkg/oystermark/lsp"
+
 import? 'justfile.local'

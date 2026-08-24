@@ -1,7 +1,7 @@
-root := justfile_directory() / "../../.."
+root := source_directory() / "../../.."
 
 default:
-    @just --list --justfile {{ justfile() }}
+    @just --list --justfile {{ source_file() }}
 
 # Rebuild the binary.
 build:
