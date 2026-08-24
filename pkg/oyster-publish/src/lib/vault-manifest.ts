@@ -140,43 +140,11 @@ function parseNote(input: ManifestInput, indexed?: OystermarkNote): NoteRecord {
 	const anchorNodes = new Map<NoteAnchor, any>();
 	let sourceFragment: string | null = null;
 
-	visit(tree, (node: any, _index, parent: any) => {
-		if (node.type === "heading") {
-			const text = mdToString(node);
-			const id = slugger.slug(text);
-			headings.push({ text, slug: id });
-			sourceFragment = id;
-			const anchor = {
-				id,
-				kind: "heading" as const,
-				text,
-				depth: node.depth,
-				excerpt: "",
-			};
-			anchors.push(anchor);
-			anchorNodes.set(anchor, node);
-			return SKIP;
-		}
-
-		const explicitId = node.data?.hProperties?.id;
-		if (typeof explicitId === "string") {
-			const classes = node.data?.hProperties?.className;
-			const anchor = {
-				id: explicitId,
-				kind:
-					Array.isArray(classes) && classes.includes("has-block-id")
-						? "block"
-						: "attribute",
-				text: mdToString(node),
-				excerpt: "",
-			} as NoteAnchor;
-			anchors.push(anchor);
-			anchorNodes.set(anchor, node);
-		}
-
-		if (node.type === "text" || node.type === "inlineCode") {
-			textParts.push(node.value);
-		} else if (node.type === "link" && node.data?.oyWikilink) {
+	// Records a link node. Shared with the heading pass below: heading children
+	// are skipped by the main walk, but links inside a heading still count and
+	// must land in document order to line up with the Oystermark index.
+	const collectLink = (node: any, parent: any): void => {
+		if (node.type === "link" && node.data?.oyWikilink) {
 			const link = node.data.oyWikilink;
 			links.push({
 				target: link.target,
@@ -204,6 +172,50 @@ function parseNote(input: ManifestInput, indexed?: OystermarkNote): NoteRecord {
 					sourceFragment,
 				});
 			}
+		}
+	};
+
+	visit(tree, (node: any, _index, parent: any) => {
+		if (node.type === "heading") {
+			const text = mdToString(node);
+			const id = slugger.slug(text);
+			headings.push({ text, slug: id });
+			sourceFragment = id;
+			const anchor = {
+				id,
+				kind: "heading" as const,
+				text,
+				depth: node.depth,
+				excerpt: "",
+			};
+			anchors.push(anchor);
+			anchorNodes.set(anchor, node);
+			visit(node, (child: any, _childIndex, childParent: any) => {
+				if (child !== node) collectLink(child, childParent ?? node);
+			});
+			return SKIP;
+		}
+
+		const explicitId = node.data?.hProperties?.id;
+		if (typeof explicitId === "string") {
+			const classes = node.data?.hProperties?.className;
+			const anchor = {
+				id: explicitId,
+				kind:
+					Array.isArray(classes) && classes.includes("has-block-id")
+						? "block"
+						: "attribute",
+				text: mdToString(node),
+				excerpt: "",
+			} as NoteAnchor;
+			anchors.push(anchor);
+			anchorNodes.set(anchor, node);
+		}
+
+		if (node.type === "text" || node.type === "inlineCode") {
+			textParts.push(node.value);
+		} else {
+			collectLink(node, parent);
 		}
 	});
 

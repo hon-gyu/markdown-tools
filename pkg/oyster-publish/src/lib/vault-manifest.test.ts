@@ -259,3 +259,30 @@ test("folder selection can close over linked notes but never explicit private no
 		]),
 	);
 });
+
+test("links inside headings are collected in document order", () => {
+	const manifest = buildVaultManifest([
+		{
+			path: "Source.md",
+			body: [
+				"Intro linking [[Target]].",
+				"",
+				"## Heading about [[Target]]",
+				"",
+				"Body linking [[Target]] again.",
+			].join("\n"),
+			data: { publish: true },
+		},
+		{ path: "Target.md", body: "Target body.", data: { publish: true } },
+	]);
+	const note = manifest.notes.find((entry) => entry.path === "Source.md")!;
+
+	expect(note.links.map((link) => link.sourceFragment)).toEqual([
+		null,
+		"heading-about-target",
+		"heading-about-target",
+	]);
+	expect(note.links.every((link) => link.status === "resolved")).toBe(true);
+	// Heading text stays out of the note's plain text/excerpt.
+	expect(note.text).not.toContain("Heading about");
+});
