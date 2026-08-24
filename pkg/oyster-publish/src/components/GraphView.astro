@@ -1,0 +1,277 @@
+---
+// The graph-view island. Server-renders an empty stage plus the graph payload
+// as inert JSON, then hydrates it with the client script in src/scripts/graph.ts
+// (bundled by Astro). The data is built once at scan time.
+//
+// Controls live as icon buttons overlaid on the top-right of the stage
+// (Obsidian-style): toggle local/global, reset the view, and expand into a
+// full-viewport modal. Two flavours, chosen by props:
+//  - the right-rail panel on a note page: `focusHref` set, `scope="local"`;
+//  - the whole-vault view (home page / /graph): no focus, `scope="global"`.
+import { getVaultIndex, graphDataFor } from "../lib/note-index";
+
+interface Props {
+  // Slug of the note to center a local view on (e.g. "/rust/async"). Omit for
+  // the whole-vault view; the local/global toggle then hides itself.
+  focusHref?: string;
+  // Which view to open in: "local" needs a focusHref, else falls back to global.
+  scope?: "local" | "global";
+  // Stage height (any CSS length). The stage is full-width of its container.
+  height?: string;
+}
+const { focusHref, scope = focusHref ? "local" : "global", height = "18rem" } =
+  Astro.props;
+
+const data = graphDataFor(await getVaultIndex());
+const payload = JSON.stringify(data);
+const counts = `${data.nodes.length} note${data.nodes.length === 1 ? "" : "s"}, ${data.edges.length} link${data.edges.length === 1 ? "" : "s"}`;
+---
+
+<section
+  class="graph-panel"
+  data-graph-panel
+  data-graph-scope={scope}
+  data-graph-focus={focusHref}
+>
+  <div class="graph-stage" style={`height: ${height}`}>
+    <div class="graph-mount" data-graph-mount></div>
+
+    <div class="graph-controls">
+      <button
+        type="button"
+        class="graph-icon-btn"
+        data-graph-toggle
+        title="Toggle global view"
+        aria-label="Toggle global view"
+        aria-pressed="false"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="18" cy="5" r="3"></circle>
+          <circle cx="6" cy="12" r="3"></circle>
+          <circle cx="18" cy="19" r="3"></circle>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="graph-icon-btn"
+        data-graph-reset
+        title="Reset view"
+        aria-label="Reset view"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <polyline points="1 4 1 10 7 10"></polyline>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="graph-icon-btn"
+        data-graph-expand
+        title="Expand"
+        aria-label="Expand"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <line x1="7" y1="17" x2="17" y2="7"></line>
+          <polyline points="7 7 17 7 17 17"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    {/* Inert payload the island parses; not executed as script. */}
+    <script
+      is:inline
+      type="application/json"
+      data-graph-payload
+      set:html={payload}></script>
+    <p class="graph-empty">{counts}</p>
+  </div>
+
+  {/* Expanded view. Hidden until the Expand button opens it. */}
+  <div class="graph-modal" data-graph-modal hidden>
+    <div class="graph-modal-backdrop" data-graph-close></div>
+    <div class="graph-modal-window">
+      <div class="graph-stage graph-stage-modal">
+        <div class="graph-mount" data-graph-mount></div>
+        <div class="graph-controls">
+          <button
+            type="button"
+            class="graph-icon-btn"
+            data-graph-toggle
+            title="Toggle global view"
+            aria-label="Toggle global view"
+            aria-pressed="false"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="graph-icon-btn"
+            data-graph-reset
+            title="Reset view"
+            aria-label="Reset view"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="graph-icon-btn"
+            data-graph-close
+            title="Close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import "../scripts/graph.ts";
+</script>
+
+<style>
+  .graph-panel {
+    --graph-focus: light-dark(#2563eb, #7db4ff);
+    --graph-root: light-dark(#8993a1, #9aa6b5);
+    --graph-folder-1: light-dark(#527ba3, #77a8d8);
+    --graph-folder-2: light-dark(#6673a3, #929ddb);
+    --graph-folder-3: light-dark(#7d7099, #aa9bc4);
+    --graph-folder-4: light-dark(#568783, #7fb6b1);
+    --graph-folder-5: light-dark(#72808d, #9aa6b5);
+    --graph-folder-6: light-dark(#507f91, #79aec2);
+    --graph-node-stroke: var(--oyster-canvas, Canvas);
+    display: block;
+  }
+
+  .graph-stage {
+    position: relative;
+    width: 100%;
+    border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    /* Neutral backdrop that works in either color scheme. */
+    background: color-mix(in oklab, currentColor 3%, transparent);
+  }
+  .graph-mount {
+    position: absolute;
+    inset: 0;
+  }
+  .graph-mount :global(svg) {
+    display: block;
+  }
+  @media (max-width: 40rem) {
+    /* Whole-vault labels become an illegible knot at phone widths. Nodes and
+       edges still communicate the shape; labels return in the expanded view. */
+    .graph-stage:not(.graph-stage-modal) .graph-mount :global(text) {
+      display: none;
+    }
+  }
+
+  /* Icon controls, overlaid top-right of the stage.
+     -------------------- */
+  .graph-controls {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    gap: 0.35rem;
+    z-index: 2;
+  }
+  .graph-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    padding: 0;
+    color: inherit;
+    background: color-mix(in oklab, currentColor 6%, transparent);
+    border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    border-radius: 0.4rem;
+    cursor: pointer;
+    opacity: 0.65;
+    transition: opacity 0.12s ease, background 0.12s ease;
+  }
+  .graph-icon-btn:hover {
+    opacity: 1;
+    background: color-mix(in oklab, currentColor 14%, transparent);
+  }
+  .graph-icon-btn[aria-pressed="true"] {
+    opacity: 1;
+    background: color-mix(in oklab, currentColor 20%, transparent);
+  }
+  .graph-icon-btn[hidden] {
+    display: none;
+  }
+  .graph-icon-btn svg {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* A quiet count in the corner; also the fallback if JS never runs. */
+  .graph-empty {
+    position: absolute;
+    left: 0.75rem;
+    bottom: 0.5rem;
+    margin: 0;
+    font-size: 0.75rem;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Modal
+     -------------------- */
+  .graph-modal[hidden] {
+    display: none;
+  }
+  .graph-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2.5rem;
+  }
+  .graph-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: color-mix(in oklab, currentColor 45%, transparent);
+    backdrop-filter: blur(2px);
+  }
+  .graph-modal-window {
+    position: relative;
+    display: flex;
+    width: min(90rem, 100%);
+    height: 100%;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: Canvas;
+    box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.35);
+  }
+  .graph-stage-modal {
+    flex: 1;
+    height: auto;
+  }
+</style>

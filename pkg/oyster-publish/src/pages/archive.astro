@@ -1,0 +1,12 @@
+---
+import Base from "../layouts/Base.astro";
+import NoteList from "../components/NoteList.astro";
+import { getVaultIndex } from "../lib/note-index";
+import { chronologicalNotes } from "../lib/discovery";
+
+const notes = chronologicalNotes((await getVaultIndex()).notes);
+---
+<Base title="Archive">
+  <h1>Archive</h1>
+  <NoteList notes={notes} empty="No dated posts yet." />
+</Base>

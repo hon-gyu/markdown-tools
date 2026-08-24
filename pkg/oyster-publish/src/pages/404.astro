@@ -1,0 +1,32 @@
+---
+// The not-found page. Astro serves its own branded 404 when a project has none,
+// which is jarring on a published vault — so this replaces it. Astro picks this
+// up automatically: the dev server serves it for any unmatched route, and the
+// static build emits it as `404.html` for the host to serve.
+//
+// Deliberately rendered in the normal Base shell rather than as a bare error
+// page: a mistyped or stale note URL should still leave you with the sidebar,
+// the tree, and the search box — i.e. a way onward, not a dead end.
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Not found">
+  <h1>Note not found</h1>
+  <p class="lead">
+    There's no note at <code>{Astro.url.pathname}</code>.
+  </p>
+  <p>
+      <a href="/">home page</a>
+  </p>
+</Base>
+
+<style>
+  code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+    padding: 0.1em 0.35em;
+    border-radius: 0.3rem;
+    background: color-mix(in oklab, currentColor 10%, transparent);
+    overflow-wrap: anywhere;
+  }
+</style>

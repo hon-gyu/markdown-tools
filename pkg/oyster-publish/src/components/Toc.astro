@@ -1,0 +1,71 @@
+---
+import type { MarkdownHeading } from "astro";
+import TocItems from "./TocItems.astro";
+import { buildTocTree } from "../lib/toc-tree";
+
+interface Props { headings: MarkdownHeading[] }
+const items = buildTocTree(Astro.props.headings);
+---
+{items.length > 0 && (
+  <nav class="toc" aria-label="Table of contents">
+    <p class="toc-heading">On this page</p>
+    <TocItems items={items} />
+  </nav>
+)}
+
+<script>
+  const links = Array.from(document.querySelectorAll<HTMLAnchorElement>("[data-toc-link]"));
+  const targets = links.flatMap((link) => {
+    const target = document.getElementById(link.dataset.tocLink!);
+    return target ? [{ link, target }] : [];
+  });
+  let frame = 0;
+  function updateActive() {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => {
+      const threshold = 120;
+      let active = targets[0];
+      for (const candidate of targets) {
+        if (candidate.target.getBoundingClientRect().top <= threshold) active = candidate;
+        else break;
+      }
+      for (const candidate of targets) candidate.link.classList.toggle("active", candidate === active);
+      if (active) {
+        let branch = active.link.closest("li")?.parentElement;
+        while (branch?.matches("[data-toc-branch]")) {
+          branch.hidden = false;
+          const button = branch.previousElementSibling?.querySelector<HTMLButtonElement>("[data-toc-toggle]");
+          button?.setAttribute("aria-expanded", "true");
+          branch = branch.closest("li")?.parentElement;
+        }
+      }
+    });
+  }
+  addEventListener("scroll", updateActive, { passive: true });
+  addEventListener("resize", updateActive);
+  updateActive();
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-toc-toggle]")) {
+    button.addEventListener("click", () => {
+      const branch = button.closest("li")?.querySelector<HTMLElement>(":scope > [data-toc-branch]");
+      if (!branch) return;
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", String(!expanded));
+      branch.hidden = expanded;
+    });
+  }
+</script>
+
+<style>
+  .toc { margin-top: 2rem; font-size: 0.85rem; }
+  .toc-heading { margin: 0 0 0.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+  .toc :global(ul) { list-style: none; margin: 0; padding-inline-start: 0.75rem; border-inline-start: 1px solid color-mix(in oklab, currentColor 15%, transparent); }
+  .toc > :global(ul) { padding-inline-start: 0; }
+  .toc :global(li) { line-height: 1.4; }
+  .toc :global(.toc-row) { display: flex; align-items: baseline; }
+  .toc :global(a) { flex: 1; display: block; padding: 0.15rem 0.35rem 0.15rem 0.75rem; margin-inline-start: -1px; text-decoration: none; color: color-mix(in oklab, currentColor 65%, transparent); border-inline-start: 2px solid transparent; }
+  .toc :global(a:hover), .toc :global(a.active) { color: currentColor; }
+  .toc :global(a.active) { border-inline-start-color: #3b82f6; }
+  .toc :global(button) { border: 0; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; }
+  .toc :global(button[aria-expanded="false"]) { transform: rotate(-90deg); }
+</style>

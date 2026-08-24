@@ -1,0 +1,19 @@
+---
+import type { TocNode } from "../lib/toc-tree";
+import TocItems from "./TocItems.astro";
+interface Props { items: TocNode[]; level?: number }
+const { items, level = 0 } = Astro.props;
+---
+<ul data-toc-branch={level > 0 ? "" : undefined}>
+  {items.map((item) => (
+    <li>
+      <span class="toc-row">
+        <a href={`#${item.slug}`} data-toc-link={item.slug}>{item.text}</a>
+        {item.children.length > 0 && (
+          <button type="button" data-toc-toggle aria-expanded="true" aria-label={`Collapse ${item.text}`}>⌄</button>
+        )}
+      </span>
+      {item.children.length > 0 && <TocItems items={item.children} level={level + 1} />}
+    </li>
+  ))}
+</ul>

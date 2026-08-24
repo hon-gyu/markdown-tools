@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 240" role="img" aria-labelledby="title desc">
+  <title id="title">Vault media pipeline</title>
+  <desc id="desc">A note points to an indexed attachment which becomes a generated site asset.</desc>
+  <rect width="640" height="240" rx="24" fill="#eef2ff"/>
+  <g fill="#312e81" font-family="system-ui, sans-serif" text-anchor="middle">
+    <text x="105" y="128" font-size="25">note</text>
+    <text x="320" y="128" font-size="25">manifest</text>
+    <text x="535" y="128" font-size="25">asset</text>
+  </g>
+  <g stroke="#6366f1" stroke-width="8" fill="none" stroke-linecap="round">
+    <path d="M165 120h90"/>
+    <path d="m238 104 17 16-17 16"/>
+    <path d="M385 120h90"/>
+    <path d="m458 104 17 16-17 16"/>
+  </g>
+</svg>

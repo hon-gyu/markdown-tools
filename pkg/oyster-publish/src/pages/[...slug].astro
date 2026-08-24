@@ -1,0 +1,90 @@
+---
+import { getCollection, render } from "astro:content";
+import Base from "../layouts/Base.astro";
+import Backlinks from "../components/Backlinks.astro";
+import GraphView from "../components/GraphView.astro";
+import Toc from "../components/Toc.astro";
+import { idToSlug } from "../lib/tree";
+import { getVaultIndex, backlinksFor } from "../lib/note-index";
+import { notePath } from "../lib/project-paths";
+import { tabTitle } from "../lib/display-name";
+import { site } from "../lib/site-config";
+import NoteDiscovery from "../components/NoteDiscovery.astro";
+import NoteList from "../components/NoteList.astro";
+import { adjacentNotes, chronologicalNotes, tagGroups } from "../lib/discovery";
+import { buildPublicRoutes } from "../lib/public-routes";
+
+// One catch-all route serves the whole vault: each note becomes a page at the
+// URL derived from its path. `[...slug]` matches any depth, including "/" (when
+// slug is undefined) for the vault's index.md.
+export async function getStaticPaths() {
+  const notes = await getCollection("notes");
+  const routes = buildPublicRoutes(notes.map((note) => ({
+    path: notePath(note),
+    original: `/${idToSlug(note.id)}`,
+    permalink: note.data.permalink,
+    aliases: note.data.aliases,
+  })));
+  const params = (route: string) => ({ slug: route === "/" ? undefined : route.slice(1) });
+  return routes.flatMap((route, index) => [
+    { params: params(route.canonical), props: { note: notes[index] } },
+    ...route.redirects.map((redirect) => ({
+      params: params(redirect),
+      props: { note: notes[index], redirect: route.canonical },
+    })),
+  ]);
+}
+
+const { note, redirect } = Astro.props;
+if (redirect) return Astro.redirect(redirect, 301);
+const { Content, headings } = await render(note);
+
+// Backlinks come from the vault-wide link graph (built once, cached by Astro's
+// module evaluation), keyed by this note's URL path.
+const index = await getVaultIndex();
+const slug = indexedRoute(notePath(note));
+const isHome = slug === "/";
+function indexedRoute(path: string): string {
+  return index.notes.find((candidate) => candidate.path === path)?.slug ?? "/";
+}
+const backlinks = backlinksFor(index, slug);
+const indexedNote = index.notes.find((candidate) => candidate.path === notePath(note))!;
+const adjacent = adjacentNotes(index.notes, indexedNote.path);
+const recent = chronologicalNotes(index.notes).filter((candidate) => candidate.path !== indexedNote.path).slice(0, 5);
+const tagRouteByLabel = new Map(tagGroups(index.notes).map((group) => [
+  group.label.toLocaleLowerCase(),
+  `/tags/${group.slug}`,
+]));
+const tagLinks = indexedNote.tags.flatMap((label) => {
+  const href = tagRouteByLabel.get(label.toLocaleLowerCase());
+  return href ? [{ label, href }] : [];
+});
+
+// The tab name. `note.id` is the *slug* ("modern-ai/transformers"), so it can't
+// stand in for a title — the note's name has to be read back off its path.
+// The vault's own index.md is the site itself, so it takes the site's name.
+const title = isHome
+  ? (note.data.title ?? site.title)
+  : tabTitle(notePath(note), note.data.title, site);
+---
+
+<Base title={title} rightbar={!isHome}>
+  <Content />
+  {isHome && recent.length > 0 && <section><h2>Recent posts</h2><NoteList notes={recent} /></section>}
+  <Backlinks backlinks={backlinks} />
+  <NoteDiscovery note={indexedNote} previous={adjacent.previous} next={adjacent.next} tagLinks={tagLinks} />
+  {/* Home shows the whole-vault graph inline under its content; every other
+      note gets a local subgraph in the right rail. Kept as two separate
+      expressions (not a ternary): Astro hoists a `slot=` found anywhere inside
+      an expression, which would misroute the inline branch into the rail. */}
+  {
+    isHome && (
+      <div style="margin-top: 2.5rem">
+        <GraphView scope="global" height="60vh" />
+      </div>
+    )
+  }
+  {!isHome && <GraphView slot="rightbar" focusHref={slug} scope="local" />}
+  {/* The current page's outline, under the graph in the rail. */}
+  {!isHome && <Toc slot="rightbar" headings={headings} />}
+</Base>

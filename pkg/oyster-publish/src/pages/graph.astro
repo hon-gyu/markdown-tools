@@ -1,0 +1,11 @@
+---
+// The whole-vault graph view at /graph. A dedicated page (not the catch-all)
+// because it isn't a note — it renders the link graph the notes form.
+import Base from "../layouts/Base.astro";
+import GraphView from "../components/GraphView.astro";
+---
+
+<Base title="Graph">
+  <h1>Graph</h1>
+  <GraphView height="72vh" />
+</Base>

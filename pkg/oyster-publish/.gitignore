@@ -1,0 +1,6 @@
+node_modules/
+# Astro-generated files
+.astro/
+# Build output
+dist/
+**/.obsidian/

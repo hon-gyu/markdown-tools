@@ -1,0 +1,1042 @@
+---
+import { getTree } from "../lib/tree";
+import type { TreeNode } from "../lib/tree";
+import { site } from "../lib/site-config";
+import { getVaultIndex } from "../lib/note-index";
+import OysterNav from "../components/OysterNav";
+import OysterBreadcrumbs, {
+  type OysterBreadcrumb,
+} from "../components/OysterBreadcrumbs";
+import { previewUrlForPath } from "../lib/preview-data";
+// KaTeX styles for math rendered by rehype-katex (see astro.config.mjs).
+import "katex/dist/katex.min.css";
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "@astryxdesign/theme-neutral/theme.css";
+
+interface Props {
+  title: string;
+  // Whether to render the right column (filled via the `rightbar` slot). Opt-in
+  // rather than derived from the slot: `Astro.slots.has` is statically true
+  // whenever the slot is referenced, even when the page conditionally omits it.
+  rightbar?: boolean;
+}
+const { title, rightbar = false } = Astro.props;
+
+// "Note · Site" in the tab, but never "Site · Site" on a page that already
+// carries the site's own name.
+const pageTitle = title === site.title ? title : `${title} · ${site.title}`;
+
+// Build the vault tree once, server-side, and hand it to the nav.
+const tree = await getTree();
+const index = await getVaultIndex();
+const { searchDocs } = index;
+const previewRoutes = Object.fromEntries(
+  index.notes.map((note) => [note.slug, previewUrlForPath(note.path)]),
+);
+
+const norm = (path: string) => path.replace(/\/+$/, "") || "/";
+function findTrail(nodes: TreeNode[], pathname: string): TreeNode[] | null {
+  for (const node of nodes) {
+    if (norm(node.urlPath) === pathname) return [node];
+    const childTrail = findTrail(node.children, pathname);
+    if (childTrail) return [node, ...childTrail];
+  }
+  return null;
+}
+
+const pathname = norm(Astro.url.pathname);
+const trail = findTrail(tree, pathname);
+const breadcrumbs: OysterBreadcrumb[] =
+  pathname === "/"
+    ? []
+    : [
+        { label: site.title, href: "/" },
+        ...(trail
+          ? trail.map((node, index) => ({
+              label: node.title,
+              href: index === trail.length - 1 ? undefined : node.urlPath,
+              current: index === trail.length - 1,
+            }))
+          : [{ label: title, current: true }]),
+      ];
+---
+
+<!doctype html>
+<!-- Put the theme scope on the document itself. The nav and breadcrumbs are
+     separate React islands, so an island-local Theme cannot scope the prose or
+     the other two columns during server render. -->
+<html lang="en" data-astryx-theme="neutral">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    {site.favicon && <link rel="icon" href={site.favicon} />}
+    {/* Restore a saved column layout before first paint: run as a plain inline
+        script (not a bundled module, which defers) so the panes never flash at
+        their default widths first. */}
+    <script is:inline>
+      try {
+        const saved = JSON.parse(localStorage.getItem("oyster:layout") || "{}");
+        for (const name of ["sidebar", "rightbar"]) {
+          if (typeof saved[name] === "number") {
+            document.documentElement.style.setProperty(
+              `--${name}-w`,
+              `${saved[name]}px`,
+            );
+          }
+        }
+      } catch {
+        // A malformed or blocked localStorage just means default widths.
+      }
+    </script>
+  </head>
+  <body>
+    <header class="mobile-header">
+      <button type="button" data-mobile-open="sidebar" aria-controls="mobile-sidebar" aria-expanded="false">
+        Menu
+      </button>
+      <a href="/" class="mobile-title">{site.title}</a>
+      <button type="button" data-mobile-search aria-controls="mobile-sidebar" aria-expanded="false">
+        Search
+      </button>
+      {rightbar && (
+        <button type="button" data-mobile-open="rightbar" aria-controls="mobile-rightbar" aria-expanded="false">
+          Page
+        </button>
+      )}
+    </header>
+    <button class="mobile-backdrop" type="button" data-mobile-close aria-label="Close panel" hidden></button>
+    <div class="shell">
+      <aside class="sidebar" id="mobile-sidebar" data-mobile-panel="sidebar" tabindex="-1">
+        <OysterNav
+          client:load
+          siteTitle={site.title}
+          tree={tree}
+          pathname={pathname}
+          searchCorpus={searchDocs}
+        />
+      </aside>
+      {/* Drag handles for the two column borders. `separator` with an
+          `aria-valuenow` is the ARIA-sanctioned window-splitter pattern, so the
+          arrow-key path is not a bolt-on: it is what makes this operable at
+          all without a pointer. */}
+      <main class="content">
+        <article>
+          <OysterBreadcrumbs items={breadcrumbs} />
+          <slot />
+        </article>
+      </main>
+      {
+        rightbar && (
+          <div
+            class="gutter"
+            data-gutter="rightbar"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize right panel"
+            tabindex="0"
+          />
+        )
+      }
+      {
+        rightbar && (
+          <aside class="rightbar" id="mobile-rightbar" data-mobile-panel="rightbar" tabindex="-1">
+            <slot name="rightbar" />
+          </aside>
+        )
+      }
+    </div>
+    <section class="note-stack" data-note-stack aria-label="Stacked notes" hidden></section>
+
+    <aside id="note-preview" class="note-preview" role="tooltip" hidden>
+      <p class="note-preview-breadcrumb" data-preview-breadcrumb></p>
+      <strong data-preview-title></strong>
+      <p data-preview-excerpt></p>
+      <a data-preview-open>Open note</a>
+    </aside>
+    <script
+      is:inline
+      id="note-preview-routes"
+      type="application/json"
+      set:html={JSON.stringify(previewRoutes)}
+    />
+
+    <script>
+      import "../scripts/previews";
+    </script>
+    <script>
+      import "../scripts/mobile-shell";
+    </script>
+    <button type="button" class="back-to-top" data-back-to-top hidden>Back to top</button>
+    <script>
+      import "../scripts/content-navigation";
+    </script>
+    <script>
+      import "../scripts/stacked-pages";
+    </script>
+
+    <script>
+      // Column resizing. Each gutter drives one custom property on :root
+      // (--sidebar-w / --rightbar-w); the middle column is whatever is left, so
+      // there is only ever one number per gutter to track, drag, and persist.
+      const KEY = "oyster:layout";
+      // Bounds on each rail's rendered width, in px (see the border-box note in
+      // the stylesheet). The middle column also keeps a floor, so neither rail
+      // can squeeze the prose to nothing. `initial` matches the CSS default and
+      // is what a double-click restores.
+      const LIMITS = {
+        sidebar: { min: 190, max: 460, initial: 289 },
+        rightbar: { min: 230, max: 560, initial: 361 },
+      } as const;
+      const MIN_CONTENT = 360;
+
+      type Pane = keyof typeof LIMITS;
+
+      const shell = document.querySelector<HTMLElement>(".shell");
+      const paneEl = (name: Pane) =>
+        document.querySelector<HTMLElement>(`.${name}`);
+
+      function readSaved(): Partial<Record<Pane, number>> {
+        try {
+          return JSON.parse(localStorage.getItem(KEY) || "{}");
+        } catch {
+          return {};
+        }
+      }
+
+      // Measured, not read back off the custom property: the property is unset
+      // until the first drag, and the pane's real width is the truth either way.
+      const widthOf = (name: Pane) =>
+        paneEl(name)?.getBoundingClientRect().width ?? LIMITS[name].initial;
+
+      function clamp(name: Pane, px: number): number {
+        const limit = LIMITS[name];
+        const other: Pane = name === "sidebar" ? "rightbar" : "sidebar";
+        // A hidden rail (narrow viewport) has no width to reserve.
+        const otherEl = paneEl(other);
+        const taken = otherEl ? otherEl.getBoundingClientRect().width : 0;
+        const room =
+          (shell?.getBoundingClientRect().width ?? 0) - taken - MIN_CONTENT;
+        // `min` wins if the window is too small to honour the max — better a
+        // cramped middle than a rail that collapses out of reach.
+        return Math.max(limit.min, Math.min(px, Math.min(limit.max, room)));
+      }
+
+      function setWidth(name: Pane, px: number) {
+        const w = clamp(name, px);
+        document.documentElement.style.setProperty(`--${name}-w`, `${w}px`);
+        document
+          .querySelector(`[data-gutter="${name}"]`)
+          ?.setAttribute("aria-valuenow", String(Math.round(w)));
+        const saved = readSaved();
+        saved[name] = w;
+        try {
+          localStorage.setItem(KEY, JSON.stringify(saved));
+        } catch {
+          // Persistence is a nicety; the drag itself still applied.
+        }
+      }
+
+      const gutters =
+        document.querySelectorAll<HTMLElement>(".gutter[data-gutter]");
+
+      for (const gutter of gutters) {
+        const name = gutter.dataset.gutter as Pane;
+        gutter.setAttribute("aria-valuemin", String(LIMITS[name].min));
+        gutter.setAttribute("aria-valuemax", String(LIMITS[name].max));
+        gutter.setAttribute("aria-valuenow", String(Math.round(widthOf(name))));
+
+        gutter.addEventListener("pointerdown", (e: PointerEvent) => {
+          e.preventDefault(); // don't start a text selection
+          // Capture so the drag survives the pointer outrunning the handle or
+          // crossing the iframe-less graph canvas in the right rail.
+          gutter.setPointerCapture(e.pointerId);
+          gutter.dataset.dragging = "";
+          document.body.dataset.resizing = "";
+
+          // Track the pointer's *movement* from where it went down, rather than
+          // mapping its absolute x onto the width: the handle is wider than the
+          // border it straddles, so absolute mapping would snap the border to
+          // the cursor on mousedown by however far into the handle you grabbed.
+          const startX = e.clientX;
+          const startWidth = widthOf(name);
+
+          const move = (ev: PointerEvent) => {
+            // The sidebar widens as the pointer moves right; the right rail,
+            // anchored to the opposite edge, widens as it moves left.
+            const delta =
+              name === "sidebar" ? ev.clientX - startX : startX - ev.clientX;
+            setWidth(name, startWidth + delta);
+          };
+          const stop = (ev: PointerEvent) => {
+            gutter.releasePointerCapture(ev.pointerId);
+            delete gutter.dataset.dragging;
+            delete document.body.dataset.resizing;
+            gutter.removeEventListener("pointermove", move);
+            gutter.removeEventListener("pointerup", stop);
+            gutter.removeEventListener("pointercancel", stop);
+          };
+          gutter.addEventListener("pointermove", move);
+          gutter.addEventListener("pointerup", stop);
+          gutter.addEventListener("pointercancel", stop);
+        });
+
+        gutter.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const step = (e.shiftKey ? 48 : 16) * (e.key === "ArrowLeft" ? -1 : 1);
+          // Arrows move the *border*, so for the right rail a leftward press
+          // makes it wider.
+          setWidth(name, widthOf(name) + (name === "sidebar" ? step : -step));
+        });
+
+        // Double-click a border to put it back where it started.
+        gutter.addEventListener("dblclick", () =>
+          setWidth(name, LIMITS[name].initial),
+        );
+      }
+
+      // Shrinking the window can invalidate a saved width; re-clamp both.
+      addEventListener("resize", () => {
+        for (const gutter of gutters) {
+          const name = gutter.dataset.gutter as Pane;
+          setWidth(name, widthOf(name));
+        }
+      });
+    </script>
+
+    <script>
+      // Briefly flash a heading when you jump to it (via the TOC or a deep
+      // link), the way Obsidian Publish does — a soft cue for where you landed.
+      function flashHash() {
+        const id = decodeURIComponent(location.hash.slice(1));
+        if (!id) return;
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove("heading-flash"); // allow re-trigger on re-click
+        void el.offsetWidth; // force reflow so the animation restarts
+        el.classList.add("heading-flash");
+        el.addEventListener(
+          "animationend",
+          () => el.classList.remove("heading-flash"),
+          { once: true },
+        );
+      }
+      window.addEventListener("hashchange", flashHash);
+      if (location.hash) requestAnimationFrame(flashHash); // deep-link on load
+    </script>
+
+    <script>
+      // Oymarkit preserves Obsidian's `+` / `-` callout state as an attribute.
+      // Turn the generated title into a real disclosure button and keep that
+      // attribute as the single source of truth for both state and styling.
+      for (const callout of document.querySelectorAll<HTMLElement>(
+        ".callout[data-callout-fold]",
+      )) {
+        const oldTitle = callout.querySelector<HTMLElement>(
+          ":scope > .callout-title",
+        );
+        if (!oldTitle) continue;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = oldTitle.className;
+        button.append(...oldTitle.childNodes);
+        oldTitle.replaceWith(button);
+
+        const sync = () =>
+          button.setAttribute(
+            "aria-expanded",
+            String(callout.dataset.calloutFold !== "closed"),
+          );
+        const toggle = () => {
+          callout.dataset.calloutFold =
+            callout.dataset.calloutFold === "closed" ? "open" : "closed";
+          sync();
+        };
+
+        sync();
+        button.addEventListener("click", toggle);
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --oyster-canvas: light-dark(#ffffff, #1d1b22);
+    color-scheme: light dark;
+    font-family: system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  /* The jump-to-heading flash: an accent wash that fades out over a couple of
+     seconds. The negative margin offsets the padding so layout doesn't shift. */
+  @keyframes heading-flash {
+    from {
+      background-color: color-mix(in oklab, #3b82f6 32%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+  .heading-flash {
+    animation: heading-flash 2.5s ease-out;
+    border-radius: 0.3rem;
+    margin-inline: -0.35rem;
+    padding-inline: 0.35rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    .heading-flash {
+      animation-duration: 0.01ms;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--oyster-canvas);
+    color: var(--color-text-primary);
+    font-family: var(--font-family-body);
+  }
+  .mobile-header,
+  .mobile-backdrop { display: none; }
+  .shell {
+    display: flex;
+    min-height: 100vh;
+    background: var(--oyster-canvas);
+  }
+  /* Column widths live as custom properties on :root so the inline script in
+     <head> can restore a saved layout before first paint. The middle column
+     takes whatever is left.
+
+     Both rails are border-box on purpose: the drag maps a cursor position
+     straight onto these properties, so the number has to mean the pane's
+     *rendered* width. Under the default content-box it would exclude the
+     padding and border, and the dragged edge would trail the cursor by exactly
+     that much. The defaults below are the old content-box widths plus that
+     chrome (16rem + 2rem + 1px, 20rem + 2.5rem + 1px), so the panes still land
+     where they always did. */
+  .sidebar {
+    box-sizing: border-box;
+    width: auto;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .sidebar > astro-island {
+    display: block;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .content {
+    flex: 1;
+    min-width: 0;
+    padding: 2rem 2.5rem;
+    background: var(--oyster-canvas);
+  }
+  /* The reading measure is capped on the article, not the column: the column
+     has to be free to absorb the slack, or it would stop growing and leave the
+     leftover width stranded *after* the right rail. */
+  .content > article {
+    max-width: 48rem;
+  }
+  .rightbar {
+    box-sizing: border-box;
+    width: var(--rightbar-w, 22.5625rem);
+    flex-shrink: 0;
+    padding: 2rem 1.25rem;
+    border-left: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    background: var(--oyster-canvas);
+  }
+
+  /* Astryx's reset intentionally removes browser-default block and list
+     spacing. Reintroduce a compact reading rhythm for rendered Markdown. */
+  .content > article > :where(h1, h2, h3, h4, h5, h6) {
+    margin-block: 1.5rem 0.5rem;
+  }
+  .content > article > h1 {
+    margin-block-start: 1rem;
+  }
+  .content article :where(p, ul, ol, blockquote, pre, dl) {
+    margin-block: 0.75rem;
+  }
+  .content article :where(ul, ol) {
+    padding-inline-start: 1.5rem;
+  }
+  .content article ul {
+    list-style: disc;
+  }
+  .content article ol {
+    list-style: decimal;
+  }
+  .content article ul ul {
+    list-style: circle;
+  }
+  .content article ul ul ul {
+    list-style: square;
+  }
+  .content article li + li {
+    margin-block-start: 0.25rem;
+  }
+  .content article li > :where(ul, ol) {
+    margin-block: 0.25rem;
+  }
+
+  /* The reset makes anchors inherit plain text styling. Prose links need their
+     affordance back, but component-owned links and heading permalinks do not. */
+  .content article a:not(
+    .heading-anchor,
+    .wikilink-unresolved,
+    .backlink-title,
+    .backlink-mention,
+    .astryx-breadcrumbs *
+  ) {
+    color: light-dark(#1d4ed8, #7db4ff);
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.075em;
+    text-underline-offset: 0.16em;
+  }
+  .content article a:not(
+    .heading-anchor,
+    .wikilink-unresolved,
+    .backlink-title,
+    .backlink-mention,
+    .astryx-breadcrumbs *
+  ):hover {
+    color: light-dark(#1e40af, #a8ccff);
+  }
+
+  /* Render the editor's intra-note direction hint beside the link. The label
+     is generated at build time from source positions, so it needs no client
+     script and does not become part of copied prose. */
+  .content article a.link-direction::after {
+    content: attr(data-link-direction);
+    display: inline-block;
+    margin-inline-start: 0.22em;
+    color: light-dark(#64748b, #94a3b8);
+    font-size: 0.78em;
+    font-weight: 500;
+    text-decoration: none;
+    vertical-align: 0.08em;
+  }
+
+  /* Other browser prose affordances removed by the reset. These are scoped to
+     article content so Astryx components retain their own surface styles. */
+  .content article :not(pre) > code {
+    padding: 0.1em 0.3em;
+    border: 1px solid color-mix(in oklab, currentColor 10%, transparent);
+    border-radius: 0.25rem;
+    background: var(--color-background-surface);
+    font-size: 0.9em;
+  }
+  .content article pre {
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.85rem 1rem;
+    border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    border-radius: 0.4rem;
+    background: var(--color-background-surface);
+  }
+  .code-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-block: 1rem -1rem;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    border-block-end: 0;
+    border-radius: 0.35rem 0.35rem 0 0;
+    background: var(--color-background-surface);
+    color: var(--color-text-secondary);
+    font: 0.75rem ui-monospace, monospace;
+  }
+  .code-toolbar + pre { border-start-start-radius: 0; border-start-end-radius: 0; }
+  .code-toolbar button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+  .mermaid-source { border-inline-start: 3px solid #8b5cf6; }
+  .external-embed { margin: 1rem 0; }
+  .external-embed iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; }
+  .external-embed p { margin-block: 0.35rem 0; font-size: 0.85rem; }
+  .content article blockquote:not(.callout) {
+    padding-inline-start: 1rem;
+    border-inline-start: 3px solid var(--color-border-emphasized);
+    color: var(--color-text-secondary);
+  }
+  .content article hr {
+    margin-block: 2rem;
+    border-color: var(--color-border);
+  }
+  .content article dt {
+    font-weight: var(--font-weight-semibold);
+  }
+  .content article dd {
+    margin-inline-start: 1.5rem;
+  }
+
+  /* Breadcrumbs sit inside the article but are a component, not prose. Undo
+     the list rhythm above where it would offset every item after the first. */
+  .content article .astryx-breadcrumbs ol {
+    padding: 0;
+    list-style: none;
+  }
+  .content article .astryx-breadcrumbs li + li {
+    margin-block-start: 0;
+  }
+
+  /* The draggable borders. The handle is a hair wider than the 1px border it
+     sits on and is pulled half its width into the neighbour, so the hit area is
+     comfortable while the border stays visually where it was. */
+  .gutter {
+    flex: 0 0 auto;
+    width: 3px;
+    margin-inline: -4px;
+    z-index: 1;
+    cursor: col-resize;
+    background: transparent;
+    /* The visible line on hover/drag is a centred inset, not a background, so
+       it can highlight without the handle's full width lighting up. */
+    background-clip: content-box;
+    padding-inline: 4px;
+    transition: background-color 0.12s ease-in;
+    touch-action: none; /* let the pointer handler own horizontal drags */
+  }
+  .gutter:hover,
+  .gutter:focus-visible,
+  .gutter[data-dragging] {
+    background-color: #3b82f6;
+    outline: none;
+  }
+  /* Keep the cursor and the highlight steady across the whole drag, even when
+     the pointer outruns the handle. */
+  body[data-resizing] {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  /* Stack the right rail under the content on narrow viewports. */
+  @media (max-width: 60rem) {
+    .rightbar,
+    .gutter[data-gutter="rightbar"] {
+      display: none;
+    }
+  }
+  /* Resolved wikilinks read as normal links; unresolved ones are dimmed and
+     dashed so broken references stay visible rather than silently vanishing. */
+  .wikilink-unresolved {
+    color: color-mix(in oklab, currentColor 55%, transparent);
+    border-bottom: 1px dashed currentColor;
+    cursor: help;
+  }
+  .copy-heading-link {
+    margin-inline-start: 0.55rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.7rem;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .content :is(h2, h3, h4, h5, h6):hover .copy-heading-link,
+  .copy-heading-link:focus-visible { opacity: 0.6; }
+  .back-to-top {
+    position: fixed;
+    inset-inline-end: 1rem;
+    inset-block-end: 1rem;
+    z-index: 20;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-element);
+    background: var(--color-background-popover);
+    color: var(--color-text-secondary);
+    box-shadow: var(--shadow-low);
+    cursor: pointer;
+  }
+  .note-stack[hidden] { display: none; }
+  .note-stack {
+    position: fixed;
+    inset: 0 0 0 38vw;
+    z-index: 80;
+    display: flex;
+    overflow-x: auto;
+    background: var(--oyster-canvas);
+    box-shadow: -0.5rem 0 1.5rem color-mix(in oklab, #000 16%, transparent);
+  }
+  .note-stack-pane {
+    flex: 0 0 min(38rem, 78vw);
+    height: 100vh;
+    overflow-y: auto;
+    padding: 1rem 1.5rem 3rem;
+    border-inline-end: 1px solid var(--color-border);
+    background: var(--oyster-canvas);
+    outline: none;
+  }
+  .note-stack-pane > header { position: sticky; inset-block-start: -1rem; z-index: 1; display: flex; justify-content: space-between; gap: 1rem; padding-block: 1rem 0.6rem; background: var(--oyster-canvas); border-block-end: 1px solid var(--color-border); }
+  .note-stack-pane > header a { font-weight: var(--font-weight-semibold); }
+  .note-stack-pane > header button { border: 0; background: transparent; color: var(--color-text-secondary); cursor: pointer; }
+  .note-stack-pane > article { max-width: 44rem; }
+  @media (max-width: 63.99rem) { .note-stack { display: none; } }
+
+  /* == Markdown extension styling ========================================= */
+  /* Colours are stated once as a per-element custom property and mixed with
+     `currentColor`/`transparent`, so every tint adapts to light and dark. */
+
+  /* Obsidian callouts (blockquote.callout) and semantic djot divs share a
+     palette keyed by kind. */
+  .content .callout {
+    --accent: #3b82f6;
+    margin: 1.1rem 0;
+    padding: 0.7rem 1rem;
+    padding-inline-start: 1.25rem;
+    border-radius: 0.4rem;
+    border-inline-start: 3px solid var(--accent);
+    background: color-mix(in oklab, var(--accent) 9%, transparent);
+  }
+  .content .callout-title {
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 0.35rem;
+  }
+  .content button.callout-title {
+    display: flex;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    padding: 0;
+    text-align: start;
+  }
+  .content button.callout-title::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: -0.8rem;
+    width: 0.3rem;
+    height: 0.3rem;
+    border-inline-end: 2px solid currentColor;
+    border-block-end: 2px solid currentColor;
+    /*opacity: 0.65;*/
+    transform: translateY(-65%) rotate(45deg);
+    transition: transform 0.12s ease-in;
+  }
+  .content .callout[data-callout-fold="closed"] button.callout-title::before {
+    transform: translateY(-50%) rotate(-45deg);
+  }
+  .content .callout[data-callout-fold="closed"] .callout-content {
+    display: none;
+  }
+  .content .callout-content > :first-child { margin-top: 0; }
+  .content .callout-content > :last-child { margin-bottom: 0; }
+
+  .content .callout[data-callout="tip"],
+  .content .callout[data-callout="hint"],
+  .content .callout[data-callout="success"] { --accent: #16a34a; }
+  .content .callout[data-callout="warning"],
+  .content .callout[data-callout="caution"] { --accent: #d97706; }
+  .content .callout[data-callout="danger"],
+  .content .callout[data-callout="error"],
+  .content .callout[data-callout="bug"] { --accent: #dc2626; }
+
+  /* Semantic djot divs (`::: warning` -> div.warning). Element-qualified so
+     they never catch an inline attribute that happens to reuse the class. */
+  .content div:is(.note, .info, .tip, .warning, .danger) {
+    --accent: #64748b;
+    margin: 1.1rem 0;
+    padding: 0.6rem 0.95rem;
+    border-radius: 0.4rem;
+    border-inline-start: 3px solid var(--accent);
+    background: color-mix(in oklab, var(--accent) 8%, transparent);
+  }
+  .content div:is(.note, .info) { --accent: #3b82f6; }
+  .content div.tip { --accent: #16a34a; }
+  .content div.warning { --accent: #d97706; }
+  .content div.danger { --accent: #dc2626; }
+  .content div:is(.note, .info, .tip, .warning, .danger) > :first-child { margin-top: 0; }
+  .content div:is(.note, .info, .tip, .warning, .danger) > :last-child { margin-bottom: 0; }
+
+  /* Inline djot attributes used in the feature demos. */
+  .content .hl,
+  .content mark {
+    background: color-mix(in oklab, #fde047 55%, transparent);
+    border-radius: 0.15em;
+    padding: 0 0.15em;
+  }
+  .content :is(strong, em, span).danger { color: #dc2626; }
+  .content .badge {
+    display: inline-block;
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1.5;
+    padding: 0 0.55em;
+    border-radius: 1em;
+    background: color-mix(in oklab, currentColor 13%, transparent);
+  }
+  .content .lead {
+    font-size: 1.15em;
+    color: color-mix(in oklab, currentColor 88%, transparent);
+  }
+
+  /* Heading permalinks (rehype-autolink-headings, `behavior: "wrap"`). The
+     anchor wraps the heading's own text, so it has to inherit the heading's
+     looks and stay visible — only the trailing "#" marker fades in, on hover of
+     the heading and on focus for keyboard users. */
+  .content :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 1.5rem; }
+  .content .heading-anchor {
+    color: inherit;
+    text-decoration: none;
+  }
+  .content .heading-anchor::after {
+    content: "#";
+    margin-inline-start: 0.35em;
+    color: color-mix(in oklab, currentColor 45%, transparent);
+    opacity: 0;
+    transition: opacity 0.12s ease-in;
+  }
+  .content :is(h1, h2, h3, h4, h5, h6):hover .heading-anchor::after,
+  .content .heading-anchor:focus-visible::after {
+    opacity: 1;
+  }
+
+  /* Tables (GFM). Alignment rides on each cell's `align` attribute. */
+  .content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.1rem 0;
+    display: block;
+    overflow-x: auto;
+  }
+  .content :is(th, td) {
+    border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+    padding: 0.4rem 0.65rem;
+  }
+  .content th { background: color-mix(in oklab, currentColor 6%, transparent); }
+
+  /* Task lists (GFM): drop the bullet, keep the checkbox. */
+  .content .contains-task-list { list-style: none; padding-inline-start: 0.2rem; }
+  .content .task-list-item { list-style: none; }
+  .content .task-list-item input { margin-inline-end: 0.45em; }
+
+  /* Footnotes section rendered at the end of the page. */
+  .content .footnotes {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid color-mix(in oklab, currentColor 15%, transparent);
+    font-size: 0.9em;
+  }
+
+  /* KaTeX display math scrolls rather than overflowing the column. */
+  .content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.2rem 0; }
+
+  /* Block references: when kept (not stripped), the `^id` marker is dimmed and
+     set in monospace so it reads as metadata; the block it identifies lights up
+     when you jump to it via `[[note#^id]]`. */
+  .content .block-id {
+    color: color-mix(in oklab, currentColor 42%, transparent);
+    font-family: ui-monospace, monospace;
+    font-size: 0.85em;
+  }
+  .content .has-block-id { scroll-margin-top: 1rem; }
+  .content .has-block-id:target {
+    background: color-mix(in oklab, #3b82f6 16%, transparent);
+    border-radius: 0.3rem;
+    margin-inline: -0.35rem;
+    padding-inline: 0.35rem;
+  }
+  .content :is(h1, h2, h3, h4, h5, h6, [id]):target {
+    animation: fragment-highlight 2s ease-out;
+  }
+  @keyframes fragment-highlight {
+    from { background: color-mix(in oklab, #3b82f6 22%, transparent); }
+    to { background: transparent; }
+  }
+
+  /* Vault media uses generated URLs and must never widen the reading column. */
+  .content .vault-attachment {
+    display: block;
+    max-width: 100%;
+    margin-block: 1rem;
+  }
+  .content :is(.vault-image, .vault-video) { height: auto; }
+  .content .vault-audio { width: min(100%, 36rem); }
+  .content .vault-pdf {
+    width: 100%;
+    min-height: min(70vh, 48rem);
+    border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+    border-radius: 0.4rem;
+  }
+  .content .attachment-missing {
+    text-decoration: underline wavy;
+    text-decoration-color: #b91c1c;
+    text-underline-offset: 0.2em;
+  }
+
+  .content .transclusion {
+    display: block;
+    margin-block: 1.25rem;
+    padding: 0.25rem 1rem 0.75rem;
+    border-inline-start: 3px solid color-mix(in oklab, #6366f1 55%, currentColor);
+    background: color-mix(in oklab, #6366f1 5%, transparent);
+  }
+  .content .transclusion > :first-child { margin-block-start: 0.6rem; }
+  .content .transclusion-source {
+    margin-block-end: 0;
+    padding-block-start: 0.55rem;
+    border-block-start: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+    color: color-mix(in oklab, currentColor 62%, transparent);
+    font-size: 0.85em;
+  }
+  .content .transclusion-fallback {
+    border-inline-start-color: #b45309;
+    background: color-mix(in oklab, #f59e0b 8%, transparent);
+  }
+
+  .note-preview {
+    position: fixed;
+    z-index: 50;
+    width: min(22rem, calc(100vw - 1.25rem));
+    max-height: min(24rem, calc(100vh - 1.25rem));
+    overflow: auto;
+    padding: 0.85rem 1rem;
+    border: 1px solid color-mix(in oklab, currentColor 16%, transparent);
+    border-radius: 0.55rem;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 12px 36px color-mix(in oklab, #000 22%, transparent);
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .note-preview[hidden] { display: none; }
+  .note-preview p { margin: 0.45rem 0; }
+  .note-preview-breadcrumb {
+    color: color-mix(in oklab, currentColor 58%, transparent);
+    font-size: 0.78rem;
+  }
+  .note-preview [data-preview-open] { font-size: 0.85rem; }
+  @media (max-width: 40rem) {
+    .note-preview {
+      inset: auto 0.625rem 0.625rem !important;
+      width: auto;
+      max-height: min(45vh, 24rem);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .note-preview { transition: none; }
+  }
+
+  @media (max-width: 48rem) {
+    body[data-mobile-panel-open] { overflow: hidden; }
+    .mobile-header {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: 42;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 3rem;
+      padding-inline: 0.55rem;
+      border-block-end: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+      background: color-mix(in oklab, var(--oyster-canvas) 94%, transparent);
+      backdrop-filter: blur(10px);
+    }
+    .mobile-header :is(button, a) {
+      min-height: 2.25rem;
+      padding: 0.35rem 0.65rem;
+      border: 0;
+      border-radius: 0.35rem;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-decoration: none;
+    }
+    .mobile-header :is(button, a):focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 1px;
+    }
+    .mobile-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      font-weight: 650 !important;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mobile-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 39;
+      display: block;
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      border: 0;
+      background: rgb(0 0 0 / 42%);
+    }
+    .mobile-backdrop[hidden] { display: none; }
+    .shell { display: block; min-height: calc(100vh - 3rem); }
+    .sidebar,
+    .rightbar {
+      position: fixed;
+      inset-block: 3rem 0;
+      z-index: 40;
+      display: block;
+      width: min(88vw, 22rem);
+      height: calc(100dvh - 3rem);
+      overflow: auto;
+      background: var(--oyster-canvas);
+      transition: transform 160ms ease;
+    }
+    .sidebar {
+      inset-inline-start: 0;
+      transform: translateX(-105%);
+      box-shadow: 10px 0 30px rgb(0 0 0 / 18%);
+    }
+    .rightbar {
+      inset-inline-end: 0;
+      padding: 1rem;
+      border-inline-start: 1px solid color-mix(in oklab, currentColor 12%, transparent);
+      transform: translateX(105%);
+      box-shadow: -10px 0 30px rgb(0 0 0 / 18%);
+    }
+    :is(.sidebar, .rightbar)[data-open] { transform: translateX(0); }
+    .sidebar > astro-island { position: static; height: 100%; }
+    .gutter { display: none; }
+    .content {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 1rem clamp(0.85rem, 4vw, 1.5rem) 2rem;
+    }
+    .content > article { max-width: 100%; }
+    .content article :is(img, video, audio, iframe, table, pre, .transclusion) {
+      max-width: 100%;
+    }
+    .content article :is(pre, table, .transclusion) { overflow-x: auto; }
+    .oyster-search-results {
+      position: static;
+      width: auto;
+      max-height: none;
+      margin-block-start: 0.35rem;
+      box-shadow: none;
+    }
+  }
+
+  @media (max-width: 48rem) and (prefers-reduced-motion: reduce) {
+    .sidebar, .rightbar { transition: none; }
+  }
+
+  /* Visually-hidden (used by the footnotes heading). */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

@@ -1,0 +1,7 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [".astro/types.d.ts", "**/*"],
+  // oystermark.cjs is a generated OCaml->JS bundle, loaded at runtime by
+  // `require`, never imported as a module. Left in, it OOMs the typechecker.
+  "exclude": ["dist", "src/lib/oystermark/oystermark.cjs"]
+}
