@@ -1,11 +1,7 @@
 (library
  (name parse)
- (public_name oystermark-core)
+ (public_name oystermark.parse)
  (libraries oymarkit core yaml)
  (inline_tests)
  (preprocess
   (pps ppx_jane ppx_string ppx_quick_test)))
-
-(documentation
- (package oystermark-core)
- (mld_files index))

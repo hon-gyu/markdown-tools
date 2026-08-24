@@ -1,4 +1,4 @@
-(** {0 Vault-wide rename planning}
+(** {1 Vault-wide rename planning}
 
   This describes byte edits and file
   moves; clients decide how to apply or encode them.
@@ -11,7 +11,7 @@
 open Core
 module Index = Index
 
-(** {1 Rename target} *)
+(** {2 Rename target} *)
 
 type subject =
   | Note
@@ -82,7 +82,7 @@ let matches { path; subject } ((_, _, resolution) as link) =
   | _ -> false
 ;;
 
-(** {1 Link destination edits} *)
+(** {2 Link destination edits} *)
 
 let destination_bounds slice =
   match String.substr_index slice ~pattern:"[[" with
@@ -179,7 +179,7 @@ let reference_edit ~read_file { subject; _ } ~new_name (source, (link : Index.Li
             }))))
 ;;
 
-(** {1 Definition edits} *)
+(** {2 Definition edits} *)
 
 let line_bounds content line =
   let rec loop pos current =
@@ -311,7 +311,7 @@ let definition_edit ~index ~read_file { path; subject } ~new_name =
               })))))
 ;;
 
-(** {1 Change planning} *)
+(** {2 Change planning} *)
 
 let resolved_links_of_docs index docs =
   List.concat_map docs ~f:(fun (source, doc) ->

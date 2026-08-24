@@ -79,7 +79,7 @@ Subsections are encouraged if needed.
 
 {1 attribute-anchors}
 - Spec: {!page-"feature-attribute-anchors"}
-- Core: {!Oystermark.Vault.Index.Note.anchors} (collection),
+- Core: {!Oystermark.Vault.Index.Note.val-anchors} (collection),
   {!Oystermark.Vault.Index.resolve} (attribute-anchor cases).
 - Consumers: {!module-Lsp_lib.Go_to_definition} and
   {!module-Lsp_lib.Find_references} (attribute anchor targets).

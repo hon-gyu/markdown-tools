@@ -1,5 +1,5 @@
 (** What a vault looks like as a Jinja template context.
-    Impl: {!Oystermark.Context}. Spec: {!page-"template-context"}.
+    Impl: {!Oystermark.Context}. Spec: the [template-context] page.
 
     The vaults here are built with {!Oystermark.Vault.of_files}, which does no
     IO, so [modified] is always [null]: the filesystem mtime is the one field

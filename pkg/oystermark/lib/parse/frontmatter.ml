@@ -1,4 +1,4 @@
-(** {0 YAML frontmatter}
+(** {1 YAML frontmatter}
 
     Frontmatter is delimited by exactly [---] on its own line.
     The opening delimiter must be the very first line of the file.
@@ -175,7 +175,7 @@ let of_doc (doc : Cmarkit.Doc.t) : Yaml.value option =
   | _ -> None
 ;;
 
-(** {1 Test} *)
+(** {2 Test} *)
 
 module For_test = struct
   let to_string (v : t option) : string =
