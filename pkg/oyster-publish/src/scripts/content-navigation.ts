@@ -28,14 +28,22 @@ for (const pre of article?.querySelectorAll<HTMLPreElement>("pre") ?? []) {
 			.find((name) => name.startsWith("language-"))
 			?.slice(9) ??
 		"text";
+	// A fence with no info string is highlighted as "plaintext". Naming that in
+	// the toolbar says nothing the reader cannot already see, so the label is
+	// left empty and only the copy button shows.
+	const named = language !== "plaintext" && language !== "text";
 	const toolbar = document.createElement("div");
 	toolbar.className = "code-toolbar";
 	const label = document.createElement("span");
-	label.textContent = language === "mermaid" ? "Mermaid source" : language;
+	if (named)
+		label.textContent = language === "mermaid" ? "Mermaid source" : language;
 	const copy = document.createElement("button");
 	copy.type = "button";
 	copy.textContent = "Copy";
-	copy.setAttribute("aria-label", `Copy ${language} code`);
+	copy.setAttribute(
+		"aria-label",
+		named ? `Copy ${language} code` : "Copy code",
+	);
 	copy.addEventListener("click", async () => {
 		if (await copyText(code.textContent ?? "")) {
 			copy.textContent = "Copied";

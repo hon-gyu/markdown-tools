@@ -42,6 +42,16 @@ export default defineConfig({
   publicDir,
   integrations: [mdx(), react()],
   markdown: {
+    // Two themes so highlighted code follows the reader's colour scheme instead
+    // of pasting a dark slab into a light page. `defaultColor: false` keeps
+    // both palettes as `--shiki-light` / `--shiki-dark` custom properties
+    // rather than writing one of them into an inline `color`, so Base.astro can
+    // pick between them in CSS (and drop Shiki's backgrounds for the site's own
+    // surface) without fighting inline styles.
+    shikiConfig: {
+      themes: { light: "github-light", dark: "github-dark" },
+      defaultColor: false,
+    },
     processor: unified({
       remarkPlugins: [remarkOymarkit, remarkOyWikilink],
       rehypePlugins: [

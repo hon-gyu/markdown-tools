@@ -459,8 +459,23 @@ const breadcrumbs: OysterBreadcrumb[] =
   .content > article > :where(h1, h2, h3, h4, h5, h6) {
     margin-block: 1.5rem 0.5rem;
   }
+  /* Astryx's type scale ramps h5 and h6 *below* body size, which reads as fine
+     print rather than as a heading. In prose the deepest levels stay at reading
+     size and separate themselves by weight and colour instead. */
+  .content article :is(h5, h6) {
+    font-size: var(--font-size-base);
+    line-height: 1.4286;
+  }
+  .content article h6 {
+    color: var(--color-text-secondary);
+  }
   .content > article > h1 {
     margin-block-start: 1rem;
+  }
+  .content article {
+    /* Shared by the code toolbar and the block itself so the language label
+       sits over the code's first column. */
+    --code-pad-inline: 1rem;
   }
   .content article :where(p, ul, ol, blockquote, pre, dl) {
     margin-block: 0.75rem;
@@ -534,28 +549,50 @@ const breadcrumbs: OysterBreadcrumb[] =
     background: var(--color-background-surface);
     font-size: 0.9em;
   }
+  /* A code block is one surface: the toolbar is a separate element only so the
+     copy button can live outside the scroll container, so it shares the block's
+     background, border and inline padding. Matching padding is what keeps the
+     language label and the code's first column on the same vertical line. */
   .content article pre {
     max-width: 100%;
     overflow-x: auto;
-    padding: 0.85rem 1rem;
+    padding: 0.85rem var(--code-pad-inline);
     border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
     border-radius: 0.4rem;
     background: var(--color-background-surface);
+  }
+  /* Shiki parks both palettes on every token as custom properties (see
+     astro.config.mjs). Pick one per colour scheme; its own backgrounds go
+     unused so the block keeps the site's surface. */
+  .content article pre.astro-code,
+  .content article pre.astro-code span {
+    color: var(--shiki-light);
+  }
+  @media (prefers-color-scheme: dark) {
+    .content article pre.astro-code,
+    .content article pre.astro-code span {
+      color: var(--shiki-dark);
+    }
   }
   .code-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-block: 1rem -1rem;
-    padding: 0.35rem 0.55rem;
+    gap: 1rem;
+    margin-block: 0.75rem 0;
+    padding: 0.4rem var(--code-pad-inline);
     border: 1px solid color-mix(in oklab, currentColor 12%, transparent);
     border-block-end: 0;
-    border-radius: 0.35rem 0.35rem 0 0;
+    border-radius: 0.4rem 0.4rem 0 0;
     background: var(--color-background-surface);
     color: var(--color-text-secondary);
     font: 0.75rem ui-monospace, monospace;
   }
-  .code-toolbar + pre { border-start-start-radius: 0; border-start-end-radius: 0; }
+  .code-toolbar + pre {
+    margin-block-start: 0;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+  }
   .code-toolbar button { border: 0; background: transparent; color: inherit; cursor: pointer; }
   .mermaid-source { border-inline-start: 3px solid #8b5cf6; }
   .external-embed { margin: 1rem 0; }
