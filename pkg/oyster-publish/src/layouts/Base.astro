@@ -767,77 +767,110 @@ const breadcrumbs: OysterBreadcrumb[] =
   /* Colours are stated once as a per-element custom property and mixed with
      `currentColor`/`transparent`, so every tint adapts to light and dark. */
 
-  /* Obsidian callouts (blockquote.callout) and semantic djot divs share a
-     palette keyed by kind. */
-  .content .callout {
+  /* Obsidian callouts (blockquote.callout) and semantic djot divs are the same
+     object with two syntaxes, so they take one rule and one palette. The
+     element qualifier on the div selector keeps it from catching an inline
+     attribute that happens to reuse the class. */
+  .content :is(.callout, div:is(.note, .info, .tip, .warning, .danger)) {
     --accent: #3b82f6;
-    margin: 1.1rem 0;
-    padding: 0.7rem 1rem;
-    padding-inline-start: 1.25rem;
-    border-radius: 0.4rem;
+    /* The tint is the accent at low alpha, so it darkens over a dark canvas
+       and lightens over a light one without a second palette. The hairline
+       closes the other three sides: a bar on one edge alone lets the wash bleed
+       into the page instead of reading as a block. */
+    --callout-tint: color-mix(in oklab, var(--accent) 7%, transparent);
+    --callout-edge: color-mix(in oklab, var(--accent) 30%, transparent);
+    margin-block: 1.1rem;
+    padding: 0.7rem 0.95rem;
+    border: 1px solid var(--callout-edge);
     border-inline-start: 3px solid var(--accent);
-    background: color-mix(in oklab, var(--accent) 9%, transparent);
+    border-radius: 0.4rem;
+    background: var(--callout-tint);
   }
   .content .callout-title {
-    font-weight: 700;
-    color: var(--accent);
-    margin-bottom: 0.35rem;
+    /* Pulled towards the body text rather than left as the raw hue: a
+       saturated accent at weight 700 shouts over the prose it introduces, and
+       the mix lands legible against either canvas. */
+    color: color-mix(in oklab, var(--accent) 65%, var(--color-text-primary));
+    font-weight: 600;
+    margin-block-end: 0.3rem;
   }
   .content button.callout-title {
     display: flex;
     align-items: center;
-    position: relative;
+    gap: 0.45rem;
     width: 100%;
     padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: inherit;
     text-align: start;
+    cursor: pointer;
   }
+  /* The disclosure marker: a bordered corner rotated to point down when open
+     and along the reading direction when closed. Sized in em so it tracks the
+     title, and laid out as a flex item so it never overlaps the accent bar. */
   .content button.callout-title::before {
     content: "";
-    position: absolute;
-    inset-block-start: 50%;
-    inset-inline-start: -0.8rem;
-    width: 0.3rem;
-    height: 0.3rem;
+    flex: none;
+    width: 0.34em;
+    height: 0.34em;
     border-inline-end: 2px solid currentColor;
     border-block-end: 2px solid currentColor;
-    /*opacity: 0.65;*/
-    transform: translateY(-65%) rotate(45deg);
+    transform: translateY(-0.12em) rotate(45deg);
     transition: transform 0.12s ease-in;
   }
   .content .callout[data-callout-fold="closed"] button.callout-title::before {
-    transform: translateY(-50%) rotate(-45deg);
+    transform: translateY(-0.04em) rotate(-45deg);
   }
   .content .callout[data-callout-fold="closed"] .callout-content {
     display: none;
   }
-  .content .callout-content > :first-child { margin-top: 0; }
-  .content .callout-content > :last-child { margin-bottom: 0; }
-
-  .content .callout[data-callout="tip"],
-  .content .callout[data-callout="hint"],
-  .content .callout[data-callout="success"] { --accent: #16a34a; }
-  .content .callout[data-callout="warning"],
-  .content .callout[data-callout="caution"] { --accent: #d97706; }
-  .content .callout[data-callout="danger"],
-  .content .callout[data-callout="error"],
-  .content .callout[data-callout="bug"] { --accent: #dc2626; }
-
-  /* Semantic djot divs (`::: warning` -> div.warning). Element-qualified so
-     they never catch an inline attribute that happens to reuse the class. */
-  .content div:is(.note, .info, .tip, .warning, .danger) {
-    --accent: #64748b;
-    margin: 1.1rem 0;
-    padding: 0.6rem 0.95rem;
-    border-radius: 0.4rem;
-    border-inline-start: 3px solid var(--accent);
-    background: color-mix(in oklab, var(--accent) 8%, transparent);
+  .content .callout[data-callout-fold="closed"] .callout-title {
+    margin-block-end: 0;
   }
-  .content div:is(.note, .info) { --accent: #3b82f6; }
+  .content .callout-content > :first-child,
+  .content div:is(.note, .info, .tip, .warning, .danger) > :first-child {
+    margin-block-start: 0;
+  }
+  .content .callout-content > :last-child,
+  .content div:is(.note, .info, .tip, .warning, .danger) > :last-child {
+    margin-block-end: 0;
+  }
+
+  /* Kinds group by what they mean, not by how many names Obsidian has for
+     them: advice green, caution amber, failure red, aside slate. Anything
+     unlisted keeps the blue default above. */
+  .content .callout:is(
+    [data-callout="tip"],
+    [data-callout="hint"],
+    [data-callout="success"],
+    [data-callout="check"],
+    [data-callout="done"]
+  ),
   .content div.tip { --accent: #16a34a; }
+  .content .callout:is(
+    [data-callout="warning"],
+    [data-callout="caution"],
+    [data-callout="attention"]
+  ),
   .content div.warning { --accent: #d97706; }
+  .content .callout:is(
+    [data-callout="danger"],
+    [data-callout="error"],
+    [data-callout="bug"],
+    [data-callout="failure"],
+    [data-callout="fail"],
+    [data-callout="missing"]
+  ),
   .content div.danger { --accent: #dc2626; }
-  .content div:is(.note, .info, .tip, .warning, .danger) > :first-child { margin-top: 0; }
-  .content div:is(.note, .info, .tip, .warning, .danger) > :last-child { margin-bottom: 0; }
+  .content .callout:is([data-callout="quote"], [data-callout="cite"]) {
+    --accent: #64748b;
+  }
+  .content .callout:is([data-callout="question"], [data-callout="help"], [data-callout="faq"]) {
+    --accent: #7c3aed;
+  }
 
   /* Inline djot attributes used in the feature demos. */
   .content .hl,
