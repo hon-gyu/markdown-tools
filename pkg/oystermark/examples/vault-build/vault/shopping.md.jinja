@@ -1,0 +1,27 @@
+# Shopping list
+
+The block below is *written by this template* from the vault's own frontmatter,
+which is why it cannot exist until the vault has been rendered once.
+
+{{ "{#shopping}" }}
+```python
+import json
+
+# One entry per note carrying a `flour:` field, emitted by shopping.md.jinja.
+loaves = {
+{%- for n in notes %}{% if n.frontmatter.flour %}
+    "{{ n.title }}": {{ n.frontmatter.flour }},
+{%- endif %}{% endfor %}
+}
+
+print(
+    json.dumps(
+        {
+            "shopping": {
+                "loaf_count": len(loaves),
+                "total_flour": sum(loaves.values()),
+            }
+        }
+    )
+)
+```

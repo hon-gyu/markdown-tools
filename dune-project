@@ -7,6 +7,8 @@
 
 (generate_opam_files true)
 
+(using directory-targets 0.1)
+
 (source
  (github username/reponame))
 

@@ -7,10 +7,17 @@
 module Fs_utils = Fs_utils
 open Core
 
-(** Read, parse, resolve, and by default expand the files beneath [vault_root]. *)
+(** Read, parse, resolve, and by default expand the files beneath [vault_root].
+
+    [overlay] associates vault-relative [.md] paths with source text to index
+    as though those files were on disk. An overlay entry shadows a file of the
+    same path beneath [vault_root]. Its purpose is generated notes: a page
+    computed from the vault can be indexed alongside the vault that produced
+    it, without being written into the source tree first. *)
 let of_root_path
       ?(skip_expand = false)
       ?(exclude : string -> bool = fun _ -> false)
+      ?(overlay : (string * string) list = [])
       (vault_root : string)
   : Vault.t
   =
@@ -28,6 +35,17 @@ let of_root_path
               ~locs:true
               (In_channel.read_all (Filename.concat vault_root path)) )
       else None)
+  in
+  let overlay_docs =
+    List.map overlay ~f:(fun (rel_path, source) ->
+      rel_path, Parse.of_string ~locs:true source)
+  in
+  (* The on-disk entry is dropped rather than shadowed by ordering: [documents]
+     below is built with [of_alist_exn], which raises on a duplicate path. *)
+  let parsed_docs =
+    let overlaid = String.Set.of_list (List.map overlay_docs ~f:fst) in
+    List.filter parsed_docs ~f:(fun (path, _) -> not (Set.mem overlaid path))
+    @ overlay_docs
   in
   let other_files =
     List.filter files ~f:(fun p -> not (String.is_suffix p ~suffix:".md"))

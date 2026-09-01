@@ -1,0 +1,94 @@
+; A site built by [oyster build], including a page whose code block is itself
+; generated. Built on request, not by default: the rules shell out to
+; minijinja-cli and uv, neither of which is an OCaml dependency.
+
+; A block in a source note. dune reaches [sourdough.md] directly, so this needs
+; no render first.
+
+(rule
+ (targets hydration.json)
+ (deps vault/sourdough.md)
+ (action
+  (with-stdout-to
+   hydration.json
+   (pipe-stdout
+    (run
+     %{bin:oyster}
+     block
+     vault/sourdough.md
+     -id
+     hydration
+     -lang
+     python
+     -content)
+    (run uv run -)))))
+
+; First render. [shopping.md.jinja] writes a note containing a code block, so
+; that block cannot be extracted until this has run. [plan.md.jinja] reads the
+; block's output, which does not exist yet — [shopping-stub.json] binds the
+; name so that this render, whose pages are discarded, does not fail on it.
+
+(rule
+ (targets
+  (dir site1))
+ (deps
+  (source_tree vault)
+  hydration.json
+  shopping-stub.json)
+ (action
+  (run
+   %{bin:oyster}
+   build
+   vault
+   -o
+   site1
+   -context
+   hydration.json
+   -context
+   shopping-stub.json)))
+
+; A block in a generated note, addressed inside the directory target above.
+
+(rule
+ (targets shopping.json)
+ (deps site1/shopping.md)
+ (action
+  (with-stdout-to
+   shopping.json
+   (pipe-stdout
+    (run
+     %{bin:oyster}
+     block
+     site1/shopping.md
+     -id
+     shopping
+     -lang
+     python
+     -content)
+    (run uv run -)))))
+
+; Final render, with both blocks' output in the context. Every page is computed
+; again from the vault; nothing is carried over from [site1].
+
+(rule
+ (targets
+  (dir site))
+ (deps
+  (source_tree vault)
+  hydration.json
+  shopping.json)
+ (action
+  (run
+   %{bin:oyster}
+   build
+   vault
+   -o
+   site
+   -context
+   hydration.json
+   -context
+   shopping.json)))
+
+(alias
+ (name vault-build)
+ (deps site))

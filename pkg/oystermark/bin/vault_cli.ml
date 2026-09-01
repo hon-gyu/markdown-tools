@@ -243,6 +243,124 @@ let context_command =
           else Yojson.Safe.pretty_to_string json))
 ;;
 
+(* Site build
+   ========== *)
+
+(** Render every template in the vault to a page, in the vault's own namespace.
+
+    A template is a file named [<page>.md.jinja], and renders to [<page>.md].
+    Every template is rendered against a context holding the whole vault,
+    including the pages other templates produce: a template may describe a page
+    in terms of generated pages, to any depth.
+
+    Rendering repeats until a pass changes no page. Generated pages are indexed
+    from memory and reach the filesystem, under [-o], only once that fixed
+    point is found; the vault itself is never written to. Templates with no
+    fixed point are an error, after [-max-passes] passes, naming the pages that
+    would not settle. *)
+
+(* Render order matters here and cannot be read off the templates: a Jinja
+   expression selects notes at run time, so which pages a template consumes is
+   not a static property of its source. Iterating to a fixed point is what buys
+   us an order without asking templates to declare one. *)
+let build_command =
+  let template_suffix = ".md.jinja" in
+  let page_of_template template =
+    String.chop_suffix_exn template ~suffix:template_suffix ^ ".md"
+  in
+  (* [minijinja-cli] reads the context from a file rather than stdin: writing
+     it to the child while reading the child's output risks a deadlock on a
+     context larger than a pipe buffer. *)
+  let render ~engine ~root ~context_paths template =
+    let process =
+      Core_unix.create_process
+        ~prog:engine
+        ~args:("--format=json" :: Filename.concat root template :: context_paths)
+    in
+    Core_unix.close process.stdin;
+    let read fd = In_channel.input_all (Core_unix.in_channel_of_descr fd) in
+    let rendered = read process.stdout in
+    let errors = read process.stderr in
+    Core_unix.close process.stdout;
+    Core_unix.close process.stderr;
+    match Core_unix.waitpid process.pid with
+    | Ok () -> rendered
+    | Error _ -> failwithf "%s: %s failed\n%s" template engine errors ()
+  in
+  Command.basic
+    ~summary:"Render the vault's Jinja templates to pages"
+    (let%map_open.Command root = vault_param
+     and out = flag "-o" (required string) ~doc:"DIR write rendered pages under DIR"
+     and engine =
+       flag
+         "-engine"
+         (optional_with_default "minijinja-cli" string)
+         ~doc:"PROG Jinja engine to invoke (default: minijinja-cli)"
+     and max_passes =
+       flag
+         "-max-passes"
+         (optional_with_default 10 int)
+         ~doc:"N give up after N passes without a fixed point (default: 10)"
+     and extra_context =
+       flag
+         "-context"
+         (listed string)
+         ~doc:
+           "FILE merge FILE into the template context, after the vault's own (repeatable)"
+     in
+     fun () ->
+       let templates =
+         Vault_fs.Fs_utils.walk ~root ()
+         |> List.filter ~f:(String.is_suffix ~suffix:template_suffix)
+         |> List.sort ~compare:String.compare
+       in
+       let context_dir =
+         Core_unix.mkdtemp (Filename.concat Filename.temp_dir_name "oyster-build")
+       in
+       let context_path = Filename.concat context_dir "context.json" in
+       let render_pass overlay =
+         let vault = Vault_fs.of_root_path ~skip_expand:true ~overlay root in
+         Out_channel.write_all
+           context_path
+           ~data:(Yojson.Safe.to_string (Oystermark.Context.of_vault vault));
+         List.map templates ~f:(fun template ->
+           ( page_of_template template
+           , render ~engine ~root ~context_paths:(context_path :: extra_context) template
+           ))
+       in
+       let rec settle pass overlay =
+         let rendered = render_pass overlay in
+         if [%equal: (string * string) list] rendered overlay
+         then rendered
+         else if pass >= max_passes
+         then (
+           let previous = String.Map.of_alist_exn overlay in
+           let unsettled =
+             List.filter_map rendered ~f:(fun (page, contents) ->
+               match Map.find previous page with
+               | Some before when String.equal before contents -> None
+               | _ -> Some page)
+           in
+           failwithf
+             "no fixed point after %d passes; still changing: %s"
+             max_passes
+             (String.concat ~sep:", " unsettled)
+             ())
+         else settle (pass + 1) rendered
+       in
+       let pages =
+         Exn.protect
+           ~f:(fun () -> settle 1 [])
+           ~finally:(fun () ->
+             Core_unix.remove context_path;
+             Core_unix.rmdir context_dir)
+       in
+       List.iter pages ~f:(fun (page, contents) ->
+         let destination = Filename.concat out page in
+         Core_unix.mkdir_p (Filename.dirname destination);
+         Out_channel.write_all destination ~data:contents))
+;;
+
 (** Query the blocks of a note.
 
     The filters are sugar over one traversal: every flag narrows the same list
@@ -390,6 +508,7 @@ let command =
     [ "unresolved", unresolved_command
     ; "stats", stats_command
     ; "context", context_command
+    ; "build", build_command
     ; "block", block_command
     ; "rename-note", rename_note_command
     ; ( "rename-heading"
