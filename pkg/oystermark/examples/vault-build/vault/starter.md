@@ -1,8 +1,8 @@
 ---
-title: Starter
-tags: [maintenance]
-created: 2026-01-02
+tags: [reference]
+created: 2025-10-04
 ---
 # Starter
 
-Feed 1:1:1 the night before a bake.
+Feed it flour and water at the same ratio each day. See [[hydration-table]] for
+the numbers — that note has not been written yet.

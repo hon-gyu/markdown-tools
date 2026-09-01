@@ -1,41 +1,49 @@
 {0 Generating notes: a worked example}
 
-A small vault, three templates, and the [dune] rules that turn one into the
+A small vault, six templates, and the [dune] rules that turn one into the
 other. The JSON namespace the templates read is specified in
 {!page-"template-context"}; this page is only about wiring it to a build.
 
-The example is real: it lives in [pkg/oystermark/examples/vault-site/] and
+The example is real: it lives in [pkg/oystermark/examples/vault-build/] and
 builds with
 
 {v
-dune build @pkg/oystermark/examples/vault-site/vault-site
+dune build @pkg/oystermark/examples/vault-build/vault-build
 v}
 
 {1 The tree}
 
-Everything sits in one directory — the templates alongside the notes they read:
+The vault is a directory of its own, so that the build's own outputs are never
+mistaken for notes:
 
 {v
-pkg/oystermark/examples/vault-site/
+pkg/oystermark/examples/vault-build/
 ├── dune
-├── focaccia.md
-├── folding.svg
-├── kneading.md
-├── sourdough.md
-├── starter.md
-├── health.md.jinja
-├── hydration.md.jinja
-├── index.md.jinja
-└── tags.md.jinja
+├── shopping-stub.json
+└── vault/
+    ├── focaccia.md
+    ├── folding.svg
+    ├── kneading.md
+    ├── sourdough.md
+    ├── starter.md
+    ├── health.md.jinja
+    ├── hydration.md.jinja
+    ├── index.md.jinja
+    ├── plan.md.jinja
+    ├── shopping.md.jinja
+    └── tags.md.jinja
 v}
 
-Building adds the generated notes beside them:
+One command renders all six templates into [site/]:
 
 {v
-├── health.md     ← health.md.jinja
-├── hydration.md  ← hydration.md.jinja, via a code block in sourdough.md
-├── index.md      ← index.md.jinja
-└── tags.md       ← tags.md.jinja
+site/
+├── health.md
+├── hydration.md
+├── index.md
+├── plan.md
+├── shopping.md
+└── tags.md
 v}
 
 A vault does not have to be flat — [note.dir] and [note.segments] exist so a
@@ -50,6 +58,7 @@ Each note carries the frontmatter the templates filter and sort on:
 ---
 title: Sourdough Loaf
 tags: [bread, weekend]
+flour: 500
 created: 2026-01-15
 ---
 # Sourdough Loaf
@@ -58,78 +67,117 @@ A long, slow bake. Build the levain from [[starter]] the night before, then
 follow the folds in [[kneading]].
 v}
 
-Only [tags] and [created] are read by name. A note with no [title] falls back
-to its first heading, and [focaccia.md] writes its tags the inline way
-([tags: bread, quick]) to show both forms are accepted.
+Only [tags] and [created] are read by name; everything else arrives under
+[note.frontmatter], which is how [flour] reaches a template. A note with no
+[title] falls back to its first heading, and [focaccia.md] writes its tags the
+inline way ([tags: bread, quick]) to show both forms are accepted.
 
-{1 The rules}
+{1 The rule}
 
-One rule per generated note, each depending on the whole directory and on its
-own template:
+Rendering is one rule, whatever the vault contains:
 
 {v
 (rule
- (targets index.md)
- (deps
-  (source_tree .)
-  index.md.jinja)
+ (targets (dir site))
+ (deps (source_tree vault) hydration.json shopping.json)
  (action
-  (with-stdout-to
-   index.md
-   (pipe-stdout
-    (run %{bin:oyster} context .)
-    (run minijinja-cli --format=json index.md.jinja -)))))
-
-(alias
- (name vault-site)
- (deps index.md tags.md health.md))
+  (run %{bin:oyster} build vault -o site
+    -context hydration.json -context shopping.json)))
 v}
 
-Four parts of that stanza are worth spelling out.
-
-{2 [pipe-stdout], not [pipe-stdin]}
-
-The pipe is named for the output being redirected, so the action that connects
-one command's stdout to the next command's stdin is [pipe-stdout]. There is no
-[pipe-stdin] action.
-
-{2 [(source_tree .)]}
+{2 [(source_tree vault)]}
 
 A template that queries the whole vault depends on every note in it. The
-dependency is therefore coarse on purpose: editing any note rebuilds every
-generated page. Fine-grained dependencies would require knowing which notes a
-template actually read, which the engine does not report.
+dependency is coarse on purpose: editing any note re-renders every page.
+Fine-grained dependencies would require knowing which notes a template actually
+read, which the engine does not report — a Jinja expression selects notes at
+run time.
 
 It is also correct, which a narrower dependency would not be. Adding a link to
 [focaccia.md] changes the count printed for [kneading.md], and the rule reruns.
 
-Generated notes land in the same directory as their sources, and this does not
-feed back: [dune] excludes every rule target from the source tree it hands the
-action, so [index.md] is not a note in the context that produced it, nor in the
-one that produces [tags.md]. The note count stays at four however many pages
-are generated beside them.
+{2 A directory target}
 
-One wrinkle, visible under [assets] rather than [notes]: when a rule writes its
-target directly, as [(with-stdout-to context.json (run ... context .))] does,
-the file is opened before the action runs, so the walk finds it — empty — and
-[context.json] lists itself as an asset. It is never a note, so templates that
-iterate [notes] are unaffected.
+[(targets (dir site))] needs [(using directory-targets 0.1)] in [dune-project];
+without it the stanza is a parse error. Only one rule may write a given
+directory, which matters below, where an intermediate render needs a directory
+of its own.
 
 {2 A named alias}
 
-[minijinja-cli] is not an OCaml dependency; [(run minijinja-cli ...)] resolves
-it from [PATH]. Attaching the generated notes to their own alias rather than to
-[@default] keeps a build that never renders from needing the binary at all.
+[minijinja-cli] is not an OCaml dependency; [oyster] resolves it from [PATH],
+and the code-block rules below reach for [uv] the same way. Attaching the site
+to its own alias rather than to [@default] keeps a build that never renders
+from needing either binary.
 
-{2 [%{bin:oyster}]}
+{1 Generated pages are notes}
 
-Resolves the executable from the workspace, so the rule does not depend on
-[oyster] being installed.
+[oyster build] renders every template against the vault, indexes the results as
+notes, and renders again, stopping when a pass changes nothing. So a template
+may describe a page in terms of pages other templates produce, to any depth,
+and nothing declares an order.
+
+That is visible in the note count. Four notes are on disk; ten are in the
+context, because the six rendered pages joined them:
+
+{v
+# Recipe index
+
+10 notes, newest first.
+
+- [Sourdough Loaf](sourdough.md) — bread, weekend
+- [Focaccia](focaccia.md) — bread, quick
+- [Starter](starter.md) — reference
+- [Kneading](kneading.md) — technique, reference
+- [Vault health](health.md)
+- [Hydration](hydration.md)
+- [Recipe index](index.md)
+- [Bake plan](plan.md)
+- [Shopping list](shopping.md)
+- [Tags](tags.md)
+v}
+
+Generated pages are held in memory between passes and never written into the
+vault, so every pass renders against the same source tree. Only the settled
+pass reaches the filesystem, under [-o].
+
+{2 Templates that never settle}
+
+A template set that describes itself can fail to have a fixed point, and this
+one nearly does. [health.md.jinja] lists the notes nothing links to. Written
+the obvious way, it links to them:
+
+{v
+{% for p in orphans -%}
+- [{{ notes_by_path[p].title }}]({{ p }})
+{% endfor -%}
+v}
+
+Then [index.md], having nothing pointing at it, is listed as an orphan — and
+that listing is a link, so on the next pass [index.md] is no longer an orphan
+and drops off, so on the pass after that it is one again. The report changes
+what it reports. [oyster build] renders to [-max-passes] and then fails naming
+the page:
+
+{v
+no fixed point after 10 passes; still changing: health.md
+v}
+
+The fix is to break the feedback rather than to raise the limit — name the
+paths without linking to them:
+
+{v
+{% for p in orphans -%}
+- `{{ p }}` — {{ notes_by_path[p].title }}
+{% endfor -%}
+v}
+
+A report that points at what it measures is worth a second look in general;
+here the build refuses to guess which of the two answers you meant.
 
 {1 Templates}
 
-List every note newest first, annotated with its tags and how many notes point
-at it:
+List every note newest first, annotated with its tags:
 
 {v
 # Recipe index
@@ -139,21 +187,7 @@ at it:
 {% for n in notes | sort(attribute="created", reverse=true) -%}
 - [{{ n.title }}]({{ n.path }})
 {%- if n.tags %} — {{ n.tags | join(", ") }}{% endif %}
-{%- if n.backlink_count %} · referenced by {{ n.backlink_count }}{% endif %}
 {% endfor %}
-v}
-
-which produces
-
-{v
-# Recipe index
-
-4 notes, newest first.
-
-- [Sourdough Loaf](sourdough.md) — bread, weekend
-- [Focaccia](focaccia.md) — bread, quick
-- [Starter](starter.md) — reference · referenced by 1
-- [Kneading](kneading.md) — technique, reference · referenced by 2
 v}
 
 Drive an index off the tag map instead, resolving each path through
@@ -191,24 +225,14 @@ Or report on the graph rather than listing it:
 {% for u in unresolved -%}
 - `{{ u.source }}`:{{ u.line }} → `{{ u.target }}` ({{ u.reason }})
 {% endfor %}
-## Nothing links here
-
-{% for p in orphans -%}
-- [{{ notes_by_path[p].title }}]({{ p }})
-{% endfor -%}
 v}
 
 {v
-4 notes · 5 links · 1 unresolved
+10 notes · 24 links · 1 unresolved
 
 ## Links pointing nowhere
 
 - `starter.md`:7 → `hydration-table` (missing_path)
-
-## Nothing links here
-
-- [Focaccia](focaccia.md)
-- [Sourdough Loaf](sourdough.md)
 v}
 
 {1 Filtering}
@@ -254,39 +278,87 @@ query that matches nothing is an error too, so a rule fails rather than feeding
 an interpreter an empty string. Blocks can also be addressed by heading,
 kind and position, and printed as JSON.
 
-Three rules: extract and run, snapshot the context, render the two together.
-[minijinja-cli] accepts several data files and merges them, so the script's
-output arrives as ordinary template variables:
+[oyster build] runs no code. It renders, and [-context FILE] merges a JSON file
+into the namespace the templates read — repeatably, and forwarded untouched to
+[minijinja-cli], which already accepts several data files. What produces those
+files, and under what interpreter, stays in [dune]:
 
 {v
 (rule
  (targets hydration.json)
- (deps sourdough.md)
+ (deps vault/sourdough.md)
  (action
   (with-stdout-to
    hydration.json
    (pipe-stdout
-    (run %{bin:oyster} block sourdough.md -id hydration -lang python -content)
+    (run %{bin:oyster} block vault/sourdough.md -id hydration -lang python -content)
     (run uv run -)))))
-
-(rule
- (targets context.json)
- (deps (source_tree .))
- (action
-  (with-stdout-to context.json (run %{bin:oyster} context .))))
-
-(rule
- (targets hydration.md)
- (deps hydration.md.jinja context.json hydration.json)
- (action
-  (with-stdout-to
-   hydration.md
-   (run minijinja-cli --format=json hydration.md.jinja context.json
-     hydration.json))))
 v}
 
 The template then reads [hydration] beside the vault's own namespace, and
 editing the numbers in the note changes the rendered page on the next build.
+Note the dependency: one file. Editing an unrelated note does not rerun the
+interpreter.
+
+{2 A block in a generated note}
+
+[shopping.md.jinja] writes a note that {e contains} a code block, built from the
+vault's own frontmatter:
+
+{v
+{{ "{#shopping}" }}
+```python
+loaves = {
+{%- for n in notes %}{% if n.frontmatter.flour %}
+    "{{ n.title }}": {{ n.frontmatter.flour }},
+{%- endif %}{% endfor %}
+}
+v}
+
+That block cannot be extracted before it exists, and it exists only once the
+vault has been rendered. So the site is rendered twice: once into [site1/],
+whose only purpose is to hold a page to extract from, and once into [site/].
+
+{v
+(rule
+ (targets (dir site1))
+ (deps (source_tree vault) hydration.json shopping-stub.json)
+ (action
+  (run %{bin:oyster} build vault -o site1
+    -context hydration.json -context shopping-stub.json)))
+
+(rule
+ (targets shopping.json)
+ (deps site1/shopping.md)
+ (action
+  (with-stdout-to
+   shopping.json
+   (pipe-stdout
+    (run %{bin:oyster} block site1/shopping.md -id shopping -lang python -content)
+    (run uv run -)))))
+v}
+
+A rule may depend on one file inside a directory target, which is what
+[site1/shopping.md] is. Nothing else from [site1/] is used: the final render
+recomputes every page from the vault.
+
+The chain's length is written by hand, and it is the depth at which generated
+code depends on generated code — one extra render per level. A block inside a
+page generated by the {e final} render would need a third, and you would notice
+because the block would arrive in [site/] unexpanded.
+
+{2 [shopping-stub.json]}
+
+[plan.md.jinja] reads [shopping.total_flour], which does not exist during the
+first render. MiniJinja tolerates a missing key on a map — it renders empty —
+but reading an attribute of a name that is not bound at all is an error, even
+without [--strict]. [shopping-stub.json] is the two-byte file that binds it:
+
+{v
+{"shopping": {}}
+v}
+
+It is passed only to the render whose pages are discarded.
 
 {2 Addressing by id, not by position}
 
@@ -304,6 +376,9 @@ the render fails with a syntax error. Quote it to write it out:
 {v
 Computed by running the {{ "{#hydration}" }} block in ...
 v}
+
+A template that emits a code block for a later round to run, as
+[shopping.md.jinja] does, needs this for the id it is writing out.
 
 {2 What you are agreeing to}
 

@@ -10,5 +10,5 @@
 ## Nothing links here
 
 {% for p in orphans -%}
-- [{{ notes_by_path[p].title }}]({{ p }})
+- `{{ p }}` — {{ notes_by_path[p].title }}
 {% endfor -%}

@@ -1,9 +1,10 @@
 ---
-title: Focaccia
 tags: bread, quick
 flour: 400
-created: 2026-02-03
+created: 2025-11-02
 ---
 # Focaccia
 
-Dimpled, oily, fast. Uses the same [[starter]].
+Forgiving and fast. Skip the shaping, but still check the
+[[kneading#Windowpane test]] before the first rise.
+
