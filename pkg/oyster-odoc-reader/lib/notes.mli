@@ -5,10 +5,11 @@ type note =
   ; body : string
   }
 
-(** [of_odocl file] is every note held by the linked odoc file [file]: the page
-    it describes, and, recursively, the expansions that become notes of their
-    own. A module's submodules are reached this way, so one [.odocl] yields one
-    note per odoc page. *)
+(** [of_odocl file] asks the [odoc] executable on [PATH] to generate embeddable
+    JSON for [file], then converts every generated page. The active [odoc]
+    therefore owns its internal [.odocl] representation; this library crosses
+    only the textual JSON and HTML boundary. One [.odocl] yields one note per
+    generated odoc page. *)
 val of_odocl : Fpath.t -> (note list, string) result
 
 (** [write ~dir note] writes [note] beneath [dir], creating the directories its

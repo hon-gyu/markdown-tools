@@ -3,31 +3,14 @@ type note =
   ; body : string
   }
 
-let of_document (doc : Odoc_document.Types.Document.t) =
-  match doc with
-  | Source_page _ -> []
-  | Page page ->
-    let rec walk acc = function
-      | [] -> List.rev acc
-      | page :: queued ->
-        let rendered = Render.page page in
-        walk
-          ({ path = rendered.path; body = rendered.body } :: acc)
-          (queued @ rendered.subpages)
-    in
-    walk [] [ page ]
-;;
-
 let of_odocl file =
-  match Odoc_odoc.Odoc_file.load file with
-  | Error _ -> Error (Fpath.to_string file ^ ": cannot be loaded")
-  | Ok { content = Unit_content unit_; _ } ->
+  match Generated_html.generate file with
+  | Error _ as error -> error
+  | Ok notes ->
     Ok
-      (of_document
-         (Odoc_document.Renderer.document_of_compilation_unit ~syntax:OCaml unit_))
-  | Ok { content = Page_content page; _ } ->
-    Ok (of_document (Odoc_document.Renderer.document_of_page ~syntax:OCaml page))
-  | Ok { content = Impl_content _ | Asset_content _; _ } -> Ok []
+      (List.map
+         (fun (note : Generated_html.note) -> { path = note.path; body = note.body })
+         notes)
 ;;
 
 let write ~dir note =

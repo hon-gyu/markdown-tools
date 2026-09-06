@@ -2,14 +2,15 @@
 
     odoc has already parsed the doc comments, resolved every cross-reference,
     rendered the signatures and assigned an anchor to each declaration by the
-    time it writes a [.odocl] file. This library enters there, at
-    [Odoc_document.Types.Document.t] -- the backend-agnostic representation
-    that odoc's own HTML, LaTeX and manpage renderers consume -- so the notes
-    carry the same information as the HTML, rather than the doc comments alone.
+    time it writes a [.odocl] file. {!Notes.of_odocl} asks the active [odoc]
+    executable to cross that internal boundary and emit embeddable JSON. The
+    reader consumes that textual output, so its command can read documentation
+    built by another OCaml switch.
 
-    See {!Notes.of_odocl} for the entry point and {!Render} for how each
-    construct is spelled in OysterMark. *)
+    See {!Generated_html} for that boundary and {!Render} for the direct,
+    in-process renderer. *)
 
 module Address = Address
+module Generated_html = Generated_html
 module Notes = Notes
 module Render = Render

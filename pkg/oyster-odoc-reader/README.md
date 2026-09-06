@@ -11,13 +11,19 @@ dune exec oyster-odoc-reader -- ./vault $(find _build/default/_doc/_odocls -name
 
 By the time odoc writes a `.odocl` it has parsed the doc comments, resolved
 every cross-reference, rendered the signatures and assigned an anchor to each
-declaration. This reader enters there, at `Odoc_document.Types.Document.t` —
-the backend-agnostic representation odoc's own HTML, LaTeX and manpage
-renderers consume — so a note carries what the HTML carries, not the doc
-comments alone. Nothing parses `.ml`, `.mli` or `.mld` source.
+declaration. The file is nevertheless an internal OCaml `Marshal` value, not a
+portable interchange format. The reader asks the `odoc` executable on `PATH`
+to consume it and emit embeddable JSON. It then translates the JSON metadata
+and HTML fragments, so the installed reader may be used from a different OCaml
+switch than the one which built the documentation. Nothing parses `.ml`,
+`.mli` or `.mld` source.
+
+Run the command in the same active environment as `dune build @doc`: the
+matching `odoc` process owns the internal file representation. The supported
+cross-process boundary is the textual output of `odoc html-generate --as-json`.
 
 ```
-.odocl ──▶ Odoc_document.Types.Document.t ──▶ Render.page ──▶ note (+ subpages)
+.odocl ──▶ active odoc ──▶ embeddable JSON + HTML ──▶ note (+ subpages)
 ```
 
 ## What the output looks like
@@ -73,5 +79,9 @@ original kept alongside: `{#type-t-field odoc-anchor="type-t.field"}`.
   build renders no source pages at all, so there is nothing to point at.
 - A page's `@short_title`, `@children_order`, `@toc_status` and
   `@order_category` are dropped. Unused in this repo.
+
+The JSON schema is experimental upstream. Its fields and the odoc HTML shapes
+used here are covered by reader fixtures, making changes fail visibly instead
+of reaching an unsafe deserializer.
 
 See `docs/index.mld`.

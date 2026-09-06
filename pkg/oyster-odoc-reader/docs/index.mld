@@ -6,10 +6,16 @@ Read odoc documentation into an OysterMark vault: one note per odoc page.
 
 By the time odoc writes a [.odocl] file it has parsed the doc comments,
 resolved every cross-reference, rendered the signatures and assigned an anchor
-to each declaration. This library enters there, at
-[Odoc_document.Types.Document.t] — the backend-agnostic representation that
-odoc's own HTML, LaTeX and manpage renderers consume — so a note carries what
-the HTML carries, not the doc comments alone.
+to each declaration. The file itself is an internal OCaml [Marshal] value. The
+reader therefore asks the [odoc] executable on [PATH] to consume it and emit
+embeddable JSON, then translates the JSON metadata and HTML fragments. The
+installed command may be used across OCaml switches because only the active
+[odoc] process touches its internal representation.
+
+Run the reader in the same active environment as [dune build @doc]. The
+cross-process contract is the textual output of
+[odoc html-generate --as-json], whose fields and HTML shapes used here have
+reader fixtures.
 
 Entry point: {!Oyster_odoc_reader.Notes.of_odocl}.
 

@@ -86,7 +86,9 @@
   (dune
    (>= 3.22))
   odoc
-  fpath))
+  fpath
+  lambdasoup
+  yojson))
 
 (package
   (name trace-collect)
